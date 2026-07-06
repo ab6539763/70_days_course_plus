@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-8f3a2b1c",
+  "object": "chat.completion",
+  "created": 1720600000,
+  "model": "deepseek-chat",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "根据产品说明书，该理财产品年化收益率约为 3.5%-4.2%，具体以实际公告为准。投资有风险，入市需谨慎。"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 128,
+    "completion_tokens": 56,
+    "total_tokens": 184
+  }
+}
