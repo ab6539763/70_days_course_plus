@@ -48,6 +48,10 @@ jobs:
           m.handle_batch_clean()
           "
 
+      - name: Run list demos
+        working-directory: nexus-agent-platform
+        run: python src/day04/list_demos.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v
