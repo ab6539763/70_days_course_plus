@@ -1,0 +1,31 @@
+{
+  "version": "1.0",
+  "next_id": 4,
+  "updated_at": "2026-07-12T02:00:00Z",
+  "contacts": [
+    {
+      "id": 1,
+      "name": "陈默",
+      "phone": "13800001001",
+      "email": "chenmo@zhilian-tech.com",
+      "group": "平台研发部",
+      "created_at": "2026-07-12T01:00:00Z"
+    },
+    {
+      "id": 2,
+      "name": "赵岩",
+      "phone": "13800001002",
+      "email": "zhaoyan@zhilian-tech.com",
+      "group": "架构组",
+      "created_at": "2026-07-12T01:05:00Z"
+    },
+    {
+      "id": 3,
+      "name": "林晓",
+      "phone": "13800001003",
+      "email": "linxiao@zhilian-tech.com",
+      "group": "培训组",
+      "created_at": "2026-07-12T01:10:00Z"
+    }
+  ]
+}
