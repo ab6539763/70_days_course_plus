@@ -69,3 +69,21 @@ class ImportPathError(NexusError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, code="IMPORT_PATH_ERROR")
+
+
+class APIError(NexusError):
+    """外部 LLM API 调用错误"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        response_body: str | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.response_body = response_body
+        detail = message
+        if status_code is not None:
+            detail = f"{message} (HTTP {status_code})"
+        super().__init__(detail, code="API_ERROR")

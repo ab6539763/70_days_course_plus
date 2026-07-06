@@ -2,6 +2,7 @@
 
 from core.bootstrap import ensure_importable, setup_python_path
 from core.exceptions import (
+    APIError,
     ConfigError,
     ImportPathError,
     JsonParseError,
@@ -20,6 +21,7 @@ __all__ = [
     "StorageError",
     "JsonParseError",
     "ImportPathError",
+    "APIError",
     "SRC_ROOT",
     "PROJECT_ROOT",
     "DATA_ROOT",

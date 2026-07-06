@@ -80,6 +80,12 @@ jobs:
         working-directory: nexus-agent-platform
         run: python src/day11/doc_reader_demo.py
 
+      - name: Run LLM client demo (mock)
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day12/llm_client_demo.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v
