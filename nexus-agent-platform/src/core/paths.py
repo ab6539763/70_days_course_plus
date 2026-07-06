@@ -24,6 +24,8 @@ PATHS = {
     "todos": SRC_ROOT / "day05" / "data" / "todos.json",
     "contacts": SRC_ROOT / "day07" / "data" / "contacts.json",
     "messages": SRC_ROOT / "day08" / "data" / "messages.json",
+    "sample_docs": SRC_ROOT / "day02" / "sample_docs",
+    "doc_output": SRC_ROOT / "day11" / "output",
 }
 
 # 未来生产包占位

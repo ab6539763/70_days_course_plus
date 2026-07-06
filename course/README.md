@@ -67,4 +67,5 @@ Day 58-70  → 毕业设计、平台全功能上线
 - [x] Day 8：面向对象（上）、ChatMessage 类与 MessageHistory
 - [x] Day 9：面向对象（下）、BaseModel 抽象类体系与 ModelConfig
 - [x] Day 10：模块与异常、core/services 包结构重组
-- [ ] Day 11-70：持续更新中
+- [x] Day 11：文件与标准库、doc_reader 批量读取
+- [ ] Day 12-70：持续更新中

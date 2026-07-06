@@ -76,6 +76,10 @@ jobs:
         working-directory: nexus-agent-platform
         run: python src/day10/structure_audit.py
 
+      - name: Run doc reader batch clean
+        working-directory: nexus-agent-platform
+        run: python src/day11/doc_reader_demo.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

@@ -1,7 +1,7 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.10.0（Day 10 重组）  
-**需求**：ZL-NA-REQ-010
+**版本**：v0.11.0（Day 11 doc_reader）  
+**需求**：ZL-NA-REQ-010 / ZL-NA-REQ-011
 
 ## 生产层目录（长期演进）
 
@@ -13,7 +13,7 @@ src/
 ├── utils/          # 横切工具函数
 ├── llm/            # 大模型接入（Day 12+）
 ├── chat/           # 对话应用（Day 14+）
-├── tools/          # 文档/工具（Day 11+）
+├── tools/          # 文档/工具（Day 11 doc_reader）
 └── day01..dayXX/   # 教学实验代码（保留，不删）
 ```
 
