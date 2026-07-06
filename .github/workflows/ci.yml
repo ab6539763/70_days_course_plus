@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'cursor/**']
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          pip install -r nexus-agent-platform/requirements-day01.txt
+
+      - name: Run hello.py
+        working-directory: nexus-agent-platform
+        run: python src/day01/hello.py
+
+      - name: Run tests
+        working-directory: nexus-agent-platform
+        run: pytest tests/ -v
