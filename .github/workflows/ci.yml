@@ -64,6 +64,10 @@ jobs:
         working-directory: nexus-agent-platform
         run: python -c "import importlib.util; from pathlib import Path; p=Path('src/day07/week1_quiz.py'); s=importlib.util.spec_from_file_location('q',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); assert len(m.QUESTIONS)==10"
 
+      - name: Run OOP demos
+        working-directory: nexus-agent-platform
+        run: python src/day08/oop_demos.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

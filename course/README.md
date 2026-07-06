@@ -64,4 +64,5 @@ Day 58-70  → 毕业设计、平台全功能上线
 - [x] Day 1-5
 - [x] Day 6：函数、作用域、lambda、递归；`src/utils/` 工具库与 `todo_manager_v3` 重构
 - [x] Day 7：第一周复习、通讯录管理系统、周测（Sprint 1 收官）
-- [ ] Day 8-70：持续更新中
+- [x] Day 8：面向对象（上）、ChatMessage 类与 MessageHistory
+- [ ] Day 9-70：持续更新中

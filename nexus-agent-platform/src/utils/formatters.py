@@ -40,3 +40,11 @@ def format_contact_line(contact: dict) -> str:
     email = contact.get("email", "")
     group = contact.get("group", "未分组")
     return f"#{cid} {name} | {phone} | {email} | [{group}]"
+
+
+def format_chat_line(role: str, content: str, *, max_len: int = 60) -> str:
+    """格式化聊天消息行（无 ChatMessage 实例时的轻量工具）"""
+    labels = {"system": "系统", "user": "用户", "assistant": "助手"}
+    label = labels.get(role, role)
+    text = content if len(content) <= max_len else content[: max_len - 3] + "..."
+    return f"[{label}] {text}"
