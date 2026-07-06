@@ -30,3 +30,13 @@ def format_todo_line(todo: dict) -> str:
     title = todo.get("title", "")
     tid = todo.get("id", "?")
     return f"[{mark}] #{tid} [{pri}] {title}"
+
+
+def format_contact_line(contact: dict) -> str:
+    """格式化单条通讯录记录"""
+    cid = contact.get("id", "?")
+    name = contact.get("name", "")
+    phone = contact.get("phone", "")
+    email = contact.get("email", "")
+    group = contact.get("group", "未分组")
+    return f"#{cid} {name} | {phone} | {email} | [{group}]"

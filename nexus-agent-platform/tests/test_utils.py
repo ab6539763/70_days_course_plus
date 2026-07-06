@@ -14,7 +14,7 @@ if str(SRC) not in sys.path:
 from utils.formatters import format_box_report, format_todo_line
 from utils.json_utils import ensure_dict_keys, load_json, save_json
 from utils.text_utils import clean_text, collapse_whitespace, mask_sensitive_words
-from utils.validators import parse_positive_int, parse_priority, require_non_empty, validate_email
+from utils.validators import parse_positive_int, parse_priority, require_non_empty, validate_email, validate_phone
 
 
 def test_clean_text():
@@ -56,6 +56,12 @@ def test_validate_email():
     assert validate_email("bad") is not None
 
 
+def test_validate_phone():
+    assert validate_phone("13800138000") is None
+    assert validate_phone("23800138000") is not None
+    assert validate_phone("138") is not None
+
+
 def test_load_save_json(tmp_path):
     p = tmp_path / "t.json"
     save_json(p, {"a": 1})
@@ -77,3 +83,12 @@ def test_format_box_report():
 def test_format_todo_line():
     line = format_todo_line({"id": 1, "title": "t", "done": False, "priority": 1})
     assert "[ ]" in line and "高" in line
+
+
+def test_format_contact_line():
+    from utils.formatters import format_contact_line
+
+    line = format_contact_line(
+        {"id": 1, "name": "张三", "phone": "13800138000", "email": "a@b.com", "group": "研发部"}
+    )
+    assert "张三" in line and "研发部" in line

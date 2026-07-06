@@ -56,3 +56,18 @@ def validate_email(email: str) -> str | None:
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         return "邮箱格式不正确"
     return None
+
+
+def validate_phone(phone: str) -> str | None:
+    """
+    中国大陆手机号简单校验（11 位，1 开头）
+
+    Returns:
+        错误消息或 None
+    """
+    phone = (phone or "").strip()
+    if not phone:
+        return "手机号不能为空"
+    if not re.match(r"^1\d{10}$", phone):
+        return "手机号格式不正确（需 11 位且以 1 开头）"
+    return None
