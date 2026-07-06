@@ -17,15 +17,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TypeVar
 
+from core.exceptions import ModelValidationError
+
 T = TypeVar("T", bound="BaseModel")
-
-
-class ModelValidationError(ValueError):
-    """模型校验失败时抛出"""
-
-    def __init__(self, message: str, *, model_type: str = "BaseModel") -> None:
-        self.model_type = model_type
-        super().__init__(f"[{model_type}] {message}")
 
 
 class BaseModel(ABC):

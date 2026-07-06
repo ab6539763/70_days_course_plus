@@ -72,6 +72,10 @@ jobs:
         working-directory: nexus-agent-platform
         run: python src/day09/inheritance_demos.py
 
+      - name: Run structure audit
+        working-directory: nexus-agent-platform
+        run: python src/day10/structure_audit.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v
