@@ -35,6 +35,19 @@ jobs:
         working-directory: nexus-agent-platform
         run: python src/day02/text_cleaner.py --input src/day02/sample_docs/raw_notice.txt --report
 
+      - name: Run batch clean via platform_cli
+        working-directory: nexus-agent-platform
+        run: |
+          python -c "
+          import importlib.util
+          from pathlib import Path
+          p = Path('src/day03/platform_cli.py')
+          spec = importlib.util.spec_from_file_location('pc', p)
+          m = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(m)
+          m.handle_batch_clean()
+          "
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v
