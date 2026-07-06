@@ -68,6 +68,10 @@ jobs:
         working-directory: nexus-agent-platform
         run: python src/day08/oop_demos.py
 
+      - name: Run inheritance demos
+        working-directory: nexus-agent-platform
+        run: python src/day09/inheritance_demos.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

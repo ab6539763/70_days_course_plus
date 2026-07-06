@@ -1,21 +1,17 @@
 """
 聊天消息模型 — NexusAgent 对话系统的核心数据结构
 
-对应 OpenAI / DeepSeek Chat API 的 message 字段：
-    {"role": "user", "content": "你好"}
+继承 BaseModel，统一 validate / to_dict / from_dict 契约。
 
-Day 14 多轮对话 CLI、Day 23 FastAPI、Day 39 Agent 均基于本类。
-
-需求：ZL-NA-REQ-008
-
-作者：NexusAgent 项目组
-创建日期：2026-07-13
+需求：ZL-NA-REQ-008 / ZL-NA-REQ-009
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import ClassVar
+
+from models.llm_base import BaseModel
 
 VALID_ROLES: tuple[str, ...] = ("system", "user", "assistant")
 
@@ -30,7 +26,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-class ChatMessage:
+class ChatMessage(BaseModel):
     """
     单条聊天消息
 
@@ -54,7 +50,6 @@ class ChatMessage:
         self.created_at = created_at or _now_iso()
 
     def validate(self) -> str | None:
-        """校验消息字段，返回错误消息或 None"""
         if self.role not in VALID_ROLES:
             return f"角色必须是 {', '.join(VALID_ROLES)} 之一"
         if not self.content:
@@ -62,7 +57,6 @@ class ChatMessage:
         return None
 
     def to_dict(self) -> dict:
-        """转为可 JSON 序列化的 dict"""
         return {
             "role": self.role,
             "content": self.content,
@@ -71,7 +65,6 @@ class ChatMessage:
 
     @classmethod
     def from_dict(cls, data: dict) -> ChatMessage:
-        """从 dict 构造"""
         return cls(
             role=data.get("role", ""),
             content=data.get("content", ""),
@@ -80,7 +73,6 @@ class ChatMessage:
 
     @classmethod
     def from_api_response(cls, parsed: dict) -> ChatMessage:
-        """从 Day 5 api_response_parser 扁平结果构造"""
         return cls(
             role=parsed.get("role") or "assistant",
             content=parsed.get("content", ""),
@@ -103,7 +95,6 @@ class ChatMessage:
         return f"[{label}] {text}"
 
     def to_api_message(self) -> dict:
-        """仅 role + content，用于 LLM API 请求体"""
         return {"role": self.role, "content": self.content}
 
     def __str__(self) -> str:
