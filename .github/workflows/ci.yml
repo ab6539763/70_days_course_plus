@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'cursor/**']
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          pip install -r nexus-agent-platform/requirements-day01.txt
+
+      - name: Run hello.py
+        working-directory: nexus-agent-platform
+        run: python src/day01/hello.py
+
+      - name: Run text_cleaner sample
+        working-directory: nexus-agent-platform
+        run: python src/day02/text_cleaner.py --input src/day02/sample_docs/raw_notice.txt --report
+
+      - name: Run batch clean via platform_cli
+        working-directory: nexus-agent-platform
+        run: |
+          python -c "
+          import importlib.util
+          from pathlib import Path
+          p = Path('src/day03/platform_cli.py')
+          spec = importlib.util.spec_from_file_location('pc', p)
+          m = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(m)
+          m.handle_batch_clean()
+          "
+
+      - name: Run list demos
+        working-directory: nexus-agent-platform
+        run: python src/day04/list_demos.py
+
+      - name: Run API response parser
+        working-directory: nexus-agent-platform
+        run: python src/day05/api_response_parser.py --input src/day05/sample_data/chat_completion.json
+
+      - name: Run function demos
+        working-directory: nexus-agent-platform
+        run: python src/day06/function_demos.py
+
+      - name: Run week1 quiz structure check
+        working-directory: nexus-agent-platform
+        run: python -c "import importlib.util; from pathlib import Path; p=Path('src/day07/week1_quiz.py'); s=importlib.util.spec_from_file_location('q',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); assert len(m.QUESTIONS)==10"
+
+      - name: Run OOP demos
+        working-directory: nexus-agent-platform
+        run: python src/day08/oop_demos.py
+
+      - name: Run inheritance demos
+        working-directory: nexus-agent-platform
+        run: python src/day09/inheritance_demos.py
+
+      - name: Run structure audit
+        working-directory: nexus-agent-platform
+        run: python src/day10/structure_audit.py
+
+      - name: Run doc reader batch clean
+        working-directory: nexus-agent-platform
+        run: python src/day11/doc_reader_demo.py
+
+      - name: Run LLM client demo (mock)
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day12/llm_client_demo.py
+
+      - name: Run tests
+        working-directory: nexus-agent-platform
+        run: pytest tests/ -v

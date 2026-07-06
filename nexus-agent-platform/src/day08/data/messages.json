@@ -1,0 +1,19 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "你是 NexusAgent 灵犀智能体平台的内置助手。请用简洁、专业的中文回答用户问题。",
+      "created_at": "2026-07-13T02:00:00Z"
+    },
+    {
+      "role": "user",
+      "content": "请介绍一下 Sprint 1 我们完成了哪些模块？",
+      "created_at": "2026-07-13T02:01:00Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Sprint 1 完成了文本清洗、CLI 菜单、待办管理器、JSON 持久化、utils 工具库和通讯录系统，为后续对话能力打下了基础。",
+      "created_at": "2026-07-13T02:01:05Z"
+    }
+  ]
+}
