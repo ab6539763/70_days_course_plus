@@ -92,6 +92,12 @@ jobs:
           NEXUS_LLM_MOCK: "1"
         run: python src/day13/resilient_client_demo.py
 
+      - name: Run CLI assistant demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day14/cli_assistant_demo.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

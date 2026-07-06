@@ -1,3 +1,10 @@
-"""NexusAgent 对话应用层 — Day 14 实现 cli_assistant"""
+"""NexusAgent 对话应用层 — Day 14 cli_assistant"""
 
-__all__: list[str] = []
+from chat.cli_assistant import ChatAssistant, COMMANDS, DEFAULT_SYSTEM_PROMPT, run_cli
+
+__all__ = [
+    "ChatAssistant",
+    "COMMANDS",
+    "DEFAULT_SYSTEM_PROMPT",
+    "run_cli",
+]

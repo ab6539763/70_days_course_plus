@@ -1,7 +1,7 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.13.0（Day 13 retry）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-013
+**版本**：v0.14.0（Day 14 cli_assistant）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-014
 
 ## 生产层目录（长期演进）
 
@@ -12,7 +12,7 @@ src/
 ├── services/       # 业务服务（MessageHistoryService）
 ├── utils/          # 横切工具函数
 ├── llm/            # 大模型接入（client, retry, resilient_client）
-├── chat/           # 对话应用（Day 14+）
+├── chat/           # 对话应用（Day 14 cli_assistant）
 ├── tools/          # 文档/工具（Day 11 doc_reader）
 └── day01..dayXX/   # 教学实验代码（保留，不删）
 ```

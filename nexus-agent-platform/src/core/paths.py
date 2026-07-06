@@ -27,6 +27,7 @@ PATHS = {
     "sample_docs": SRC_ROOT / "day02" / "sample_docs",
     "doc_output": SRC_ROOT / "day11" / "output",
     "chat_completion_sample": SRC_ROOT / "day05" / "sample_data" / "chat_completion.json",
+    "chat_session": SRC_ROOT / "day14" / "data" / "chat_session.json",
 }
 
 # 未来生产包占位
