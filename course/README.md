@@ -61,6 +61,6 @@ Day 58-70  → 毕业设计、平台全功能上线
 
 ## 当前进度
 
-- [x] Day 1-4
-- [x] Day 5：dict 与 JSON、待办持久化、API 解析器
-- [ ] Day 6-70：持续更新中
+- [x] Day 1-5
+- [x] Day 6：函数、作用域、lambda、递归；`src/utils/` 工具库与 `todo_manager_v3` 重构
+- [ ] Day 7-70：持续更新中

@@ -56,6 +56,10 @@ jobs:
         working-directory: nexus-agent-platform
         run: python src/day05/api_response_parser.py --input src/day05/sample_data/chat_completion.json
 
+      - name: Run function demos
+        working-directory: nexus-agent-platform
+        run: python src/day06/function_demos.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v
