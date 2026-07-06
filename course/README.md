@@ -71,4 +71,5 @@ Day 58-70  → 毕业设计、平台全功能上线
 - [x] Day 12：网络与 API、llm/client 首次 LLM 调用
 - [x] Day 13：装饰器与异步、llm/retry API 重试与超时
 - [x] Day 14：阶段项目一、cli_assistant 多轮对话助手
-- [ ] Day 15-70：持续更新中
+- [x] Day 15：大模型原理科普、Token 计算器
+- [ ] Day 16-70：持续更新中

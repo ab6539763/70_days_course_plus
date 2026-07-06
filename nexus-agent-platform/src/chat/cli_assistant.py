@@ -4,7 +4,7 @@
 整合 ChatMessage、MessageHistoryService、ResilientLLMClient，
 提供可交互的多轮对话 CLI。
 
-需求：ZL-NA-REQ-014
+需求：ZL-NA-REQ-014 / ZL-NA-REQ-015
 
 运行：
     NEXUS_LLM_MOCK=1 python3 src/chat/cli_assistant.py
@@ -24,6 +24,7 @@ from core.exceptions import APIError, ConfigError, NexusError
 from core.paths import get_path
 from llm.client import LLMClient
 from llm.resilient_client import ResilientLLMClient
+from llm.token_counter import TokenSessionTracker
 from models import ChatMessage, ModelConfig
 from services import MessageHistory
 
@@ -36,6 +37,7 @@ COMMANDS = {
     "/history": "查看当前对话记录",
     "/save": "保存对话到文件",
     "/system": "设置系统提示（/system 文本）",
+    "/tokens": "查看会话 token 用量与估算费用",
 }
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -58,6 +60,7 @@ class ChatAssistant:
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
         history_path: Path | None = None,
         on_retry_log: bool = False,
+        track_tokens: bool = True,
     ) -> None:
         self.history = history or MessageHistory()
         self.history_path = history_path or get_path("chat_session")
@@ -65,6 +68,8 @@ class ChatAssistant:
             ModelConfig(),
             on_retry_log=on_retry_log,
         )
+        self.track_tokens = track_tokens
+        self.token_tracker = TokenSessionTracker() if track_tokens else None
         self._running = False
         if system_prompt and not self._has_system_message():
             self.history.add_system(system_prompt)
@@ -119,6 +124,11 @@ class ChatAssistant:
             self.history.add_system(arg)
             return True, "已更新 system 提示。", False
 
+        if cmd == "/tokens":
+            if not self.token_tracker:
+                return True, "Token 追踪未启用。", False
+            return True, self.token_tracker.report(), False
+
         return True, f"未知命令 {cmd}，输入 /help 查看帮助。", False
 
     def chat_turn(self, user_text: str) -> str:
@@ -136,9 +146,14 @@ class ChatAssistant:
         if err:
             return f"消息无效：{err}"
 
+        messages_snapshot = list(self.history.messages)
         result = self.client.complete(self.history.messages)
         reply = result.message.content
         self.history.add_assistant(reply)
+
+        if self.token_tracker:
+            self.token_tracker.record_turn(result, messages_snapshot)
+
         return reply
 
     def save_history(self) -> None:
@@ -175,7 +190,10 @@ class ChatAssistant:
 
         try:
             reply = self.chat_turn(text)
-            return f"助手: {reply}", False
+            out = f"助手: {reply}"
+            if self.token_tracker and self.token_tracker.stats.last_usage():
+                out += f"\n  [{self.token_tracker.last_line()}]"
+            return out, False
         except ConfigError as exc:
             return f"配置错误: {exc.message}", False
         except APIError as exc:

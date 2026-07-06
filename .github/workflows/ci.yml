@@ -98,6 +98,16 @@ jobs:
           NEXUS_LLM_MOCK: "1"
         run: python src/day14/cli_assistant_demo.py
 
+      - name: Run token counter demo
+        working-directory: nexus-agent-platform
+        run: python src/day15/token_counter_demo.py
+
+      - name: Run assistant token demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day15/assistant_token_demo.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

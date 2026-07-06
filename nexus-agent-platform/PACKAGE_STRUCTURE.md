@@ -1,7 +1,7 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.14.0（Day 14 cli_assistant）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-014
+**版本**：v0.15.0（Day 15 token_counter）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-015
 
 ## 生产层目录（长期演进）
 
