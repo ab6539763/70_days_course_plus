@@ -1,6 +1,7 @@
 """NexusAgent Prompt 模板库 — Day 17"""
 
 from prompts.base import PromptTemplate, extract_variables
+from prompts.intent import IntentMatch, IntentRouter, RuleBasedIntentClassifier
 from prompts.library import (
     BUILTIN_TEMPLATES,
     COMPLIANCE_REVIEW,
@@ -16,6 +17,9 @@ __all__ = [
     "PromptRegistry",
     "default_registry",
     "extract_variables",
+    "IntentMatch",
+    "IntentRouter",
+    "RuleBasedIntentClassifier",
     "BUILTIN_TEMPLATES",
     "DEFAULT_ASSISTANT",
     "RAG_QA",

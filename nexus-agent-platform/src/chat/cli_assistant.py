@@ -4,7 +4,7 @@
 整合 ChatMessage、MessageHistoryService、ResilientLLMClient，
 提供可交互的多轮对话 CLI。
 
-需求：ZL-NA-REQ-014 / ZL-NA-REQ-015 / ZL-NA-REQ-017
+需求：ZL-NA-REQ-014 / ZL-NA-REQ-015 / ZL-NA-REQ-017 / ZL-NA-REQ-018
 
 运行：
     NEXUS_LLM_MOCK=1 python3 src/chat/cli_assistant.py
@@ -26,7 +26,13 @@ from llm.client import LLMClient
 from llm.resilient_client import ResilientLLMClient
 from llm.token_counter import TokenSessionTracker
 from models import ChatMessage, ModelConfig
-from prompts import DEFAULT_ASSISTANT, PromptRegistry, PromptTemplate, default_registry
+from prompts import (
+    DEFAULT_ASSISTANT,
+    IntentRouter,
+    PromptRegistry,
+    PromptTemplate,
+    default_registry,
+)
 from services import MessageHistory
 
 # 内置斜杠命令
@@ -40,6 +46,7 @@ COMMANDS = {
     "/system": "设置系统提示（/system 文本）",
     "/tokens": "查看会话 token 用量与估算费用",
     "/template": "切换 Prompt 模板（/template 名称 或 /template list）",
+    "/route": "意图分类预览（/route 用户话术）",
 }
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -66,6 +73,8 @@ class ChatAssistant:
         prompt_template: PromptTemplate | None = None,
         prompt_registry: PromptRegistry | None = None,
         template_variables: dict[str, str] | None = None,
+        intent_router: IntentRouter | None = None,
+        auto_route: bool = False,
     ) -> None:
         self.history = history or MessageHistory()
         self.history_path = history_path or get_path("chat_session")
@@ -78,6 +87,9 @@ class ChatAssistant:
         self.prompt_registry = prompt_registry or default_registry
         self.prompt_template = prompt_template
         self.template_variables = dict(template_variables or {"company": "智链科技"})
+        self.intent_router = intent_router
+        self.auto_route = auto_route
+        self._last_intent = None
         self._running = False
         self._init_system_prompt(system_prompt)
 
@@ -180,6 +192,13 @@ class ChatAssistant:
             except (ConfigError, NexusError) as exc:
                 return True, f"模板切换失败: {exc.message}", False
 
+        if cmd == "/route":
+            if not self.intent_router:
+                return True, "意图路由未启用。请传入 intent_router。", False
+            query = arg or "请帮我总结这份文档要点"
+            match = self.intent_router.classify(query)
+            return True, match.summary(), False
+
         return True, f"未知命令 {cmd}，输入 /help 查看帮助。", False
 
     def chat_turn(self, user_text: str) -> str:
@@ -193,6 +212,12 @@ class ChatAssistant:
         if not user_text:
             return "请输入有效内容。"
 
+        route_info = ""
+        if self.intent_router and self.auto_route:
+            match = self.intent_router.route_and_apply(self, user_text)
+            self._last_intent = match
+            route_info = f"[路由: {match.template_name}] "
+
         err = self.history.add_user(user_text)
         if err:
             return f"消息无效：{err}"
@@ -205,7 +230,7 @@ class ChatAssistant:
         if self.token_tracker:
             self.token_tracker.record_turn(result, messages_snapshot)
 
-        return reply
+        return route_info + reply
 
     def save_history(self) -> None:
         self.history_path.parent.mkdir(parents=True, exist_ok=True)
