@@ -82,4 +82,5 @@ Day 58-70  → 毕业设计、平台全功能上线
 - [x] Day 23：FastAPI Chat REST API、/api/chat 与前端对接
 - [x] Day 24：Sprint 3 收官、网页版 ChatGPT 克隆完整整合
 - [x] Day 25：Phase 3 启动、企业知识库 ingestion 与上传 API
-- [ ] Day 26-70：持续更新中
+- [x] Day 26：文档解析增强（Markdown / PDF）与分块策略对比
+- [ ] Day 27-70：持续更新中

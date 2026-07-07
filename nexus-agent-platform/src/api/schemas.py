@@ -65,12 +65,14 @@ class KnowledgeStatusResponse(BaseModel):
     documents: list[dict]
     store_path: str | None = None
     platform_version: str
+    supported_formats: list[dict] = Field(default_factory=list)
 
 
 class KnowledgeUploadResponse(BaseModel):
     """POST /api/knowledge/upload"""
 
     filename: str
+    format: str = "txt"
     chunk_count: int
     document_count: int
     total_chunks: int

@@ -80,7 +80,7 @@
       uploadBtn.addEventListener("click", async () => {
         const file = fileInput.files && fileInput.files[0];
         if (!file) {
-          if (msgEl) msgEl.textContent = "请选择 .txt 文件";
+          if (msgEl) msgEl.textContent = "请选择 .txt / .md / .pdf 文件";
           return;
         }
         if (msgEl) msgEl.textContent = "上传中…";

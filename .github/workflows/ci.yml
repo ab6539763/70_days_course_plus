@@ -221,6 +221,16 @@ jobs:
           python src/day25/phase3_review.py
           PYTHONPATH=src pytest tests/day25/ -q
 
+      - name: Day 26 Document parsing
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day26/parse_demo.py
+          python src/day26/chunk_compare_demo.py
+          python src/day26/parse_api_demo.py
+          PYTHONPATH=src pytest tests/day26/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

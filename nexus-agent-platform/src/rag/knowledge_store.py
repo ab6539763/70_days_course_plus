@@ -16,14 +16,16 @@ from typing import Any
 
 from core.paths import get_path
 from rag.chunker import TextChunk, chunk_documents, chunk_text
+from rag.chunk_strategies import chunk_from_parsed
 from rag.context import DocumentIndex, RAGContextService
 from rag.embedding_retriever import EmbeddingRetriever
 from tools.doc_reader import DocumentRecord, read_text_file
+from tools.parsers.base import ParsedDocument
 from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.0"
-PLATFORM_VERSION = "0.25.0"
+PLATFORM_VERSION = "0.26.0"
 
 
 @dataclass
@@ -34,6 +36,7 @@ class KnowledgeDocument:
     ingested_at: str
     size_bytes: int = 0
     chunk_count: int = 0
+    format: str = "txt"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -41,6 +44,7 @@ class KnowledgeDocument:
             "ingested_at": self.ingested_at,
             "size_bytes": self.size_bytes,
             "chunk_count": self.chunk_count,
+            "format": self.format,
         }
 
     @classmethod
@@ -50,6 +54,7 @@ class KnowledgeDocument:
             ingested_at=str(data.get("ingested_at", "")),
             size_bytes=int(data.get("size_bytes", 0)),
             chunk_count=int(data.get("chunk_count", 0)),
+            format=str(data.get("format", "txt")),
         )
 
 
@@ -159,10 +164,49 @@ class KnowledgeStore:
         *,
         filename: str,
         clean: bool = True,
+        chunk_strategy: str = "auto",
     ) -> KnowledgeDocument:
-        """处理上传的二进制内容（UTF-8 文本）"""
-        text = data.decode("utf-8")
-        return self.ingest_text(text, filename=filename, clean=clean)
+        """处理上传二进制 — Day 26 起委托 doc_parser"""
+        from tools.doc_parser import parse_bytes
+
+        parsed = parse_bytes(data, filename)
+        return self.ingest_parsed(parsed, clean=clean, chunk_strategy=chunk_strategy)
+
+    def ingest_parsed(
+        self,
+        parsed: ParsedDocument,
+        *,
+        clean: bool = True,
+        chunk_strategy: str = "auto",
+        chunk_size: int = 200,
+        overlap: int = 40,
+    ) -> KnowledgeDocument:
+        """将 ParsedDocument 写入知识库"""
+        text = (parsed.plain_text or "").strip()
+        if not text:
+            raise ValueError("解析结果为空")
+
+        if clean:
+            text, _ = clean_text(text)
+            parsed.plain_text = text
+            for section in parsed.sections:
+                section.body, _ = clean_text(section.body)
+
+        new_chunks = chunk_from_parsed(
+            parsed,
+            strategy=chunk_strategy,
+            chunk_size=chunk_size,
+            overlap=overlap,
+        )
+        size_bytes = len(parsed.plain_text.encode("utf-8"))
+        self._append_chunks(
+            parsed.filename,
+            new_chunks,
+            size_bytes=size_bytes,
+            doc_format=parsed.format,
+        )
+        self._rebuild_index()
+        return self.documents[-1]
 
     def save(self, path: Path | None = None) -> Path:
         """持久化到 JSON"""
@@ -232,12 +276,15 @@ class KnowledgeStore:
         return store
 
     def status_dict(self) -> dict[str, Any]:
+        from tools.doc_parser import supported_formats
+
         return {
             "document_count": self.document_count,
             "chunk_count": self.chunk_count,
             "documents": [d.to_dict() for d in self.documents],
             "store_path": str(self.store_path) if self.store_path else None,
             "platform_version": PLATFORM_VERSION,
+            "supported_formats": supported_formats(),
         }
 
     def _append_chunks(
@@ -246,6 +293,7 @@ class KnowledgeStore:
         new_chunks: list[TextChunk],
         *,
         size_bytes: int,
+        doc_format: str = "txt",
     ) -> None:
         base_index = len(self.chunks)
         reindexed: list[TextChunk] = []
@@ -267,6 +315,7 @@ class KnowledgeStore:
                 ingested_at=_utc_now(),
                 size_bytes=size_bytes,
                 chunk_count=len(reindexed),
+                format=doc_format,
             )
         )
 

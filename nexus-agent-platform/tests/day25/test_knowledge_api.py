@@ -31,7 +31,7 @@ def client(tmp_path):
 
 def test_health_version_025(client):
     data = client.get("/api/health").json()
-    assert data["version"] == "0.25.0"
+    assert data["version"] == "0.26.0"
 
 
 def test_knowledge_status(client):
@@ -40,7 +40,7 @@ def test_knowledge_status(client):
     data = resp.json()
     assert data["chunk_count"] > 0
     assert data["document_count"] >= 1
-    assert data["platform_version"] == "0.25.0"
+    assert data["platform_version"] == "0.26.0"
 
 
 def test_knowledge_upload_txt(client):
@@ -55,8 +55,8 @@ def test_knowledge_upload_txt(client):
     assert data["total_chunks"] > data["chunk_count"] or data["total_chunks"] >= data["chunk_count"]
 
 
-def test_knowledge_upload_rejects_non_txt(client):
-    files = {"file": ("bad.pdf", io.BytesIO(b"%PDF"), "application/pdf")}
+def test_knowledge_upload_rejects_unsupported(client):
+    files = {"file": ("bad.docx", io.BytesIO(b"PK"), "application/octet-stream")}
     resp = client.post("/api/knowledge/upload", files=files)
     assert resp.status_code == 422
 
