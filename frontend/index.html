@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="NexusAgent 灵犀智能体 — 智链科技静态聊天演示（Day 22）" />
+  <title>NexusAgent 聊天助手</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header__brand">
+        <span class="header__logo" aria-hidden="true">◆</span>
+        <div>
+          <h1 class="header__title">NexusAgent</h1>
+          <p class="header__subtitle">智链科技 · 静态聊天演示（Day 22 Mock）</p>
+        </div>
+      </div>
+      <span class="header__badge" id="status-badge">Mock 模式</span>
+    </header>
+
+    <main class="chat" id="chat-container" role="main">
+      <div class="chat__messages" id="messages" aria-live="polite" aria-label="对话消息">
+        <div class="msg msg--bot">
+          <div class="msg__avatar" aria-hidden="true">AI</div>
+          <div class="msg__bubble">
+            <p>你好，我是 NexusAgent 助手。可尝试询问「投资有风险吗」「年化收益率」或「总结要点」。</p>
+            <span class="msg__meta">系统欢迎语</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat__loading hidden" id="loading" aria-hidden="true">
+        <span class="chat__loading-dot"></span>
+        <span class="chat__loading-dot"></span>
+        <span class="chat__loading-dot"></span>
+        <span class="chat__loading-text">思考中…</span>
+      </div>
+    </main>
+
+    <footer class="composer">
+      <form class="composer__form" id="chat-form" autocomplete="off">
+        <label class="visually-hidden" for="user-input">输入消息</label>
+        <input
+          id="user-input"
+          class="composer__input"
+          type="text"
+          placeholder="输入问题，按 Enter 发送…"
+          maxlength="2000"
+          required
+        />
+        <button type="submit" class="composer__btn" id="send-btn">发送</button>
+      </form>
+      <p class="composer__hint">Day 22 使用本地 Mock；Day 23 将对接 FastAPI <code>/api/chat</code></p>
+    </footer>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="mock.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
