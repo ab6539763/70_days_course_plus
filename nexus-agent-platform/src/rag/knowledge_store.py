@@ -27,7 +27,9 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.29.0"
+PLATFORM_VERSION = "0.30.0"
+INDEX_MODE_INCREMENTAL = "incremental"
+INDEX_MODE_FULL = "full"
 
 
 @dataclass
@@ -77,6 +79,8 @@ class KnowledgeStore:
     vector_backend: str = VECTOR_BACKEND
     chunk_config: ChunkConfig = field(default_factory=ChunkConfig)
     last_rebuilt_at: str | None = None
+    last_incremental_at: str | None = None
+    index_mode: str = INDEX_MODE_FULL
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -182,6 +186,7 @@ class KnowledgeStore:
         filename: str,
         clean: bool = True,
         chunk_strategy: str = "auto",
+        incremental: bool = True,
     ) -> KnowledgeDocument:
         """处理上传二进制 — Day 26 起委托 doc_parser"""
         from tools.doc_parser import parse_bytes
@@ -192,6 +197,7 @@ class KnowledgeStore:
             parsed,
             clean=clean,
             chunk_strategy=chunk_strategy if chunk_strategy != "auto" else cfg.strategy,
+            incremental=incremental,
         )
 
     def ingest_parsed(
@@ -202,6 +208,7 @@ class KnowledgeStore:
         chunk_strategy: str | None = None,
         chunk_size: int | None = None,
         overlap: int | None = None,
+        incremental: bool = False,
     ) -> KnowledgeDocument:
         """将 ParsedDocument 写入知识库"""
         cfg = self.get_chunk_config()
@@ -225,13 +232,24 @@ class KnowledgeStore:
             overlap=ov,
         )
         size_bytes = len(parsed.plain_text.encode("utf-8"))
-        self._append_chunks(
-            parsed.filename,
-            new_chunks,
-            size_bytes=size_bytes,
-            doc_format=parsed.format,
-        )
-        self._rebuild_index()
+
+        if incremental:
+            removed = self._remove_document_by_source(parsed.filename)
+            self._append_chunks(
+                parsed.filename,
+                new_chunks,
+                size_bytes=size_bytes,
+                doc_format=parsed.format,
+            )
+            self._incremental_index(new_chunks, replaced_count=len(removed))
+        else:
+            self._append_chunks(
+                parsed.filename,
+                new_chunks,
+                size_bytes=size_bytes,
+                doc_format=parsed.format,
+            )
+            self._rebuild_index()
         return self.documents[-1]
 
     def save(self, path: Path | None = None) -> Path:
@@ -247,6 +265,8 @@ class KnowledgeStore:
             "vector_backend": self.vector_backend,
             "chunk_config": self.chunk_config.to_dict(),
             "last_rebuilt_at": self.last_rebuilt_at,
+            "last_incremental_at": self.last_incremental_at,
+            "index_mode": self.index_mode,
         }
         save_json(target, payload)
         return target
@@ -268,6 +288,8 @@ class KnowledgeStore:
         if raw.get("chunk_config"):
             store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
         store.last_rebuilt_at = raw.get("last_rebuilt_at")
+        store.last_incremental_at = raw.get("last_incremental_at")
+        store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -323,6 +345,8 @@ class KnowledgeStore:
             "supported_formats": supported_formats(),
             "chunk_config": self.chunk_config.to_dict(),
             "last_rebuilt_at": self.last_rebuilt_at,
+            "last_incremental_at": self.last_incremental_at,
+            "index_mode": self.index_mode,
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,
@@ -359,6 +383,28 @@ class KnowledgeStore:
                 format=doc_format,
             )
         )
+
+    def _remove_document_by_source(self, filename: str) -> list[str]:
+        """移除同名文档及其 chunks，并从 Chroma 删除旧向量"""
+        removed_ids = [c.chunk_id for c in self.chunks if c.source == filename]
+        if not removed_ids:
+            return []
+
+        self._chroma_index().delete_by_ids(removed_ids)
+        self.documents = [d for d in self.documents if d.name != filename]
+        self.chunks = [c for c in self.chunks if c.source != filename]
+        self.chunks = [
+            TextChunk(
+                chunk_id=c.chunk_id,
+                text=c.text,
+                source=c.source,
+                index=i,
+                start_char=c.start_char,
+                end_char=c.end_char,
+            )
+            for i, c in enumerate(self.chunks)
+        ]
+        return removed_ids
 
     def _resolve_chroma_path(self) -> Path:
         if self.chroma_path is not None:
@@ -399,7 +445,51 @@ class KnowledgeStore:
         chroma = self._chroma_index()
         chroma.reset()
         chroma.upsert_chunks(self.chunks, vectors)
+        self.index_mode = INDEX_MODE_FULL
         self.invalidate_cache()
+
+    def _incremental_index(
+        self,
+        affected_chunks: list[TextChunk],
+        *,
+        replaced_count: int = 0,
+    ) -> bool:
+        """
+        增量更新 Chroma：不 reset collection，仅 upsert 受影响 chunk。
+
+        若 TF-IDF 词表扩张，则回退为全量 upsert（仍不 reset）。
+        返回是否发生词表扩张。
+        """
+        from rag.embedding_retriever import EmbeddingRetriever
+
+        if not self.chunks:
+            self.embedding_state = {}
+            self._chroma_index().reset()
+            self.last_incremental_at = _utc_now()
+            self.index_mode = INDEX_MODE_INCREMENTAL
+            self.invalidate_cache()
+            return False
+
+        old_vocab = dict(self.embedding_state.get("vocab") or {})
+        retriever = EmbeddingRetriever(self.chunks)
+        self.embedding_state = retriever._client.model.export_state()
+        new_vocab = dict(self.embedding_state.get("vocab") or {})
+        vocab_expanded = len(new_vocab) > len(old_vocab) and bool(old_vocab)
+
+        if vocab_expanded:
+            affected_chunks = list(self.chunks)
+
+        client = retriever._client
+        vectors = client.embed_batch([c.text for c in affected_chunks])
+        chroma = self._chroma_index()
+        if vocab_expanded:
+            # TF-IDF 维度变化时 Chroma collection 须重建
+            chroma.reset()
+        chroma.upsert_chunks(affected_chunks, vectors)
+        self.last_incremental_at = _utc_now()
+        self.index_mode = INDEX_MODE_INCREMENTAL
+        self.invalidate_cache()
+        return vocab_expanded
 
     def _build_rag_service(self) -> RAGContextService:
         if not self.chunks:

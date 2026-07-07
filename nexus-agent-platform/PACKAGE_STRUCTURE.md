@@ -1,7 +1,29 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.29.0（Day 29 Chroma 向量库）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-029
+**版本**：v0.30.0（Day 30 增量索引）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-030
+
+## Day 30 新增
+
+```
+src/rag/knowledge_incremental.py
+  IncrementalReport
+KnowledgeStore._incremental_index()
+KnowledgeStore._remove_document_by_source()
+chroma_store.delete_by_ids / delete_by_source
+src/day30/
+  incremental_demo.py
+  incremental_api_demo.py
+```
+
+## 双路径索引
+
+| 触发 | 方法 | Chroma |
+|------|------|--------|
+| POST /upload | `_incremental_index` | upsert only |
+| POST /rebuild | `_rebuild_index` | reset + upsert |
+
+`store.json` 新增 `last_incremental_at`、`index_mode`。
 
 ## Day 29 新增
 
@@ -23,39 +45,22 @@ src/day29/
 | store.json | data/knowledge/ | documents、chunks、TF-IDF 词表 |
 | Chroma | data/knowledge/chroma/ | 向量 + chunk metadata |
 
-`store.json` version 升至 **1.1**，新增 `vector_backend: chroma`。
+`store.json` version **1.1**，`vector_backend: chroma`。
 
 ## API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/knowledge/status` | 新增 vector_backend、chroma_path、chroma_count |
-
-rebuild / upload 流程不变，`_rebuild_index` 内部写入 Chroma。
+| GET | `/api/knowledge/status` | vector_backend、index_mode、chroma_count |
+| POST | `/api/knowledge/upload` | 增量索引，响应含 index_mode |
 
 ## Day 28 新增
 
 ```
 src/rag/knowledge_rebuild.py
-  collect_source_files()   # sample_docs + uploads
   rebuild_store()          # 全量清空再分块
-  rebuild_with_best_config()
-src/day28/
-  rebuild_demo.py
-  rebuild_api_demo.py
 ```
 
-## API
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/knowledge/rebuild` | 全量重建，可选 apply_best_config |
-
-`store.json` 新增 `last_rebuilt_at` 字段。
-
-## 重建源
-
-1. `data/knowledge/uploads/` — 用户上传  
-2. `day02/sample_docs/` — 内置样例（可 include_sample_docs=false 跳过）  
+| POST | `/api/knowledge/rebuild` | 全量重建 |
 
 同名文件 uploads 优先。

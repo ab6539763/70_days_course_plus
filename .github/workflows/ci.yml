@@ -261,6 +261,16 @@ jobs:
           python src/day29/phase3_chroma_review.py
           PYTHONPATH=src pytest tests/day29/ -q
 
+      - name: Day 30 Incremental indexing
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day30/incremental_demo.py
+          python src/day30/incremental_api_demo.py
+          python src/day30/phase3_incremental_review.py
+          PYTHONPATH=src pytest tests/day30/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

@@ -68,6 +68,8 @@ class KnowledgeStatusResponse(BaseModel):
     supported_formats: list[dict] = Field(default_factory=list)
     chunk_config: dict = Field(default_factory=dict)
     last_rebuilt_at: str | None = None
+    last_incremental_at: str | None = None
+    index_mode: str = "full"
     vector_backend: str = "chroma"
     chroma_path: str | None = None
     chroma_count: int = 0
@@ -133,4 +135,5 @@ class KnowledgeUploadResponse(BaseModel):
     document_count: int
     total_chunks: int
     sessions_cleared: int
+    index_mode: str = "incremental"
     message: str

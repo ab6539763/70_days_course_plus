@@ -86,4 +86,5 @@ Day 58-70  → 毕业设计、平台全功能上线
 - [x] Day 27：分块参数调优与检索质量 A/B 评估
 - [x] Day 28：知识库全量重建（rebuild）
 - [x] Day 29：Chroma 向量库持久化（替换 JSON 向量索引）
-- [ ] Day 30-70：持续更新中
+- [x] Day 30：增量索引（upload 增量 upsert Chroma）
+- [ ] Day 31-70：持续更新中

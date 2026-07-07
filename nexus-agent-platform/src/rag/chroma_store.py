@@ -4,7 +4,7 @@ Chroma 向量索引 — 持久化 chunk 向量与元数据
 将 Day 20–28 JSON 内嵌的向量索引迁移到 Chroma PersistentClient。
 TF-IDF 词表仍保存在 store.json 的 embedding 字段，仅向量落盘 Chroma。
 
-需求：ZL-NA-REQ-029
+需求：ZL-NA-REQ-029 / ZL-NA-REQ-030
 """
 
 from __future__ import annotations
@@ -94,7 +94,6 @@ class ChromaVectorIndex:
     ) -> int:
         """写入或更新 chunk 向量"""
         if not chunks:
-            self.reset()
             return 0
         if len(chunks) != len(vectors):
             raise ValueError("chunks 与 vectors 数量不一致")
@@ -118,6 +117,32 @@ class ChromaVectorIndex:
             documents=documents,
             metadatas=metadatas,
         )
+        return len(ids)
+
+    def delete_by_ids(self, ids: list[str]) -> int:
+        """按 chunk_id 删除向量（增量替换旧文档时使用）"""
+        if not ids:
+            return 0
+        collection = self._ensure_collection()
+        collection.delete(ids=ids)
+        return len(ids)
+
+    def delete_by_source(self, source: str) -> int:
+        """按 source 元数据删除某文档的全部向量"""
+        if not source:
+            return 0
+        collection = self._ensure_collection()
+        if collection.count() == 0:
+            return 0
+        try:
+            raw = collection.get(where={"source": source}, include=[])
+            ids = list(raw.get("ids") or [])
+        except Exception:
+            ids = []
+        if not ids:
+            collection.delete(where={"source": source})
+            return 0
+        collection.delete(ids=ids)
         return len(ids)
 
     def query(

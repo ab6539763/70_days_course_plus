@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030
 """
 
 from __future__ import annotations
@@ -170,5 +170,6 @@ async def upload_document(
         document_count=store.document_count,
         total_chunks=store.chunk_count,
         sessions_cleared=cleared,
-        message=f"文档已入库（{meta.format}），索引已更新",
+        index_mode=store.index_mode,
+        message=f"文档已入库（{meta.format}），增量索引已更新",
     )
