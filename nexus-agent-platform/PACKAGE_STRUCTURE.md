@@ -1,40 +1,32 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.26.0（Day 26 文档解析）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-026
+**版本**：v0.27.0（Day 27 分块调参）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-027
 
-## Day 26 新增
+## Day 27 新增
 
 ```
-src/tools/
-  doc_parser.py           # 统一解析入口 parse_bytes
-  parsers/
-    markdown_parser.py    # Markdown 结构解析
-    pdf_parser.py         # PDF 文本抽取 (pypdf)
-    text_parser.py        # 纯文本
 src/rag/
-  chunk_strategies.py     # fixed vs markdown 分块对比
-src/day26/
-  sample_docs/            # product_notice.md / .pdf
-  parse_demo.py
-  chunk_compare_demo.py
+  chunk_config.py      # ChunkConfig 与 PRESET_CONFIGS
+  retrieval_eval.py    # hit@1 评估、run_ab_experiment
+src/day27/
+  ab_experiment_demo.py
+  chunk_tune_api_demo.py
+  constants.py         # EVAL_QUERIES
 ```
 
-## 支持上传格式
+## API v0.27.0
 
-| 扩展名 | 解析器 | 默认分块 |
-|--------|--------|----------|
-| .txt | text_parser | fixed |
-| .md | markdown_parser | markdown (auto) |
-| .pdf | pdf_parser (pypdf) | fixed |
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/knowledge/chunk-config` | 当前默认分块参数 |
+| PUT | `/api/knowledge/chunk-config` | 更新后续上传使用的参数 |
+| POST | `/api/knowledge/evaluate` | A/B 预设评估，返回 best_config |
 
-## API v0.26.0
+`store.json` 新增 `chunk_config` 字段持久化。
 
-- `POST /api/knowledge/upload` — 支持 .txt / .md / .pdf
-- `GET /api/knowledge/status` — 含 `supported_formats`
+## 评估指标
 
-## 依赖
-
-```
-pip install -r requirements-api.txt  # 含 pypdf
-```
+- **hit_rate**：评估问句 top-1 块命中 `expect_any` 关键词的比例  
+- **avg_top_score**：top-1 余弦相似度均值  
+- **chunk_count**：该配置下的块数  

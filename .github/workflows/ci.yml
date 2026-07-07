@@ -231,6 +231,16 @@ jobs:
           python src/day26/parse_api_demo.py
           PYTHONPATH=src pytest tests/day26/ -q
 
+      - name: Day 27 Chunk tuning
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day27/ab_experiment_demo.py
+          python src/day27/chunk_tune_api_demo.py
+          python src/day27/phase3_tune_review.py
+          PYTHONPATH=src pytest tests/day27/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

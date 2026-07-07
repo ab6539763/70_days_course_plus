@@ -46,12 +46,26 @@
     }`;
   }
 
+  async function runEvaluate() {
+    const base = (global.NexusConfig && global.NexusConfig.apiBase) || "";
+    const res = await fetch(`${base}/api/knowledge/evaluate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ use_presets: true }),
+    });
+    if (!res.ok) {
+      throw new Error(`evaluate ${res.status}`);
+    }
+    return res.json();
+  }
+
   function bindPanel() {
     const panel = document.getElementById("kb-panel");
     const toggle = document.getElementById("kb-toggle");
     const statusEl = document.getElementById("kb-status");
     const fileInput = document.getElementById("kb-file");
     const uploadBtn = document.getElementById("kb-upload-btn");
+    const evalBtn = document.getElementById("kb-eval-btn");
     const msgEl = document.getElementById("kb-message");
 
     if (!panel) return;
@@ -97,6 +111,21 @@
       });
     }
 
+    if (evalBtn) {
+      evalBtn.addEventListener("click", async () => {
+        if (msgEl) msgEl.textContent = "评估中…";
+        try {
+          const result = await runEvaluate();
+          const best = result.best_config || {};
+          if (msgEl) {
+            msgEl.textContent = `推荐: ${best.name || "—"} size=${best.chunk_size} hit@1 实验完成`;
+          }
+        } catch (err) {
+          if (msgEl) msgEl.textContent = err.message || "评估失败";
+        }
+      });
+    }
+
     refresh();
   }
 
@@ -106,5 +135,5 @@
     bindPanel();
   }
 
-  global.NexusKnowledge = { fetchStatus, uploadFile, renderStatus };
+  global.NexusKnowledge = { fetchStatus, uploadFile, runEvaluate, renderStatus };
 })(window);

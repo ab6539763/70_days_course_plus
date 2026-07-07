@@ -66,6 +66,36 @@ class KnowledgeStatusResponse(BaseModel):
     store_path: str | None = None
     platform_version: str
     supported_formats: list[dict] = Field(default_factory=list)
+    chunk_config: dict = Field(default_factory=dict)
+
+
+class ChunkConfigRequest(BaseModel):
+    """PUT /api/knowledge/chunk-config"""
+
+    chunk_size: int = Field(200, ge=50, le=2000)
+    overlap: int = Field(40, ge=0, le=500)
+    strategy: str = Field("auto", pattern="^(auto|fixed|markdown)$")
+    name: str = Field("default", max_length=32)
+
+
+class ChunkConfigResponse(BaseModel):
+    chunk_size: int
+    overlap: int
+    strategy: str
+    name: str
+
+
+class EvaluateRequest(BaseModel):
+    """POST /api/knowledge/evaluate — 可选自定义配置列表"""
+
+    use_presets: bool = True
+    configs: list[ChunkConfigRequest] = Field(default_factory=list)
+
+
+class EvaluateResponse(BaseModel):
+    best_config: dict
+    results: list[dict]
+    eval_query_count: int
 
 
 class KnowledgeUploadResponse(BaseModel):

@@ -180,6 +180,21 @@ body {
   background: var(--brand-dark);
 }
 
+.kb-panel__eval {
+  margin-left: 8px;
+  padding: 6px 14px;
+  font-size: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+}
+
+.kb-panel__eval:hover {
+  background: #f3f4f6;
+}
+
 .kb-panel__message {
   margin: 8px 0 0;
   font-size: 0.75rem;

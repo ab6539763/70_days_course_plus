@@ -16,6 +16,7 @@ from typing import Any
 
 from core.paths import get_path
 from rag.chunker import TextChunk, chunk_documents, chunk_text
+from rag.chunk_config import DEFAULT_CHUNK_CONFIG, ChunkConfig
 from rag.chunk_strategies import chunk_from_parsed
 from rag.context import DocumentIndex, RAGContextService
 from rag.embedding_retriever import EmbeddingRetriever
@@ -25,7 +26,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.0"
-PLATFORM_VERSION = "0.26.0"
+PLATFORM_VERSION = "0.27.0"
 
 
 @dataclass
@@ -72,6 +73,7 @@ class KnowledgeStore:
     documents: list[KnowledgeDocument] = field(default_factory=list)
     chunks: list[TextChunk] = field(default_factory=list)
     embedding_state: dict[str, Any] = field(default_factory=dict)
+    chunk_config: ChunkConfig = field(default_factory=ChunkConfig)
     store_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
 
@@ -92,16 +94,27 @@ class KnowledgeStore:
     def invalidate_cache(self) -> None:
         self._rag_service = None
 
+    def get_chunk_config(self) -> ChunkConfig:
+        return ChunkConfig.from_dict(self.chunk_config.to_dict())
+
+    def set_chunk_config(self, config: ChunkConfig) -> ChunkConfig:
+        config.validate()
+        self.chunk_config = ChunkConfig.from_dict(config.to_dict())
+        return self.chunk_config
+
     def ingest_text(
         self,
         content: str,
         *,
         filename: str,
         clean: bool = True,
-        chunk_size: int = 200,
-        overlap: int = 40,
+        chunk_size: int | None = None,
+        overlap: int | None = None,
     ) -> KnowledgeDocument:
         """将文本写入知识库并重建索引"""
+        cfg = self.get_chunk_config()
+        cs = chunk_size if chunk_size is not None else cfg.chunk_size
+        ov = overlap if overlap is not None else cfg.overlap
         text = (content or "").strip()
         if not text:
             raise ValueError("文档内容不能为空")
@@ -120,8 +133,8 @@ class KnowledgeStore:
         )
         new_chunks = chunk_documents(
             [doc],
-            chunk_size=chunk_size,
-            overlap=overlap,
+            chunk_size=cs,
+            overlap=ov,
             use_cleaned=clean,
         )
         self._append_chunks(filename, new_chunks, size_bytes=doc.size_bytes)
@@ -170,18 +183,27 @@ class KnowledgeStore:
         from tools.doc_parser import parse_bytes
 
         parsed = parse_bytes(data, filename)
-        return self.ingest_parsed(parsed, clean=clean, chunk_strategy=chunk_strategy)
+        cfg = self.get_chunk_config()
+        return self.ingest_parsed(
+            parsed,
+            clean=clean,
+            chunk_strategy=chunk_strategy if chunk_strategy != "auto" else cfg.strategy,
+        )
 
     def ingest_parsed(
         self,
         parsed: ParsedDocument,
         *,
         clean: bool = True,
-        chunk_strategy: str = "auto",
-        chunk_size: int = 200,
-        overlap: int = 40,
+        chunk_strategy: str | None = None,
+        chunk_size: int | None = None,
+        overlap: int | None = None,
     ) -> KnowledgeDocument:
         """将 ParsedDocument 写入知识库"""
+        cfg = self.get_chunk_config()
+        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
+        cs = chunk_size if chunk_size is not None else cfg.chunk_size
+        ov = overlap if overlap is not None else cfg.overlap
         text = (parsed.plain_text or "").strip()
         if not text:
             raise ValueError("解析结果为空")
@@ -194,9 +216,9 @@ class KnowledgeStore:
 
         new_chunks = chunk_from_parsed(
             parsed,
-            strategy=chunk_strategy,
-            chunk_size=chunk_size,
-            overlap=overlap,
+            strategy=strategy,
+            chunk_size=cs,
+            overlap=ov,
         )
         size_bytes = len(parsed.plain_text.encode("utf-8"))
         self._append_chunks(
@@ -218,6 +240,7 @@ class KnowledgeStore:
             "documents": [d.to_dict() for d in self.documents],
             "chunks": [_chunk_to_dict(c) for c in self.chunks],
             "embedding": self.embedding_state,
+            "chunk_config": self.chunk_config.to_dict(),
         }
         save_json(target, payload)
         return target
@@ -235,6 +258,8 @@ class KnowledgeStore:
         ]
         store.chunks = [_chunk_from_dict(c) for c in raw.get("chunks", [])]
         store.embedding_state = dict(raw.get("embedding") or {})
+        if raw.get("chunk_config"):
+            store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
         store._rag_service = store._build_rag_service()
         return store
 
@@ -285,6 +310,7 @@ class KnowledgeStore:
             "store_path": str(self.store_path) if self.store_path else None,
             "platform_version": PLATFORM_VERSION,
             "supported_formats": supported_formats(),
+            "chunk_config": self.chunk_config.to_dict(),
         }
 
     def _append_chunks(

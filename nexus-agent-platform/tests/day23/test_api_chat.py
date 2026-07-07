@@ -31,7 +31,7 @@ def test_health(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
-    assert data["version"] == "0.26.0"
+    assert data["version"] == "0.27.0"
 
 
 def test_chat_faq_direct(client):
