@@ -68,6 +68,9 @@ class KnowledgeStatusResponse(BaseModel):
     supported_formats: list[dict] = Field(default_factory=list)
     chunk_config: dict = Field(default_factory=dict)
     last_rebuilt_at: str | None = None
+    vector_backend: str = "chroma"
+    chroma_path: str | None = None
+    chroma_count: int = 0
 
 
 class RebuildRequest(BaseModel):

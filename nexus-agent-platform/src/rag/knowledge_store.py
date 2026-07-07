@@ -19,14 +19,15 @@ from rag.chunker import TextChunk, chunk_documents, chunk_text
 from rag.chunk_config import DEFAULT_CHUNK_CONFIG, ChunkConfig
 from rag.chunk_strategies import chunk_from_parsed
 from rag.context import DocumentIndex, RAGContextService
-from rag.embedding_retriever import EmbeddingRetriever
+from rag.chroma_retriever import ChromaEmbeddingRetriever
+from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
 from tools.doc_reader import DocumentRecord, read_text_file
 from tools.parsers.base import ParsedDocument
 from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
-STORE_VERSION = "1.0"
-PLATFORM_VERSION = "0.28.0"
+STORE_VERSION = "1.1"
+PLATFORM_VERSION = "0.29.0"
 
 
 @dataclass
@@ -62,7 +63,7 @@ class KnowledgeDocument:
 @dataclass
 class KnowledgeStore:
     """
-    企业知识库 — 分块 + TF-IDF 向量索引 + JSON 持久化
+    企业知识库 — 分块 + Chroma 向量索引 + JSON 元数据持久化
 
     典型用法：
         store = KnowledgeStore.load_or_bootstrap()
@@ -73,9 +74,11 @@ class KnowledgeStore:
     documents: list[KnowledgeDocument] = field(default_factory=list)
     chunks: list[TextChunk] = field(default_factory=list)
     embedding_state: dict[str, Any] = field(default_factory=dict)
+    vector_backend: str = VECTOR_BACKEND
     chunk_config: ChunkConfig = field(default_factory=ChunkConfig)
     last_rebuilt_at: str | None = None
     store_path: Path | None = None
+    chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
 
     @property
@@ -241,6 +244,7 @@ class KnowledgeStore:
             "documents": [d.to_dict() for d in self.documents],
             "chunks": [_chunk_to_dict(c) for c in self.chunks],
             "embedding": self.embedding_state,
+            "vector_backend": self.vector_backend,
             "chunk_config": self.chunk_config.to_dict(),
             "last_rebuilt_at": self.last_rebuilt_at,
         }
@@ -260,9 +264,11 @@ class KnowledgeStore:
         ]
         store.chunks = [_chunk_from_dict(c) for c in raw.get("chunks", [])]
         store.embedding_state = dict(raw.get("embedding") or {})
+        store.vector_backend = str(raw.get("vector_backend") or VECTOR_BACKEND)
         if raw.get("chunk_config"):
             store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
         store.last_rebuilt_at = raw.get("last_rebuilt_at")
+        store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
 
@@ -298,9 +304,11 @@ class KnowledgeStore:
             )
         store.chunks = list(rag.index.chunks)
         retriever = rag.index.retriever
+        from rag.embedding_retriever import EmbeddingRetriever
+
         if isinstance(retriever, EmbeddingRetriever):
             store.embedding_state = retriever._client.model.export_state()
-        store._rag_service = rag
+        store._rebuild_index()
         return store
 
     def status_dict(self) -> dict[str, Any]:
@@ -315,6 +323,9 @@ class KnowledgeStore:
             "supported_formats": supported_formats(),
             "chunk_config": self.chunk_config.to_dict(),
             "last_rebuilt_at": self.last_rebuilt_at,
+            "vector_backend": self.vector_backend,
+            "chroma_path": str(self._resolve_chroma_path()),
+            "chroma_count": self._chroma_index().count() if self.chunks else 0,
         }
 
     def _append_chunks(
@@ -349,25 +360,58 @@ class KnowledgeStore:
             )
         )
 
+    def _resolve_chroma_path(self) -> Path:
+        if self.chroma_path is not None:
+            return self.chroma_path
+        if self.store_path is not None:
+            return self.store_path.parent / "chroma"
+        return get_path("knowledge_chroma")
+
+    def _chroma_index(self) -> ChromaVectorIndex:
+        return ChromaVectorIndex(self._resolve_chroma_path())
+
+    def _sync_chroma_from_json(self) -> None:
+        """从 JSON 元数据恢复 Chroma（迁移或冷启动）"""
+        if not self.chunks or not self.embedding_state:
+            return
+        chroma = self._chroma_index()
+        if chroma.count() > 0:
+            return
+        from rag.embedding import EmbeddingClient
+
+        client = EmbeddingClient()
+        client.model.load_state(self.embedding_state)
+        vectors = client.embed_batch([c.text for c in self.chunks])
+        chroma.upsert_chunks(self.chunks, vectors)
+
     def _rebuild_index(self) -> None:
+        from rag.embedding_retriever import EmbeddingRetriever
+
+        if not self.chunks:
+            self.embedding_state = {}
+            self._chroma_index().reset()
+            self.invalidate_cache()
+            return
+
         retriever = EmbeddingRetriever(self.chunks)
         self.embedding_state = retriever._client.model.export_state()
+        vectors = retriever._client.embed_batch([c.text for c in self.chunks])
+        chroma = self._chroma_index()
+        chroma.reset()
+        chroma.upsert_chunks(self.chunks, vectors)
         self.invalidate_cache()
 
     def _build_rag_service(self) -> RAGContextService:
         if not self.chunks:
             return RAGContextService()
 
-        retriever = EmbeddingRetriever()
-        retriever._client.model.load_state(self.embedding_state)
-        texts = [c.text for c in self.chunks]
-        vectors = retriever._client.embed_batch(texts)
-        from rag.embedding_retriever import IndexedChunk
+        from rag.embedding import EmbeddingClient
 
-        retriever._indexed = [
-            IndexedChunk(chunk=chunk, vector=vec)
-            for chunk, vec in zip(self.chunks, vectors)
-        ]
+        client = EmbeddingClient()
+        client.model.load_state(self.embedding_state)
+        self._sync_chroma_from_json()
+        chroma = self._chroma_index()
+        retriever = ChromaEmbeddingRetriever(self.chunks, chroma, client=client)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 

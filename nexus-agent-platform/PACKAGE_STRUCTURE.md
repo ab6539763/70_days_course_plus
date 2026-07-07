@@ -1,7 +1,37 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.28.0（Day 28 知识库重建）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-028
+**版本**：v0.29.0（Day 29 Chroma 向量库）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-029
+
+## Day 29 新增
+
+```
+src/rag/chroma_store.py
+  ChromaVectorIndex      # PersistentClient 封装
+  upsert_chunks / query / reset
+src/rag/chroma_retriever.py
+  ChromaEmbeddingRetriever
+src/day29/
+  chroma_demo.py
+  chroma_api_demo.py
+```
+
+## 双存储
+
+| 组件 | 路径 | 内容 |
+|------|------|------|
+| store.json | data/knowledge/ | documents、chunks、TF-IDF 词表 |
+| Chroma | data/knowledge/chroma/ | 向量 + chunk metadata |
+
+`store.json` version 升至 **1.1**，新增 `vector_backend: chroma`。
+
+## API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/knowledge/status` | 新增 vector_backend、chroma_path、chroma_count |
+
+rebuild / upload 流程不变，`_rebuild_index` 内部写入 Chroma。
 
 ## Day 28 新增
 

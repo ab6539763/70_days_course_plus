@@ -251,6 +251,16 @@ jobs:
           python src/day28/phase3_rebuild_review.py
           PYTHONPATH=src pytest tests/day28/ -q
 
+      - name: Day 29 Chroma vector store
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day29/chroma_demo.py
+          python src/day29/chroma_api_demo.py
+          python src/day29/phase3_chroma_review.py
+          PYTHONPATH=src pytest tests/day29/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

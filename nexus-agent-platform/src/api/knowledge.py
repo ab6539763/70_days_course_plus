@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029
 """
 
 from __future__ import annotations
@@ -133,7 +133,7 @@ async def upload_document(
     file: UploadFile = File(..., description="企业文档 (.txt / .md / .pdf)"),
 ) -> KnowledgeUploadResponse:
     """
-    上传企业文档到知识库：解析 → 落盘 → 分块 → TF-IDF 索引 → 持久化 JSON。
+    上传企业文档到知识库：解析 → 落盘 → 分块 → Chroma 向量索引 → 持久化。
 
     Day 26 起支持 Markdown 与 PDF。上传成功后清除服务端会话。
     """
