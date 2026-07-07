@@ -75,4 +75,5 @@ Day 58-70  → 毕业设计、平台全功能上线
 - [x] Day 16：API 参数详解、llm/streaming 流式输出
 - [x] Day 17：Prompt 基础、prompts 模板库
 - [x] Day 18：Prompt 进阶、意图分类器与自动路由
-- [ ] Day 19-70：持续更新中
+- [x] Day 19：RAG 检索入门、文档分块与关键词检索
+- [ ] Day 20-70：持续更新中

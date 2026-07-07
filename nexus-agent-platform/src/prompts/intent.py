@@ -41,6 +41,7 @@ INTENT_PRIORITY: tuple[str, ...] = (
 )
 
 ContextProvider = Callable[[], str]
+QueryContextProvider = Callable[[str], str]
 
 
 @dataclass
@@ -132,12 +133,14 @@ class IntentRouter:
         registry: PromptRegistry | None = None,
         company: str = "智链科技",
         context_provider: ContextProvider | None = None,
+        query_context_provider: QueryContextProvider | None = None,
         default_product: str = "稳健增值系列产品",
     ) -> None:
         self.classifier = classifier or RuleBasedIntentClassifier()
         self.registry = registry or default_registry
         self.company = company
         self.context_provider = context_provider
+        self.query_context_provider = query_context_provider
         self.default_product = default_product
 
     def classify(self, text: str) -> IntentMatch:
@@ -150,7 +153,7 @@ class IntentRouter:
         text = match.user_text
 
         if name == "rag_qa":
-            context = self.context_provider() if self.context_provider else "（暂无检索上下文）"
+            context = self._resolve_rag_context(text)
             return {**base, "context": context}
         if name == "doc_summary":
             return {**base, "max_points": "3", "document": text}
@@ -159,6 +162,14 @@ class IntentRouter:
         if name == "product_faq":
             return {**base, "product_name": self.default_product}
         return base
+
+    def _resolve_rag_context(self, query: str) -> str:
+        """按优先级解析 RAG 上下文：query 感知 > 静态 provider > 默认占位"""
+        if self.query_context_provider:
+            return self.query_context_provider(query)
+        if self.context_provider:
+            return self.context_provider()
+        return "（暂无检索上下文）"
 
     def route_and_apply(self, assistant, user_text: str) -> IntentMatch:
         """

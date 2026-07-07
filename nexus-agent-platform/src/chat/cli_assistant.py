@@ -4,7 +4,7 @@
 整合 ChatMessage、MessageHistoryService、ResilientLLMClient，
 提供可交互的多轮对话 CLI。
 
-需求：ZL-NA-REQ-014 / ZL-NA-REQ-015 / ZL-NA-REQ-017 / ZL-NA-REQ-018
+需求：ZL-NA-REQ-014 / ZL-NA-REQ-015 / ZL-NA-REQ-017 / ZL-NA-REQ-018 / ZL-NA-REQ-019
 
 运行：
     NEXUS_LLM_MOCK=1 python3 src/chat/cli_assistant.py
@@ -33,6 +33,7 @@ from prompts import (
     PromptTemplate,
     default_registry,
 )
+from rag.context import RAGContextService
 from services import MessageHistory
 
 # 内置斜杠命令
@@ -47,6 +48,7 @@ COMMANDS = {
     "/tokens": "查看会话 token 用量与估算费用",
     "/template": "切换 Prompt 模板（/template 名称 或 /template list）",
     "/route": "意图分类预览（/route 用户话术）",
+    "/retrieve": "RAG 检索预览（/retrieve 查询词）",
 }
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -75,6 +77,7 @@ class ChatAssistant:
         template_variables: dict[str, str] | None = None,
         intent_router: IntentRouter | None = None,
         auto_route: bool = False,
+        rag_service: RAGContextService | None = None,
     ) -> None:
         self.history = history or MessageHistory()
         self.history_path = history_path or get_path("chat_session")
@@ -89,6 +92,7 @@ class ChatAssistant:
         self.template_variables = dict(template_variables or {"company": "智链科技"})
         self.intent_router = intent_router
         self.auto_route = auto_route
+        self.rag_service = rag_service
         self._last_intent = None
         self._running = False
         self._init_system_prompt(system_prompt)
@@ -198,6 +202,12 @@ class ChatAssistant:
             query = arg or "请帮我总结这份文档要点"
             match = self.intent_router.classify(query)
             return True, match.summary(), False
+
+        if cmd == "/retrieve":
+            if not self.rag_service:
+                return True, "RAG 检索未启用。请传入 rag_service。", False
+            query = arg or "年化收益率"
+            return True, self.rag_service.retrieve_summary(query), False
 
         return True, f"未知命令 {cmd}，输入 /help 查看帮助。", False
 

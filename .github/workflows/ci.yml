@@ -138,6 +138,19 @@ jobs:
           NEXUS_LLM_MOCK: "1"
         run: python src/day18/routed_assistant_demo.py
 
+      - name: Run RAG chunk and retriever demos
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day19/chunk_demos.py
+          python src/day19/retriever_demos.py
+          python src/day19/rag_context_demo.py
+
+      - name: Run routed RAG demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day19/routed_rag_demo.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v
