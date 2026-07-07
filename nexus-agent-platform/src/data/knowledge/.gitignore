@@ -1,0 +1,3 @@
+store.json
+uploads/*
+!uploads/.gitkeep
