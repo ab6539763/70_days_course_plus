@@ -13,19 +13,36 @@ from llm.token_counter import (
     estimate_tokens,
 )
 
+from llm.streaming import (
+    StreamAccumulator,
+    StreamChunk,
+    StreamCompletionResult,
+    StreamingLLMClient,
+    build_stream_request_body,
+    parse_sse_line,
+    parse_stream_chunk,
+)
+
 __all__ = [
     "LLMClient",
     "ResilientLLMClient",
+    "StreamingLLMClient",
     "LLMEnvConfig",
     "ChatCompletionResult",
+    "StreamCompletionResult",
+    "StreamChunk",
+    "StreamAccumulator",
     "RetryPolicy",
     "TokenCounter",
     "TokenSessionTracker",
     "TokenUsage",
     "build_request_body",
+    "build_stream_request_body",
     "default_transport",
     "load_llm_env",
     "parse_chat_completion",
+    "parse_sse_line",
+    "parse_stream_chunk",
     "retry",
     "api_retry",
     "with_timeout",
