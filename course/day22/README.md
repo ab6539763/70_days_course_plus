@@ -1,0 +1,153 @@
+# Day 22 课件索引
+
+**日期**：2026-07-27（星期一）  
+**主题**：前端速成 / 静态聊天页面  
+**需求**：ZL-NA-REQ-022  
+**里程碑**：Phase 2 / Sprint 3 第八日（Day 15–24）
+
+## Sprint 3 进度
+
+昨日完成工具注册表与 `ChatOrchestrator` 编排，今日在 `frontend/` 搭建 **HTML + CSS + JavaScript** 静态聊天页，`mock.js` 对齐 `handle_message` 返回契约，为 Day 23 FastAPI `POST /api/chat` 铺路。
+
+- Day 15 Token → Day 16 流式 → Day 17 Prompt → Day 18 意图 → Day 19 RAG → Day 20 Embedding → Day 21 工具编排 → **Day 22 静态聊天 UI**
+- Day 23 FastAPI Chat REST API `src/api/chat.py`……
+
+## 配套代码
+
+```bash
+# 浏览器预览
+cd frontend
+python3 -m http.server 8080
+# 打开 http://localhost:8080
+
+# 平台侧演示与审计
+cd nexus-agent-platform
+export PYTHONPATH=src
+python3 src/day22/frontend_audit.py
+python3 src/day22/mock_bridge_demo.py
+python3 src/day22/html_demos.py
+
+# 单元测试（12 项）
+python3 -m pytest tests/day22/test_frontend.py -v
+```
+
+## 今日交付物
+
+- [x] `frontend/index.html` — 页面骨架与无障碍属性
+- [x] `frontend/style.css` — 用户/助手气泡、FAQ/路由标签
+- [x] `frontend/app.js` — 发送、渲染、`parseReply`
+- [x] `frontend/mock.js` — 本地 Mock，对齐编排器输出
+- [x] `frontend/README.md` — 快速开始
+- [x] `src/day22/frontend_audit.py`、`mock_bridge_demo.py`、`html_demos.py`
+- [x] `tests/day22/test_frontend.py`（12 tests）
+- [x] Day 22 全套课件（29 篇 + 本 README）
+
+## 上下文链
+
+```
+Day 21 ChatOrchestrator.handle_message → Day 22 mock.js 复现前缀
+Day 22 静态页 → Day 23 src/api/chat.py 对接真实编排器
+Day 22 useMock:true → Day 23 NexusMock.useMock:false + fetch
+```
+
+## 课件导航
+
+| 序号 | 文件 | 用途 |
+|------|------|------|
+| 00 | [旁白解读](00_旁白解读.md) | 前端速成故事线 |
+| 01-04 | 背景 / 需求 / 架构 / 流程图 | 企业情境与设计 |
+| 05-07 | 课堂笔记 / 晚自习 | 当日节奏 |
+| 08-09 | 作业与答案 | 课后巩固 |
+| 10 | [前端验收清单](10_前端验收清单.md) | 教师版检查表 |
+| 11 | [静态聊天页详解](11_静态聊天页详解.md) | 深度专题 |
+| 12-14 | 练习册 / 现代前端扩展 / 企业案例 | 扩展阅读 |
+| 15-21 | 实录 / 卡片 / 速查 / Day21 对照 / 补充 / 走查 / 竞赛 | 讲师与学生工具 |
+| 22-26 | Mock 契约讲义 / 无障碍实践 / Sprint3 回顾 / mock.js 精读 / Lab | Phase 2 纵深 |
+| 27 | [Day23 预习](27_Day23_FastAPI预习.md) | 明日 REST API 预告 |
+
+## 关键设计决策
+
+1. **零构建链**：纯静态文件 + `python3 -m http.server`，降低 Day 22 环境门槛
+2. **契约优先**：`mock.js` 输出 `[FAQ 直答·xx%]` 与 `[路由: template]` 前缀，与后端一致
+3. **单一切换点**：`NexusMock.useMock` 控制 Mock / API，Day 23 只改一处
+4. **结构审计**：`frontend_audit.py` + `test_frontend.py` 十二项 CI 守护
+5. **可访问性基线**：`aria-live`、`visually-hidden` label、键盘 Enter 发送
+
+## Day 23 预告
+
+明日 **FastAPI Chat REST API**：在 `src/api/chat.py` 暴露 `POST /api/chat`，内部调用 `ChatOrchestrator.handle_message`，前端 `useMock: false`。详见 [27_Day23_FastAPI预习.md](27_Day23_FastAPI预习.md)。
+
+---
+
+## 本日学习成效自检（智链科技培训组）
+
+完成 Day 22 后，学员应能够：（1）用 `http.server` 本地预览聊天页；（2）解释 `mock.js` 与 `handle_message` 的格式对齐；（3）口述 `app.js` 中 `parseReply` 三种 kind；（4）通过 `pytest tests/day22/test_frontend.py` 全部十二项；（5）修改 CSS 区分 FAQ 与路由标签。若五项中有两项未达成，请重修 11_ 详解与 26_ Lab。林晓、陈默、赵岩、周航四人组叙事贯穿课件。Sprint 3 剩余两日将聚焦 API 与完整 Web，请保持 `handle_message` 契约在心中——它是浏览器与后端之间的共同语言。
+
+### 课件统计与使用说明
+
+本目录共三十个文件（二十九篇正文 + 本 README），中文总字数逾三万，配套代码位于仓库 `frontend/` 与 `nexus-agent-platform/src/day22/`。建议学习路径：晨读 00_ 旁白 → 上午 11_ 详解与 Lab → 下午浏览器实操 → 晚间 08_ 作业。教师授课使用 10_ 验收清单、15_ 实录、19_ 补充阅读；学员复习使用 16_ 卡片、17_ 速查、24_ 阶段回顾。所有 mermaid 图可在支持渲染的 Markdown 预览器中查看。智链科技培训组祝各位 Day 22 学习顺利，明日见 FastAPI。
+
+**版权与反馈**：课件内容以仓库最新版为准；发现与代码不一致处请提 Issue 标注 ZL-NA-REQ-022。作业提交截止时间为 Day 23 上午 09:00 课前。
+
+**Day 22 核心命令再抄一遍**：`cd frontend && python3 -m http.server 8080`；`cd nexus-agent-platform && export PYTHONPATH=src`；`python3 src/day22/frontend_audit.py`；`python3 src/day22/mock_bridge_demo.py`；`python3 -m pytest tests/day22/test_frontend.py -v`。五条命令全部成功，即达到智链科技内训部定义的「Day 22 机检合格」。
+
+**致谢**：感谢赵岩产品团队提供 UI 文案与合规示例问句，感谢周航将 `test_frontend.py` 纳入 CI，感谢林晓在内测班反馈加载态与无障碍细节，感谢陈默冻结 Mock 与 API 返回字段。Sprint 3 最后两日见。
+
+**文档版本**：2026-07-27 v1.0 首发，对应 NexusAgent 平台 Day 22 交付。
+
+本 README 索引二十九篇正文：从 00_ 旁白到 27_ Day23 预习，覆盖需求、架构、实验、验收、案例与竞赛。按序号通读约需六至八小时；配合实操 Lab 约需一个完整工作日。智链科技 NexusAgent 七十天培训，天天有交付，日日可验证。第二十二日完稿。
+
+> 课件寄语：页面为窗，Mock 为桥；契约为绳，API 为门。门后是用户看得见的 NexusAgent。林晓加油。陈默赵岩周航同在。
+
+## 智链科技 NexusAgent Day 22 扩展读本（培训部）
+
+### 关于前端速成在七十天路线图中的坐标
+
+NexusAgent 七十天培训并非要把每位学员都培养成专业前端工程师，而是要在 Sprint 3 的关键节点上建立**浏览器视角**。当林晓在 Day 15 调试 Token 计数时，她面对的是 Python 解释器里的整数；当她在 Day 22 调试聊天气泡时，她面对的是 DOM 树里的节点。这两种视角的差异，正是全栈工程师需要跨越的鸿沟。陈默在架构评审中反复强调：Day 22 的代码量不足三百行，但其象征意义是「用户可见交付」的起点。赵岩从产品经理角度补充：内测用户并不关心你用了 ToolRegistry 还是 EmbeddingRetriever，他们只关心输入问题后三秒内能否看到清晰、可信、带来源提示的回答。周航则从工程角度指出：静态页虽然没有后端逻辑，却同样纳入 CI，这说明在智链科技，**一切用户触达面都是产品面**。
+
+### HTML 语义与可维护性
+
+很多初学者倾向于用 div 包裹一切。Day 22 的 index.html 刻意使用 header、main、footer，是为了让六个月后的自己在 Code Review 时一眼看出页面骨架。main 元素上的 role="main" 在语义 HTML 中通常冗余，但在部分读屏软件组合下仍能提供额外保障。form 元素包裹输入区而非散落的 input 与 button，是为了让 Enter 键提交成为浏览器默认行为的一部分，app.js 中的 requestSubmit 则是对这一行为的增强而非替代。林晓在练习中曾把 footer 改成 div，样式未变，但陈默在 Review 中要求改回，理由是「语义是文档契约，不只服务于当日样式」。
+
+### CSS 变量与主题扩展
+
+:root 中的 CSS 自定义属性是 Day 22 最重要的扩展点之一。品牌色、文字色、圆角、阴影均集中定义，使得智链科技未来若统一升级 VI，只需修改变量表。学员在作业 E 中修改 --brand 时，应同时检查 :focus 状态的 box-shadow 是否仍使用 rgba(26, 86, 219, 0.15) 硬编码；若是，可选地将焦点环颜色也变量化，作为加分项。深色模式在金融行业后台并不少见，但 Day 22 不要求实现；可在 13_ 深度扩展中阅读 prefers-color-scheme 方案，作为 Sprint 4 选修。
+
+### JavaScript 异步与用户体验
+
+mock.js 中的 await delay(350) 不是装饰。没有延迟时，loading 元素几乎无法被肉眼捕捉，用户会怀疑「是否真在处理」。产品心理学上，适度的等待暗示系统在工作；但超过一秒又会引发焦虑。350 毫秒是智链科技 UX 小组在内测中的折中值。app.js 在 finally 块中调用 inputEl.focus()，保证连续对话时键盘流不中断，这对高频客服场景尤为重要。错误处理 catch 分支将 err.message 渲染为 bot 气泡，避免静默失败；Day 23 接 API 后，网络错误与 500 错误将走同一通道，学员应思考是否要区分「网络不可用」与「服务器错误」的文案。
+
+### Mock 规则与真实业务的差距
+
+必须向学员坦白：mock.js 中的正则规则是**教学简化**，不能等同于 SimilarQuestionMatcher 的向量相似度。FAQ 规则用「风险|有风险」匹配，而后端可能对「有没有风险」「风险大吗」给出不同 score。mock_bridge_demo.py 的价值正在于并排展示这种差距。运营人员若只看浏览器 Mock 做合规签字，是错误的；应看 Day 23 接真后端后的输出。培训部在 14_ 企业案例中记录了「Mock 与生产混淆」的教训，要求演示前 status-badge 必须显示 Mock 模式。
+
+### parseReply 的正则与国际化
+
+当前路由正则假定中文前缀「路由:」。若未来引入英文界面，parseReply 需重构为可配置前缀表。这是陈默在架构备忘中记录的 Day 30 技术债。学员在作业 C 中扩展 system 类前缀时，应使用 startsWith 而非随意正则，保持与 FAQ 分支一致的可读性。meta 字段目前由 mock 返回、app.js 原样展示；Day 23 API 可由服务端计算 meta，减轻前端解析负担。
+
+### 测试哲学：静态审计的价值
+
+test_frontend.py 不启动浏览器，被部分学员质疑「不测真交互」。周航的解释是：结构契约比像素位置更稳定，CI 应在十秒内反馈。E2E 测试成本高，留给 Day 24 集成阶段。静态审计能捕获「删了 mock.js」「改错 id」类低级错误，这类错误在四十人教学中出现频率极高。frontend_audit.py 与测试共用 constants.py，体现单源真相原则，与 Day 21 工具层设计一脉相承。
+
+### 安全与合规提示
+
+静态页通过 http.server 提供时，无 HTTPS，仅限内网教学。不得在公网暴露未鉴权的 Mock 聊天页并宣称是生产系统。输入 maxlength=2000 是简单防护，后端 Day 23 须再次校验长度。XSS 方面，app.js 使用 textContent 而非 innerHTML 插入用户消息，是正确做法；若学员作业改为 innerHTML，讲师应坚决制止。
+
+### 与 ChatOrchestrator 的字段级对照
+
+handle_message 在 FAQ 命中时返回单一字符串，不返回 JSON。Day 23 API 层将承担「字符串 → 结构化响应」的职责。kind 字段在 Day 22 由 mock 显式返回，在 app.js 中 parseReply 也会推断 kind；存在冗余，但有利于 API 直接返回 kind 时跳过解析。陈默建议 Day 23 服务端根据 reply 前缀填充 kind，与前端 parseReply 逻辑保持同步，可抽取共享文档而非共享代码（前后端语言不同）。
+
+### 团队协作情景练习
+
+设想四人组接到紧急任务：明早九点向投资人演示。林晓负责确认 http.server 与端口；陈默负责 mock_bridge 对照无异常偏差；赵岩准备三条标准问句与话术；周航在 CI 打 green 标签。今晚任何人改 frontend 须通知全组。这种协作模式模拟真实 Sprint，是培训部除技术外的隐性目标。
+
+### 常见面试题延伸（内部晋升参考）
+
+1. 为何 script 标签放 body 底？—— 传统上避免阻塞解析；现代 defer 亦可。  
+2. 如何用 fetch 实现超时？—— AbortController。  
+3. 同域与 CORS？—— Day 23 重点。  
+4. 无障碍 aria-live 的 polite 与 assertive？—— polite 不打断朗读。  
+
+### 结语
+
+Day 22 看似「只是几个静态文件」，实则是 NexusAgent 从工程师工具到用户产品的闸门。掌握 HTML 结构、CSS 布局、JS 事件、Mock 契约四要素，等于掌握明日 FastAPI 集成的语言。请林晓、陈默、赵岩、周航与全体学员带着「让用户看见编排器」的信念完成今日作业与预习。智链科技培训组，二零二六年七月二十七日。
