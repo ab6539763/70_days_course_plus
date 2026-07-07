@@ -201,6 +201,16 @@ jobs:
           python src/day23/api_health_demo.py
           python src/day23/api_chat_demo.py
 
+      - name: Day 24 Sprint 3 integration
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day24/sprint3_launch.py
+          python src/day24/e2e_smoke.py
+          python src/day24/sprint3_demo.py
+          python src/day24/sprint3_review.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

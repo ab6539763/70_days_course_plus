@@ -98,20 +98,36 @@
    * Day 23 API 占位 — 保持 app.js 切换点单一
    */
   async function sendMessageApi(text) {
-    const base = (window.NexusConfig && window.NexusConfig.apiBase) || "";
+    const base = (global.NexusConfig && global.NexusConfig.apiBase) || "";
+    const sessionId =
+      global.NexusSession && global.NexusSession.getSessionId
+        ? global.NexusSession.getSessionId()
+        : undefined;
+
     const res = await fetch(`${base}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, session_id: sessionId }),
     });
+
     if (!res.ok) {
-      throw new Error(`API 错误: ${res.status}`);
+      const payload =
+        global.NexusErrors && global.NexusErrors.parseErrorResponse
+          ? await global.NexusErrors.parseErrorResponse(res)
+          : {};
+      const msg =
+        global.NexusErrors && global.NexusErrors.mapApiError
+          ? global.NexusErrors.mapApiError(res.status, payload)
+          : `API 错误: ${res.status}`;
+      throw new Error(msg);
     }
+
     const data = await res.json();
     return {
       reply: data.reply || "",
       meta: data.meta || "API",
       kind: data.kind || "api",
+      session_id: data.session_id,
     };
   }
 

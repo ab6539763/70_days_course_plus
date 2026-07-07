@@ -1,24 +1,28 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.23.0（Day 23 api）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-023
+**版本**：v0.24.0（Day 24 Sprint 3 整合）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-024
 
 ## 仓库根目录（Day 22+）
 
 ```
-frontend/           # 静态聊天页（HTML/CSS/JS，Day 22+）
+frontend/           # 静态聊天页（HTML/CSS/JS，Day 22–24）
   index.html
   config.js         # Day 23 API/Mock 切换
+  session.js        # Day 24 localStorage 会话 ID
+  errors.js         # Day 24 统一 API 错误文案
   ...
+scripts/
+  sprint3_demo.sh   # Day 24 投资人演示冒烟脚本
 ```
 
 ## 生产层目录（长期演进）
 
 ```
 src/
-├── api/            # FastAPI HTTP 层（Day 23+）
+├── api/            # FastAPI HTTP 层（Day 23–24）
 │   ├── app.py      # 应用入口、CORS、静态托管
-│   ├── chat.py     # POST /api/chat
+│   ├── chat.py     # POST /api/chat、POST /api/session/reset
 │   ├── schemas.py  # Pydantic 模型
 │   └── sessions.py # 会话管理
 ├── core/           # 异常、路径、引导 — 全平台基础设施
@@ -48,7 +52,8 @@ src/
 │   ├── doc_reader.py
 │   ├── tool_registry.py
 │   └── executor.py
-└── day01..dayXX/   # 教学实验代码（保留，不删）
+├── day23/          # Day 23 API 演示与 run_server
+└── day24/          # Day 24 Sprint 3 整合（launch、e2e_smoke、demo、review）
 ```
 
 ## 依赖方向
@@ -58,6 +63,7 @@ dayXX  →  services  →  models  →  core
               ↓           ↓
             utils  ←──────┘
 llm/chat/tools  →  models, core, utils
+api/  →  chat/, sessions, schemas
 ```
 
 **禁止**：`core` / `models` import `dayXX` 或 `services` 反向依赖 `dayXX`。
@@ -66,11 +72,21 @@ llm/chat/tools  →  models, core, utils
 
 统一在 `core/paths.py` 的 `PATHS` 字典注册，逐步替代各 day 内 constants。
 
-## 异常映射（预告 Day 23）
+## 异常映射
 
-| 异常 | HTTP |
-|------|------|
-| ModelValidationError | 400 |
-| ConfigError | 500 |
-| StorageError | 500 |
-| JsonParseError | 400 |
+| 异常 | HTTP | 前端 errors.js |
+|------|------|----------------|
+| Pydantic 校验失败 | 422 | 输入无效，请检查消息后重试 |
+| ModelValidationError | 400 | 请求失败 |
+| ConfigError | 500 | 服务配置异常 |
+| APIError | 502 | 大模型服务繁忙 |
+| StorageError | 500 | 服务异常 |
+
+## Day 24 启动
+
+```bash
+cd nexus-agent-platform
+export PYTHONPATH=src NEXUS_LLM_MOCK=1
+python3 src/day24/sprint3_launch.py --serve
+# http://127.0.0.1:8000
+```

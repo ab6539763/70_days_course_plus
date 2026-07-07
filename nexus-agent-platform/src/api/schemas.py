@@ -42,3 +42,16 @@ class ErrorResponse(BaseModel):
 
     detail: str
     code: str = "ERROR"
+
+
+class SessionResetRequest(BaseModel):
+    """POST /api/session/reset"""
+
+    session_id: str = Field(..., min_length=1, max_length=64)
+
+
+class SessionResetResponse(BaseModel):
+    """会话重置结果"""
+
+    session_id: str
+    cleared: bool

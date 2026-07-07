@@ -9,12 +9,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from api.response_parser import classify_reply
-from api.schemas import ChatRequest, ChatResponse, HealthResponse
+from api.schemas import ChatRequest, ChatResponse, HealthResponse, SessionResetRequest, SessionResetResponse
 from api.sessions import SessionManager, session_manager
 from chat.orchestrator import ChatOrchestrator
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.23.0"
+API_VERSION = "0.24.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -61,6 +61,16 @@ def chat(
         kind=kind,
         session_id=session_id,
     )
+
+
+@router.post("/session/reset", response_model=SessionResetResponse)
+def reset_session(
+    body: SessionResetRequest,
+    manager: SessionManager = Depends(get_session_manager),
+) -> SessionResetResponse:
+    """清除服务端会话编排器（新对话时调用）"""
+    cleared = manager.clear(body.session_id)
+    return SessionResetResponse(session_id=body.session_id, cleared=cleared)
 
 
 def _http_from_nexus(exc: NexusError, *, status_code: int):

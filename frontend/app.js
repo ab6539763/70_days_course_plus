@@ -1,7 +1,7 @@
 /**
  * NexusAgent Day 22 — 静态聊天页交互逻辑
  *
- * 需求：ZL-NA-REQ-022
+ * 需求：ZL-NA-REQ-022 / ZL-NA-REQ-024
  */
 
 (function () {
@@ -12,6 +12,9 @@
   const inputEl = document.getElementById("user-input");
   const sendBtn = document.getElementById("send-btn");
   const loadingEl = document.getElementById("loading");
+  const badgeEl = document.getElementById("status-badge");
+  const newChatBtn = document.getElementById("new-chat-btn");
+  const sessionLabel = document.getElementById("session-label");
 
   function scrollToBottom() {
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -104,7 +107,17 @@
 
     try {
       const result = await dispatchMessage(text);
-      const parsed = parseReply(result.reply);
+      let parsed;
+      if (result.kind && result.kind !== "api" && result.kind !== "mock") {
+        parsed =
+          result.kind === "faq"
+            ? { kind: "faq", text: result.reply }
+            : result.kind === "route"
+              ? parseReply(result.reply)
+              : { kind: "bot", text: result.reply };
+      } else {
+        parsed = parseReply(result.reply);
+      }
       appendMessage("bot", parsed, result.meta);
     } catch (err) {
       appendMessage("bot", `错误：${err.message}`, "请求失败");
@@ -116,12 +129,69 @@
 
   formEl.addEventListener("submit", handleSubmit);
 
-  const badge = document.getElementById("status-badge");
+  function updateSessionLabel() {
+    if (!sessionLabel || !window.NexusSession) return;
+    sessionLabel.textContent = NexusSession.shortId(NexusSession.getSessionId());
+  }
+
+  async function checkHealth() {
+    if (!badgeEl || (window.NexusConfig && window.NexusConfig.useMock)) return;
+    try {
+      const base = (window.NexusConfig && window.NexusConfig.apiBase) || "";
+      const res = await fetch(`${base}/api/health`);
+      if (res.ok) {
+        badgeEl.textContent = "API 在线";
+        badgeEl.style.background = "#d1fae5";
+        badgeEl.style.color = "#065f46";
+      } else {
+        badgeEl.textContent = "API 异常";
+        badgeEl.style.background = "#fee2e2";
+        badgeEl.style.color = "#991b1b";
+      }
+    } catch (_e) {
+      badgeEl.textContent = "API 离线";
+      badgeEl.style.background = "#fee2e2";
+      badgeEl.style.color = "#991b1b";
+    }
+  }
+
+  if (newChatBtn) {
+    newChatBtn.addEventListener("click", async () => {
+      if (window.NexusSession) {
+        const oldSid = NexusSession.getSessionId();
+        const base = (window.NexusConfig && window.NexusConfig.apiBase) || "";
+        if (!(window.NexusConfig && window.NexusConfig.useMock)) {
+          try {
+            await fetch(`${base}/api/session/reset`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ session_id: oldSid }),
+            });
+          } catch (_e) {
+            /* 服务端重置失败不阻塞 UI */
+          }
+        }
+        NexusSession.resetSession();
+        updateSessionLabel();
+      }
+      messagesEl.innerHTML = "";
+      appendMessage(
+        "bot",
+        "已开始新对话。可继续提问。",
+        "系统"
+      );
+    });
+  }
+
+  const badge = badgeEl;
   if (badge && window.NexusConfig && !window.NexusConfig.useMock) {
     badge.textContent = "API 模式";
     badge.style.background = "#d1fae5";
     badge.style.color = "#065f46";
+    checkHealth();
   }
+
+  updateSessionLabel();
 
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {

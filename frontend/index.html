@@ -18,6 +18,7 @@
         </div>
       </div>
       <span class="header__badge" id="status-badge">Mock 模式</span>
+      <button type="button" class="header__new-chat" id="new-chat-btn" title="开始新对话">新对话</button>
     </header>
 
     <main class="chat" id="chat-container" role="main">
@@ -52,11 +53,16 @@
         />
         <button type="submit" class="composer__btn" id="send-btn">发送</button>
       </form>
-      <p class="composer__hint">Day 22 使用本地 Mock；Day 23 将对接 FastAPI <code>/api/chat</code></p>
+      <p class="composer__hint">
+        Day 24 整合版 · 会话 <code id="session-label">—</code>
+        · Day 23 <code>/api/chat</code>
+      </p>
     </footer>
   </div>
 
   <script src="config.js"></script>
+  <script src="session.js"></script>
+  <script src="errors.js"></script>
   <script src="mock.js"></script>
   <script src="app.js"></script>
 </body>

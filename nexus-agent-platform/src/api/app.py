@@ -29,7 +29,7 @@ def create_app(*, enable_cors: bool = True) -> FastAPI:
     app = FastAPI(
         title="NexusAgent API",
         description="智链科技灵犀智能体平台 — Sprint 3 Chat API",
-        version="0.23.0",
+        version="0.24.0",
     )
 
     if enable_cors:

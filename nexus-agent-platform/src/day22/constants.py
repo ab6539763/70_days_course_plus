@@ -12,6 +12,8 @@ REQUIRED_FILES = (
     "app.js",
     "mock.js",
     "config.js",
+    "session.js",
+    "errors.js",
     "README.md",
 )
 
