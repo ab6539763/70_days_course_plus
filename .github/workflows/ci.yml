@@ -211,6 +211,16 @@ jobs:
           python src/day24/sprint3_demo.py
           python src/day24/sprint3_review.py
 
+      - name: Day 25 Knowledge base
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day25/ingestion_demo.py
+          python src/day25/knowledge_api_demo.py
+          python src/day25/phase3_review.py
+          PYTHONPATH=src pytest tests/day25/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

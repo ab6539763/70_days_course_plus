@@ -15,6 +15,7 @@ from llm.env import LLMEnvConfig
 from llm.token_counter import TokenCounter
 from models import ModelConfig
 from prompts import IntentRouter
+from rag.knowledge_store import get_knowledge_store
 from rag import RAGContextService
 from services import SimilarQuestionMatcher
 from tools import build_nexus_tools
@@ -39,7 +40,7 @@ def create_orchestrator(
     """创建带完整 Sprint 3 能力的编排器实例"""
     os.environ.setdefault("NEXUS_LLM_MOCK", "1")
 
-    rag = RAGContextService.from_sample_docs(use_embedding=True)
+    rag = get_knowledge_store().as_rag_service()
     faq = SimilarQuestionMatcher()
     router = IntentRouter(query_context_provider=rag.retrieve_context)
     tools = build_nexus_tools(

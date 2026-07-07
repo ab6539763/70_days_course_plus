@@ -55,3 +55,24 @@ class SessionResetResponse(BaseModel):
 
     session_id: str
     cleared: bool
+
+
+class KnowledgeStatusResponse(BaseModel):
+    """GET /api/knowledge/status"""
+
+    document_count: int
+    chunk_count: int
+    documents: list[dict]
+    store_path: str | None = None
+    platform_version: str
+
+
+class KnowledgeUploadResponse(BaseModel):
+    """POST /api/knowledge/upload"""
+
+    filename: str
+    chunk_count: int
+    document_count: int
+    total_chunks: int
+    sessions_cleared: int
+    message: str

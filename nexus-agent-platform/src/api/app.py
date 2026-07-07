@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.chat import router as chat_router
+from api.knowledge import router as knowledge_router
 from core.exceptions import APIError, ConfigError, ModelValidationError, NexusError
 
 # nexus-agent-platform/src/api/app.py → 仓库根 frontend/
@@ -29,7 +30,7 @@ def create_app(*, enable_cors: bool = True) -> FastAPI:
     app = FastAPI(
         title="NexusAgent API",
         description="智链科技灵犀智能体平台 — Sprint 3 Chat API",
-        version="0.24.0",
+        version="0.25.0",
     )
 
     if enable_cors:
@@ -42,6 +43,7 @@ def create_app(*, enable_cors: bool = True) -> FastAPI:
         )
 
     app.include_router(chat_router)
+    app.include_router(knowledge_router)
 
     @app.exception_handler(ModelValidationError)
     async def validation_handler(_request: Request, exc: ModelValidationError):

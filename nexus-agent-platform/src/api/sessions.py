@@ -34,6 +34,13 @@ class SessionManager:
         with self._lock:
             return self._sessions.pop(session_id, None) is not None
 
+    def clear_all(self) -> int:
+        """清除全部会话（知识库更新后调用）"""
+        with self._lock:
+            count = len(self._sessions)
+            self._sessions.clear()
+            return count
+
     def count(self) -> int:
         return len(self._sessions)
 

@@ -93,6 +93,20 @@ class TfidfEmbeddingModel:
         """两条文本的余弦相似度"""
         return self.embed(text_a).similarity_to(self.embed(text_b))
 
+    def export_state(self) -> dict:
+        """导出词表与 IDF，供 KnowledgeStore 持久化"""
+        return {
+            "vocab": self._vocab,
+            "idf": self._idf,
+            "fitted": self._fitted,
+        }
+
+    def load_state(self, state: dict) -> None:
+        """从持久化状态恢复模型"""
+        self._vocab = dict(state.get("vocab") or {})
+        self._idf = list(state.get("idf") or [])
+        self._fitted = bool(state.get("fitted")) and bool(self._vocab)
+
 
 class EmbeddingClient:
     """

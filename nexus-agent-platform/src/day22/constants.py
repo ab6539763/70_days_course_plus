@@ -14,6 +14,7 @@ REQUIRED_FILES = (
     "config.js",
     "session.js",
     "errors.js",
+    "knowledge.js",
     "README.md",
 )
 

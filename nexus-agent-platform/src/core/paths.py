@@ -26,6 +26,8 @@ PATHS = {
     "messages": SRC_ROOT / "day08" / "data" / "messages.json",
     "sample_docs": SRC_ROOT / "day02" / "sample_docs",
     "doc_output": SRC_ROOT / "day11" / "output",
+    "knowledge_store": DATA_ROOT / "knowledge" / "store.json",
+    "knowledge_uploads": DATA_ROOT / "knowledge" / "uploads",
     "chat_completion_sample": SRC_ROOT / "day05" / "sample_data" / "chat_completion.json",
     "chat_session": SRC_ROOT / "day14" / "data" / "chat_session.json",
     "stream_mock_sse": SRC_ROOT / "llm" / "sample_data" / "stream_mock.sse",

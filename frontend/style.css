@@ -116,6 +116,77 @@ body {
   background: #f3f4f6;
 }
 
+.header__kb-toggle {
+  margin-left: 8px;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  cursor: pointer;
+}
+
+.header__kb-toggle:hover {
+  background: #dbeafe;
+}
+
+.kb-panel {
+  display: none;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--bot-border);
+  background: #f8fafc;
+}
+
+.kb-panel--open {
+  display: block;
+}
+
+.kb-panel__title {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.kb-panel__status {
+  margin: 0 0 10px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.kb-panel__label {
+  display: block;
+  font-size: 0.75rem;
+  margin-bottom: 4px;
+}
+
+.kb-panel__file {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  font-size: 0.75rem;
+}
+
+.kb-panel__upload {
+  padding: 6px 14px;
+  font-size: 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  cursor: pointer;
+}
+
+.kb-panel__upload:hover {
+  background: var(--brand-dark);
+}
+
+.kb-panel__message {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-height: 1.2em;
+}
+
 .chat {
   flex: 1;
   display: flex;

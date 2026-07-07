@@ -18,8 +18,18 @@
         </div>
       </div>
       <span class="header__badge" id="status-badge">Mock 模式</span>
+      <button type="button" class="header__kb-toggle" id="kb-toggle" title="知识库">知识库</button>
       <button type="button" class="header__new-chat" id="new-chat-btn" title="开始新对话">新对话</button>
     </header>
+
+    <aside class="kb-panel" id="kb-panel" aria-label="知识库面板">
+      <h2 class="kb-panel__title">企业知识库</h2>
+      <p class="kb-panel__status" id="kb-status">加载中…</p>
+      <label class="kb-panel__label" for="kb-file">上传 UTF-8 文本 (.txt)</label>
+      <input type="file" id="kb-file" accept=".txt,text/plain" class="kb-panel__file" />
+      <button type="button" id="kb-upload-btn" class="kb-panel__upload">上传入库</button>
+      <p class="kb-panel__message" id="kb-message"></p>
+    </aside>
 
     <main class="chat" id="chat-container" role="main">
       <div class="chat__messages" id="messages" aria-live="polite" aria-label="对话消息">
@@ -54,8 +64,7 @@
         <button type="submit" class="composer__btn" id="send-btn">发送</button>
       </form>
       <p class="composer__hint">
-        Day 24 整合版 · 会话 <code id="session-label">—</code>
-        · Day 23 <code>/api/chat</code>
+        Day 25 知识库 · 会话 <code id="session-label">—</code>
       </p>
     </footer>
   </div>
@@ -63,6 +72,7 @@
   <script src="config.js"></script>
   <script src="session.js"></script>
   <script src="errors.js"></script>
+  <script src="knowledge.js"></script>
   <script src="mock.js"></script>
   <script src="app.js"></script>
 </body>
