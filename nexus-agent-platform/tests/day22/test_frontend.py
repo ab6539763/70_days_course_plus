@@ -38,6 +38,7 @@ def test_index_loads_scripts():
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     assert 'src="mock.js"' in html
     assert 'src="app.js"' in html
+    assert 'src="config.js"' in html
 
 
 def test_mock_has_send_message():

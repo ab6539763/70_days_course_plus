@@ -11,6 +11,7 @@ REQUIRED_FILES = (
     "style.css",
     "app.js",
     "mock.js",
+    "config.js",
     "README.md",
 )
 

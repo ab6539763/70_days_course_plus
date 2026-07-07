@@ -26,6 +26,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
           pip install -r nexus-agent-platform/requirements-day01.txt
+          pip install -r nexus-agent-platform/requirements-api.txt
 
       - name: Run hello.py
         working-directory: nexus-agent-platform
@@ -191,6 +192,14 @@ jobs:
         env:
           NEXUS_LLM_MOCK: "1"
         run: python src/day22/mock_bridge_demo.py
+
+      - name: Run API health and chat demos
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day23/api_health_demo.py
+          python src/day23/api_chat_demo.py
 
       - name: Run tests
         working-directory: nexus-agent-platform

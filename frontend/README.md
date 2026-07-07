@@ -24,12 +24,23 @@ python3 -m http.server 8080
 
 ## 与后端契约
 
-Day 22 Mock 返回格式示例：
+Day 22 Mock / Day 23 API 返回格式：
 
-- FAQ 直答：`[FAQ 直答·72%] 投资有风险…`
-- 意图路由：`[路由: rag_qa] 根据检索资料…`
+```json
+{
+  "reply": "[FAQ 直答·68%] 投资有风险...",
+  "meta": "FAQ 直答",
+  "kind": "faq",
+  "session_id": "default"
+}
+```
 
-Day 23 将 `mock.js` 中 `useMock` 设为 `false`，对接 `POST /api/chat`。
+### 模式切换
+
+| 场景 | 方式 |
+|------|------|
+| 纯静态 Mock | `python3 -m http.server 8080` 或 `?mock=1` |
+| FastAPI 同源 API | `uvicorn api.app:app` → `config.js` 自动 `useMock: false` |
 
 ## 需求
 

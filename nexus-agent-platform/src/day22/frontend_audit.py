@@ -41,6 +41,8 @@ def audit_frontend(root: Path | None = None) -> list[str]:
                 errors.append(f"index.html 缺少元素 id={eid}")
         if "mock.js" not in html or "app.js" not in html:
             errors.append("index.html 须引入 mock.js 与 app.js")
+        if "config.js" not in html:
+            errors.append("index.html 须引入 config.js（Day 23）")
 
     mock_path = frontend / "mock.js"
     if mock_path.is_file():

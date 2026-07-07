@@ -79,4 +79,5 @@ Day 58-70  → 毕业设计、平台全功能上线
 - [x] Day 20：Embedding 向量相似度与相似问题匹配
 - [x] Day 21：Sprint 3 周测、工具调用整合与编排器
 - [x] Day 22：前端速成、静态聊天页面 frontend/
-- [ ] Day 23-70：持续更新中
+- [x] Day 23：FastAPI Chat REST API、/api/chat 与前端对接
+- [ ] Day 24-70：持续更新中

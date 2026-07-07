@@ -116,6 +116,13 @@
 
   formEl.addEventListener("submit", handleSubmit);
 
+  const badge = document.getElementById("status-badge");
+  if (badge && window.NexusConfig && !window.NexusConfig.useMock) {
+    badge.textContent = "API 模式";
+    badge.style.background = "#d1fae5";
+    badge.style.color = "#065f46";
+  }
+
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();

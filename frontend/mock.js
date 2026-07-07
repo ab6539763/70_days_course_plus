@@ -98,7 +98,8 @@
    * Day 23 API 占位 — 保持 app.js 切换点单一
    */
   async function sendMessageApi(text) {
-    const res = await fetch("/api/chat", {
+    const base = (window.NexusConfig && window.NexusConfig.apiBase) || "";
+    const res = await fetch(`${base}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: text }),
@@ -117,6 +118,6 @@
   global.NexusMock = {
     sendMessage,
     sendMessageApi,
-    useMock: true,
+    useMock: !(global.NexusConfig && global.NexusConfig.useMock === false),
   };
 })(window);

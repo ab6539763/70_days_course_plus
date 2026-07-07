@@ -1,22 +1,26 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.22.0（Day 22 frontend）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-022
+**版本**：v0.23.0（Day 23 api）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-023
 
 ## 仓库根目录（Day 22+）
 
 ```
-frontend/           # 静态聊天页（HTML/CSS/JS，Day 22）
+frontend/           # 静态聊天页（HTML/CSS/JS，Day 22+）
   index.html
-  style.css
-  app.js
-  mock.js
+  config.js         # Day 23 API/Mock 切换
+  ...
 ```
 
 ## 生产层目录（长期演进）
 
 ```
 src/
+├── api/            # FastAPI HTTP 层（Day 23+）
+│   ├── app.py      # 应用入口、CORS、静态托管
+│   ├── chat.py     # POST /api/chat
+│   ├── schemas.py  # Pydantic 模型
+│   └── sessions.py # 会话管理
 ├── core/           # 异常、路径、引导 — 全平台基础设施
 ├── models/         # 领域模型（ChatMessage, Contact, ModelConfig）
 ├── services/       # 业务服务（MessageHistoryService）
