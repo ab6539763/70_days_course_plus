@@ -4,7 +4,7 @@
 整合 ChatMessage、MessageHistoryService、ResilientLLMClient，
 提供可交互的多轮对话 CLI。
 
-需求：ZL-NA-REQ-014 / ZL-NA-REQ-015
+需求：ZL-NA-REQ-014 / ZL-NA-REQ-015 / ZL-NA-REQ-017
 
 运行：
     NEXUS_LLM_MOCK=1 python3 src/chat/cli_assistant.py
@@ -26,6 +26,7 @@ from llm.client import LLMClient
 from llm.resilient_client import ResilientLLMClient
 from llm.token_counter import TokenSessionTracker
 from models import ChatMessage, ModelConfig
+from prompts import DEFAULT_ASSISTANT, PromptRegistry, PromptTemplate, default_registry
 from services import MessageHistory
 
 # 内置斜杠命令
@@ -38,6 +39,7 @@ COMMANDS = {
     "/save": "保存对话到文件",
     "/system": "设置系统提示（/system 文本）",
     "/tokens": "查看会话 token 用量与估算费用",
+    "/template": "切换 Prompt 模板（/template 名称 或 /template list）",
 }
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -61,6 +63,9 @@ class ChatAssistant:
         history_path: Path | None = None,
         on_retry_log: bool = False,
         track_tokens: bool = True,
+        prompt_template: PromptTemplate | None = None,
+        prompt_registry: PromptRegistry | None = None,
+        template_variables: dict[str, str] | None = None,
     ) -> None:
         self.history = history or MessageHistory()
         self.history_path = history_path or get_path("chat_session")
@@ -70,9 +75,40 @@ class ChatAssistant:
         )
         self.track_tokens = track_tokens
         self.token_tracker = TokenSessionTracker() if track_tokens else None
+        self.prompt_registry = prompt_registry or default_registry
+        self.prompt_template = prompt_template
+        self.template_variables = dict(template_variables or {"company": "智链科技"})
         self._running = False
+        self._init_system_prompt(system_prompt)
+
+    def _init_system_prompt(self, system_prompt: str) -> None:
+        if self.prompt_template:
+            msg = self.prompt_template.to_system_message(**self.template_variables)
+            if not self._has_system_message():
+                self.history.add(msg)
+            return
         if system_prompt and not self._has_system_message():
             self.history.add_system(system_prompt)
+
+    def apply_template(
+        self,
+        name: str,
+        *,
+        variables: dict[str, str] | None = None,
+    ) -> str:
+        """切换 Prompt 模板并更新 system 消息"""
+        tmpl = self.prompt_registry.get(name)
+        merged = {**self.template_variables, **(variables or {})}
+        rendered = tmpl.render(**merged)
+        self.prompt_template = tmpl
+        self.template_variables = merged
+        # 保留非 system 消息，替换 system
+        non_system = [m for m in self.history.messages if m.role != "system"]
+        self.history = MessageHistory()
+        self.history.add_system(rendered)
+        for m in non_system:
+            self.history.add(m)
+        return rendered
 
     def _has_system_message(self) -> bool:
         return any(m.role == "system" for m in self.history.messages)
@@ -128,6 +164,21 @@ class ChatAssistant:
             if not self.token_tracker:
                 return True, "Token 追踪未启用。", False
             return True, self.token_tracker.report(), False
+
+        if cmd == "/template":
+            if arg.lower() == "list":
+                names = self.prompt_registry.list_names()
+                lines = ["可用模板："] + [f"  - {n}" for n in names]
+                return True, "\n".join(lines), False
+            if not arg:
+                current = self.prompt_template.name if self.prompt_template else "（硬编码 system）"
+                return True, f"当前模板: {current}\n用法: /template 名称", False
+            try:
+                rendered = self.apply_template(arg.split()[0])
+                preview = rendered[:80] + ("..." if len(rendered) > 80 else "")
+                return True, f"已切换模板 {arg.split()[0]}：{preview}", False
+            except (ConfigError, NexusError) as exc:
+                return True, f"模板切换失败: {exc.message}", False
 
         return True, f"未知命令 {cmd}，输入 /help 查看帮助。", False
 

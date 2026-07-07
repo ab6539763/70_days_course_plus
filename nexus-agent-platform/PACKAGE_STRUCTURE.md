@@ -1,7 +1,7 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.16.0（Day 16 streaming）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-016
+**版本**：v0.17.0（Day 17 prompts）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-017
 
 ## 生产层目录（长期演进）
 
@@ -12,6 +12,7 @@ src/
 ├── services/       # 业务服务（MessageHistoryService）
 ├── utils/          # 横切工具函数
 ├── llm/            # 大模型接入（client, retry, token_counter, streaming）
+├── prompts/        # Prompt 模板库（Day 17+）
 ├── chat/           # 对话应用（Day 14 cli_assistant）
 ├── tools/          # 文档/工具（Day 11 doc_reader）
 └── day01..dayXX/   # 教学实验代码（保留，不删）

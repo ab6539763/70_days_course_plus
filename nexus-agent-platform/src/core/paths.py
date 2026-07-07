@@ -29,6 +29,7 @@ PATHS = {
     "chat_completion_sample": SRC_ROOT / "day05" / "sample_data" / "chat_completion.json",
     "chat_session": SRC_ROOT / "day14" / "data" / "chat_session.json",
     "stream_mock_sse": SRC_ROOT / "llm" / "sample_data" / "stream_mock.sse",
+    "prompts_dir": SRC_ROOT / "prompts" / "templates",
 }
 
 # 未来生产包占位

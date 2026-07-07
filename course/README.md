@@ -73,4 +73,5 @@ Day 58-70  → 毕业设计、平台全功能上线
 - [x] Day 14：阶段项目一、cli_assistant 多轮对话助手
 - [x] Day 15：大模型原理科普、Token 计算器
 - [x] Day 16：API 参数详解、llm/streaming 流式输出
-- [ ] Day 17-70：持续更新中
+- [x] Day 17：Prompt 基础、prompts 模板库
+- [ ] Day 18-70：持续更新中

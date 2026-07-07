@@ -114,6 +114,18 @@ jobs:
           NEXUS_LLM_MOCK: "1"
         run: python src/day16/streaming_demo.py
 
+      - name: Run prompt demos
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day17/prompt_demos.py
+          python src/day17/registry_demos.py
+
+      - name: Run RAG prompt demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day17/rag_prompt_demo.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v
