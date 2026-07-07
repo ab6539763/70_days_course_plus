@@ -67,6 +67,29 @@ class KnowledgeStatusResponse(BaseModel):
     platform_version: str
     supported_formats: list[dict] = Field(default_factory=list)
     chunk_config: dict = Field(default_factory=dict)
+    last_rebuilt_at: str | None = None
+
+
+class RebuildRequest(BaseModel):
+    """POST /api/knowledge/rebuild"""
+
+    include_sample_docs: bool = True
+    apply_best_config: bool = False
+
+
+class RebuildResponse(BaseModel):
+    """全量重建结果"""
+
+    documents_before: int
+    chunks_before: int
+    documents_after: int
+    chunks_after: int
+    sources_processed: int
+    chunk_config: dict
+    source_files: list[str]
+    rebuilt_at: str
+    sessions_cleared: int
+    message: str
 
 
 class ChunkConfigRequest(BaseModel):

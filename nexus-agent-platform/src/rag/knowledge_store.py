@@ -26,7 +26,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.0"
-PLATFORM_VERSION = "0.27.0"
+PLATFORM_VERSION = "0.28.0"
 
 
 @dataclass
@@ -74,6 +74,7 @@ class KnowledgeStore:
     chunks: list[TextChunk] = field(default_factory=list)
     embedding_state: dict[str, Any] = field(default_factory=dict)
     chunk_config: ChunkConfig = field(default_factory=ChunkConfig)
+    last_rebuilt_at: str | None = None
     store_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
 
@@ -241,6 +242,7 @@ class KnowledgeStore:
             "chunks": [_chunk_to_dict(c) for c in self.chunks],
             "embedding": self.embedding_state,
             "chunk_config": self.chunk_config.to_dict(),
+            "last_rebuilt_at": self.last_rebuilt_at,
         }
         save_json(target, payload)
         return target
@@ -260,6 +262,7 @@ class KnowledgeStore:
         store.embedding_state = dict(raw.get("embedding") or {})
         if raw.get("chunk_config"):
             store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
+        store.last_rebuilt_at = raw.get("last_rebuilt_at")
         store._rag_service = store._build_rag_service()
         return store
 
@@ -311,6 +314,7 @@ class KnowledgeStore:
             "platform_version": PLATFORM_VERSION,
             "supported_formats": supported_formats(),
             "chunk_config": self.chunk_config.to_dict(),
+            "last_rebuilt_at": self.last_rebuilt_at,
         }
 
     def _append_chunks(

@@ -195,6 +195,21 @@ body {
   background: #f3f4f6;
 }
 
+.kb-panel__rebuild {
+  margin-left: 8px;
+  padding: 6px 14px;
+  font-size: 0.75rem;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  cursor: pointer;
+}
+
+.kb-panel__rebuild:hover {
+  background: #fee2e2;
+}
+
 .kb-panel__message {
   margin: 8px 0 0;
   font-size: 0.75rem;

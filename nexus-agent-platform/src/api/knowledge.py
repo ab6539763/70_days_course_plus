@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028
 """
 
 from __future__ import annotations
@@ -17,11 +17,14 @@ from api.schemas import (
     EvaluateResponse,
     KnowledgeStatusResponse,
     KnowledgeUploadResponse,
+    RebuildRequest,
+    RebuildResponse,
 )
 from api.sessions import session_manager
 from core.exceptions import NexusError, StorageError
 from rag.chunk_config import PRESET_CONFIGS, ChunkConfig
 from rag.ingestion import ingest_upload
+from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
 from rag.retrieval_eval import EvalQuery, pick_best_config, run_ab_experiment
 from tools.doc_parser import parse_bytes
@@ -88,6 +91,33 @@ def evaluate_chunk_configs(body: EvaluateRequest | None = None) -> EvaluateRespo
         results=[r.to_dict() for r in results],
         eval_query_count=len(queries),
     )
+
+
+@router.post("/rebuild", response_model=RebuildResponse)
+def rebuild_knowledge_base(body: RebuildRequest | None = None) -> RebuildResponse:
+    """
+    按当前 chunk_config（或 evaluate 最优配置）全量重建知识库。
+
+    重扫 sample_docs + knowledge_uploads，清空后重新分块与索引。
+    """
+    body = body or RebuildRequest()
+    store = get_knowledge_store()
+
+    if body.apply_best_config:
+        if not _EVAL_SAMPLE.is_file():
+            raise HTTPException(status_code=500, detail="评估样例文档缺失")
+        report = rebuild_with_best_config(
+            store,
+            eval_sample_path=_EVAL_SAMPLE,
+            include_sample_docs=body.include_sample_docs,
+        )
+    else:
+        report = rebuild_store(store, include_sample_docs=body.include_sample_docs)
+
+    cleared = session_manager.clear_all()
+    data = report.to_dict()
+    data["sessions_cleared"] = cleared
+    return RebuildResponse(**data)
 
 
 @router.get("/status", response_model=KnowledgeStatusResponse)

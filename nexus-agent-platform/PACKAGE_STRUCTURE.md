@@ -1,32 +1,31 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.27.0（Day 27 分块调参）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-027
+**版本**：v0.28.0（Day 28 知识库重建）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-028
 
-## Day 27 新增
+## Day 28 新增
 
 ```
-src/rag/
-  chunk_config.py      # ChunkConfig 与 PRESET_CONFIGS
-  retrieval_eval.py    # hit@1 评估、run_ab_experiment
-src/day27/
-  ab_experiment_demo.py
-  chunk_tune_api_demo.py
-  constants.py         # EVAL_QUERIES
+src/rag/knowledge_rebuild.py
+  collect_source_files()   # sample_docs + uploads
+  rebuild_store()          # 全量清空再分块
+  rebuild_with_best_config()
+src/day28/
+  rebuild_demo.py
+  rebuild_api_demo.py
 ```
 
-## API v0.27.0
+## API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/knowledge/chunk-config` | 当前默认分块参数 |
-| PUT | `/api/knowledge/chunk-config` | 更新后续上传使用的参数 |
-| POST | `/api/knowledge/evaluate` | A/B 预设评估，返回 best_config |
+| POST | `/api/knowledge/rebuild` | 全量重建，可选 apply_best_config |
 
-`store.json` 新增 `chunk_config` 字段持久化。
+`store.json` 新增 `last_rebuilt_at` 字段。
 
-## 评估指标
+## 重建源
 
-- **hit_rate**：评估问句 top-1 块命中 `expect_any` 关键词的比例  
-- **avg_top_score**：top-1 余弦相似度均值  
-- **chunk_count**：该配置下的块数  
+1. `data/knowledge/uploads/` — 用户上传  
+2. `day02/sample_docs/` — 内置样例（可 include_sample_docs=false 跳过）  
+
+同名文件 uploads 优先。

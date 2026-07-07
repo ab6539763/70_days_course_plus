@@ -59,6 +59,22 @@
     return res.json();
   }
 
+  async function runRebuild(applyBest) {
+    const base = (global.NexusConfig && global.NexusConfig.apiBase) || "";
+    const res = await fetch(`${base}/api/knowledge/rebuild`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        include_sample_docs: true,
+        apply_best_config: !!applyBest,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`rebuild ${res.status}`);
+    }
+    return res.json();
+  }
+
   function bindPanel() {
     const panel = document.getElementById("kb-panel");
     const toggle = document.getElementById("kb-toggle");
@@ -66,6 +82,7 @@
     const fileInput = document.getElementById("kb-file");
     const uploadBtn = document.getElementById("kb-upload-btn");
     const evalBtn = document.getElementById("kb-eval-btn");
+    const rebuildBtn = document.getElementById("kb-rebuild-btn");
     const msgEl = document.getElementById("kb-message");
 
     if (!panel) return;
@@ -126,6 +143,21 @@
       });
     }
 
+    if (rebuildBtn) {
+      rebuildBtn.addEventListener("click", async () => {
+        if (msgEl) msgEl.textContent = "重建中…";
+        try {
+          const result = await runRebuild(false);
+          if (msgEl) {
+            msgEl.textContent = `${result.message}（${result.chunks_before}→${result.chunks_after} 块）`;
+          }
+          await refresh();
+        } catch (err) {
+          if (msgEl) msgEl.textContent = err.message || "重建失败";
+        }
+      });
+    }
+
     refresh();
   }
 
@@ -135,5 +167,11 @@
     bindPanel();
   }
 
-  global.NexusKnowledge = { fetchStatus, uploadFile, runEvaluate, renderStatus };
+  global.NexusKnowledge = {
+    fetchStatus,
+    uploadFile,
+    runEvaluate,
+    runRebuild,
+    renderStatus,
+  };
 })(window);

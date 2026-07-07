@@ -241,6 +241,16 @@ jobs:
           python src/day27/phase3_tune_review.py
           PYTHONPATH=src pytest tests/day27/ -q
 
+      - name: Day 28 Knowledge rebuild
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day28/rebuild_demo.py
+          python src/day28/rebuild_api_demo.py
+          python src/day28/phase3_rebuild_review.py
+          PYTHONPATH=src pytest tests/day28/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

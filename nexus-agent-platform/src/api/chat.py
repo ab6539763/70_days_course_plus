@@ -14,7 +14,7 @@ from api.sessions import SessionManager, session_manager
 from chat.orchestrator import ChatOrchestrator
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.27.0"
+API_VERSION = "0.28.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
