@@ -13,8 +13,12 @@ from pathlib import Path
 
 from core.paths import get_path
 from rag.chunker import TextChunk, chunk_documents
+from rag.embedding_retriever import EmbeddingRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
 from tools.doc_reader import DocumentRecord, read_documents
+
+
+Retriever = KeywordRetriever | EmbeddingRetriever
 
 
 @dataclass
@@ -22,7 +26,7 @@ class DocumentIndex:
     """文档索引：分块 + 检索器"""
 
     chunks: list[TextChunk] = field(default_factory=list)
-    retriever: KeywordRetriever = field(default_factory=KeywordRetriever)
+    retriever: Retriever = field(default_factory=KeywordRetriever)
 
     @property
     def chunk_count(self) -> int:
@@ -53,6 +57,7 @@ class RAGContextService:
         chunk_size: int = 200,
         overlap: int = 40,
         use_cleaned: bool = True,
+        use_embedding: bool = False,
     ) -> RAGContextService:
         chunks = chunk_documents(
             docs,
@@ -60,7 +65,10 @@ class RAGContextService:
             overlap=overlap,
             use_cleaned=use_cleaned,
         )
-        retriever = KeywordRetriever(chunks)
+        if use_embedding:
+            retriever: Retriever = EmbeddingRetriever(chunks)
+        else:
+            retriever = KeywordRetriever(chunks)
         index = DocumentIndex(chunks=chunks, retriever=retriever)
         return cls(index)
 
@@ -77,8 +85,12 @@ class RAGContextService:
         return cls.from_documents(docs, **kwargs)
 
     @classmethod
-    def from_sample_docs(cls, **kwargs) -> RAGContextService:
-        return cls.from_directory(get_path("sample_docs"), **kwargs)
+    def from_sample_docs(cls, *, use_embedding: bool = False, **kwargs) -> RAGContextService:
+        return cls.from_directory(
+            get_path("sample_docs"),
+            use_embedding=use_embedding,
+            **kwargs,
+        )
 
     def retrieve_context(
         self,
@@ -108,7 +120,7 @@ class RAGContextService:
         parts: list[str] = []
         total = 0
         for i, result in enumerate(results, start=1):
-            header = f"[片段{i}·{result.chunk.source}·{result.score:.0%}]"
+            header = f"[片段{i}·{result.chunk.source}·sim={result.score:.0%}]"
             body = result.chunk.text.strip()
             piece = f"{header}\n{body}"
             if total + len(piece) > max_chars:

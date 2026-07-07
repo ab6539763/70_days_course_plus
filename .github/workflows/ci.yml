@@ -151,6 +151,19 @@ jobs:
           NEXUS_LLM_MOCK: "1"
         run: python src/day19/routed_rag_demo.py
 
+      - name: Run embedding and vector search demos
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day20/embedding_demos.py
+          python src/day20/vector_search_demos.py
+          python src/day20/faq_matcher_demo.py
+
+      - name: Run routed embedding demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day20/routed_embedding_demo.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

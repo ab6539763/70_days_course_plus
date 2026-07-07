@@ -1,7 +1,7 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.19.0（Day 19 rag）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-019
+**版本**：v0.20.0（Day 20 embedding）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-020
 
 ## 生产层目录（长期演进）
 
@@ -17,10 +17,16 @@ src/
 │   ├── library.py  # 内置模板
 │   ├── registry.py # 注册表
 │   └── intent.py   # RuleBasedIntentClassifier, IntentRouter（Day 18）
-├── rag/            # RAG 检索入门（Day 19+）
+├── rag/            # RAG 检索（Day 19+）
 │   ├── chunker.py  # 文档分块
 │   ├── retriever.py # 关键词检索
+│   ├── embedding.py # TF-IDF Embedding（Day 20）
+│   ├── embedding_retriever.py # 向量检索
+│   ├── vector.py   # 余弦相似度
 │   └── context.py  # RAGContextService
+├── services/       # 业务服务
+│   ├── message_history.py
+│   └── faq_matcher.py # 相似问题匹配（Day 20）
 ├── chat/           # 对话应用（Day 14 cli_assistant）
 ├── tools/          # 文档/工具（Day 11 doc_reader）
 └── day01..dayXX/   # 教学实验代码（保留，不删）
