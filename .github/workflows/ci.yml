@@ -180,6 +180,18 @@ jobs:
           NEXUS_LLM_MOCK: "1"
         run: python src/day21/integrated_assistant_demo.py
 
+      - name: Run frontend structure audit
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day22/frontend_audit.py
+          python src/day22/html_demos.py
+
+      - name: Run mock bridge demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day22/mock_bridge_demo.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

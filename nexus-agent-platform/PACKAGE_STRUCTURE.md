@@ -1,7 +1,17 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.21.0（Day 21 sprint3 quiz）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-021
+**版本**：v0.22.0（Day 22 frontend）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-022
+
+## 仓库根目录（Day 22+）
+
+```
+frontend/           # 静态聊天页（HTML/CSS/JS，Day 22）
+  index.html
+  style.css
+  app.js
+  mock.js
+```
 
 ## 生产层目录（长期演进）
 
