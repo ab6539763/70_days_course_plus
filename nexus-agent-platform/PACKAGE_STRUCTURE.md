@@ -1,7 +1,7 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.20.0（Day 20 embedding）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-020
+**版本**：v0.21.0（Day 21 sprint3 quiz）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-021
 
 ## 生产层目录（长期演进）
 
@@ -27,8 +27,13 @@ src/
 ├── services/       # 业务服务
 │   ├── message_history.py
 │   └── faq_matcher.py # 相似问题匹配（Day 20）
-├── chat/           # 对话应用（Day 14 cli_assistant）
-├── tools/          # 文档/工具（Day 11 doc_reader）
+├── chat/           # 对话应用（Day 14 cli_assistant, Day 21 orchestrator）
+│   ├── cli_assistant.py
+│   └── orchestrator.py  # ChatOrchestrator（Day 21）
+├── tools/          # 文档/工具（Day 11 doc_reader, Day 21 tool_registry）
+│   ├── doc_reader.py
+│   ├── tool_registry.py
+│   └── executor.py
 └── day01..dayXX/   # 教学实验代码（保留，不删）
 ```
 

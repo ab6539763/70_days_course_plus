@@ -164,6 +164,22 @@ jobs:
           NEXUS_LLM_MOCK: "1"
         run: python src/day20/routed_embedding_demo.py
 
+      - name: Run Sprint 3 quiz scripted
+        working-directory: nexus-agent-platform
+        run: python src/day21/sprint3_quiz.py --scripted
+
+      - name: Run Sprint 3 review and tool demos
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day21/sprint3_review.py
+          python src/day21/tool_demos.py
+
+      - name: Run integrated assistant demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day21/integrated_assistant_demo.py
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

@@ -4,7 +4,7 @@
 整合 ChatMessage、MessageHistoryService、ResilientLLMClient，
 提供可交互的多轮对话 CLI。
 
-需求：ZL-NA-REQ-014 / ZL-NA-REQ-015 / ZL-NA-REQ-017 / ZL-NA-REQ-018 / ZL-NA-REQ-019 / ZL-NA-REQ-020
+需求：ZL-NA-REQ-014 / ZL-NA-REQ-015 / ZL-NA-REQ-017 / ZL-NA-REQ-018 / ZL-NA-REQ-019 / ZL-NA-REQ-020 / ZL-NA-REQ-021
 
 运行：
     NEXUS_LLM_MOCK=1 python3 src/chat/cli_assistant.py
@@ -35,6 +35,8 @@ from prompts import (
 )
 from rag.context import RAGContextService
 from services import MessageHistory, SimilarQuestionMatcher
+from tools.executor import ToolExecutor
+from tools.tool_registry import ToolRegistry, parse_tool_arguments
 
 # 内置斜杠命令
 COMMANDS = {
@@ -50,6 +52,7 @@ COMMANDS = {
     "/route": "意图分类预览（/route 用户话术）",
     "/retrieve": "RAG 检索预览（/retrieve 查询词）",
     "/similar": "相似 FAQ 匹配（/similar 用户问题）",
+    "/tool": "调用工具（/tool list 或 /tool 名称 JSON参数）",
 }
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -80,6 +83,7 @@ class ChatAssistant:
         auto_route: bool = False,
         rag_service: RAGContextService | None = None,
         faq_matcher: SimilarQuestionMatcher | None = None,
+        tool_registry: ToolRegistry | None = None,
     ) -> None:
         self.history = history or MessageHistory()
         self.history_path = history_path or get_path("chat_session")
@@ -96,6 +100,8 @@ class ChatAssistant:
         self.auto_route = auto_route
         self.rag_service = rag_service
         self.faq_matcher = faq_matcher
+        self.tool_registry = tool_registry
+        self.tool_executor = ToolExecutor(tool_registry) if tool_registry else None
         self._last_intent = None
         self._running = False
         self._init_system_prompt(system_prompt)
@@ -220,6 +226,21 @@ class ChatAssistant:
             if not match:
                 return True, f"未找到相似 FAQ（阈值以上），查询：{query}", False
             return True, f"{match.summary()}\n答案：{match.entry.answer}", False
+
+        if cmd == "/tool":
+            if not self.tool_executor:
+                return True, "工具调用未启用。请传入 tool_registry。", False
+            if not arg or arg.strip() == "list":
+                return True, self.tool_executor.list_help(), False
+            parts = arg.split(maxsplit=1)
+            name = parts[0]
+            raw_args = parts[1] if len(parts) > 1 else ""
+            try:
+                arguments = parse_tool_arguments(raw_args)
+            except Exception as exc:  # noqa: BLE001
+                return True, f"参数解析失败: {exc}", False
+            result = self.tool_executor.execute(name, arguments)
+            return True, result.summary(), False
 
         return True, f"未知命令 {cmd}，输入 /help 查看帮助。", False
 
