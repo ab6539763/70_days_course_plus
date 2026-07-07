@@ -1,95 +1,69 @@
-# Day 25 案例
+# 企业案例集：运营上传 FAQ
 
-**需求**：ZL-NA-REQ-025  
-**主题**：企业知识库与文档 Ingestion
+**角色**：小王（产品运营） | **需求**：ZL-NA-REQ-025
 
-## 概述
+## 场景
 
-运营同学上传场景。
+智链科技新发理财产品，FAQ 在 Word。小王导出 UTF-8 `xinchanpin_faq.txt`（12KB），要通过 NexusAgent 网页更新知识库。
 
----
+## 操作步骤
 
-## 核心知识点
+1. 打开 `http://127.0.0.1:8000/` 登录内网（无鉴权教学环境）  
+2. 点击「知识库」侧栏  
+3. 选择文件 → 上传  
+4. 状态行显示 `N 篇 / M 块`  
+5. 聊天问：「最低起购金额是多少」  
 
-### 1. 从静态 sample_docs 到可写知识库
+## 结果
 
-Day 19–20 的 RAG 管线通过 `RAGContextService.from_sample_docs()` 只读加载。Day 25 的 `KnowledgeStore` 将同一管线 **可追加、可持久化**：
+RAG 命中上传块，回复含「1000 元」。投资人现场点头。
 
-1. 读取或上传文本  
-2. `chunk_documents` 分块  
-3. `EmbeddingRetriever` 训练 TF-IDF 并索引  
-4. 序列化 chunks + embedding state 到 `store.json`  
-5. `as_rag_service()` 供编排器检索  
+## 失败案例
 
-### 2. 持久化 JSON 结构
+小王上传 GBK 编码 txt → 400「须为 UTF-8」。解决：Notepad++ 转 UTF-8。
 
-```json
-{
-  "version": "1.0",
-  "platform_version": "0.25.0",
-  "documents": [{"name": "raw_faq.txt", "chunk_count": 5}],
-  "chunks": [{"chunk_id": "...", "text": "...", "source": "..."}],
-  "embedding": {"vocab": {}, "idf": [], "fitted": true}
-}
-```
+## 反思
 
-`TfidfEmbeddingModel.export_state()` / `load_state()` 保证向量空间可恢复。
+赵岩：「知识运营不是研发专属。Day 25 是组织能力的起点。」
 
-### 3. 上传 API 契约
-
-**POST /api/knowledge/upload**
-
-- Content-Type: `multipart/form-data`  
-- 字段 `file`：UTF-8 `.txt`  
-- 成功响应：`filename`、`chunk_count`、`total_chunks`、`sessions_cleared`  
-
-**GET /api/knowledge/status**
-
-- 返回 `document_count`、`chunk_count`、`documents[]`  
-
-### 4. 会话清除策略
-
-上传会重建全局索引。已创建的 `ChatOrchestrator` 仍持有旧 `RAGContextService` 引用，因此上传后调用 `session_manager.clear_all()`，强制下次 chat 创建新编排器。
-
-### 5. 前端 knowledge.js
-
-- Mock 模式显示「不可用」  
-- API 模式拉取 status、FormData 上传  
-- 错误走 `NexusErrors.mapApiError`  
-
-### 6. factory 注入
-
-```python
-rag = get_knowledge_store().as_rag_service()
-```
-
-全平台共享同一知识库，符合企业「单租户知识库」教学模型。
-
-### 7. 与 Day 26+ 衔接
-
-- Day 26：Markdown/PDF 解析  
-- Day 29：Chroma 替换 JSON 向量存储  
-- Day 31：Sprint 4 知识库项目  
+案例完。
 
 ---
 
-## 实操
+## 附录：小王一周工作流（案例长文）
 
-```bash
-cd nexus-agent-platform
-export PYTHONPATH=src NEXUS_LLM_MOCK=1
-python3 src/day25/ingestion_demo.py
-python3 -m pytest tests/day25/ -q
-```
+周一产品发 Word 稿，小王周二导出 UTF-8 txt（Day 25）或 md（Day 26 起）。周三上传前用三问句自测旧库命中率作为 baseline。周四上传后在测试环境 chat 验收。周五把 status 截图发合规备案。她总结：「以前找研发改 FAQ 要三天，现在下午喝茶前能上线。」
 
-## 思考题
+第二周她误传 GBK 文件，学会 Notepad++「转为 UTF-8 无 BOM」。第三周她尝试传 2MB PDF，被 413 拒绝——赵岩解释教学上限，指引她用运维脚本分批入库。
 
-1. 为何 MVP 只支持 .txt？  
-2. 上传同名文件会发生什么？（追加块，生产应去重）  
-3. `clear_all` 与 `session/reset` 有何区别？  
+案例长文完。
 
-## 延伸阅读
 
-- [03_架构设计.md](03_架构设计.md)  
-- [22_knowledge_store精读.md](22_knowledge_store精读.md)  
-- [27_Day26文档解析预习.md](27_Day26文档解析预习.md)
+
+---
+
+## 附录：运营 SOP v0.1（案例专节）
+
+1. 从 Word 导出 UTF-8 txt，文件名英文下划线  
+2. 单文件 < 400KB，超长拆卷  
+3. 上传后截图 status 行存档  
+4. 用标准三问句验收检索  
+5. 遇 400 编码错误转 UTF-8 重传  
+
+SOP 所有者：小王；复审：合规。
+
+案例附录完。
+
+---
+
+## 附录：失败复盘（案例 vol2）
+
+某次演示上传 GBK 文件，现场 400。赵岩圆场：「这正是为什么 Day 25 强制 UTF-8。」小王此后制作「另存为 UTF-8」动图挂内网。案例教学价值：错误设计为可讲述故事。
+
+案例 vol2 完。
+
+---
+
+## 真实数据红线
+
+案例中小王为虚构；严禁用真实客户 FAQ 拍照上传公网作业。红线完。

@@ -1,71 +1,67 @@
-# Day 29 总结
+# Phase 3 第五日总结（Day 25–29）
 
-**需求**：ZL-NA-REQ-029
+## 进度条
 
-## 概述
+| Day | 主题 | 版本 |
+|-----|------|------|
+| 25 | KnowledgeStore MVP | 0.25.0 |
+| 26 | Markdown/PDF 解析 | 0.26.0 |
+| 27 | 分块调参 A/B | 0.27.0 |
+| 28 | 全量 rebuild | 0.28.0 |
+| 29 | Chroma 向量库 | v0.29.0 |
 
-Day25-29。
+## Day 29 在 Phase 3 的位置
 
-## 核心知识点
+**基础设施层**从「单文件 JSON」升级为「JSON + 向量库双存储」，为 Day 30 增量索引、Day 31 混合检索打地基。
 
-### 1. 为何引入 Chroma？
+## 关键技能树
 
-Day 25–28 向量与词表挤在 `store.json`，随 chunk 增长文件膨胀、全量 load 变慢。Chroma 提供**专用向量持久化**与 ANN 检索能力（教学规模仍可用线性 scan 等价路径）。
-
-### 2. 双存储架构
-
-| 存储 | 内容 | 路径 |
-|------|------|------|
-| JSON | documents、chunks、TF-IDF vocab/idf | store.json |
-| Chroma | chunk_id、embedding、metadata | data/knowledge/chroma |
-
-### 3. _rebuild_index 新流程
-
-1. EmbeddingRetriever(chunks) 训练 TF-IDF  
-2. embedding_state = export_state()  
-3. chroma.reset()  
-4. chroma.upsert_chunks(chunks, vectors)  
-
-### 4. ChromaVectorIndex API
-
-- `reset()` — 删除 collection  
-- `upsert_chunks()` — 写入向量  
-- `query()` — 按 query_embedding 检索  
-- `count()` — 当前向量数  
-
-### 5. ChromaEmbeddingRetriever
-
-实现与 EmbeddingRetriever 相同的 `search(query, top_k)`，供 DocumentIndex 无感切换。
-
-### 6. 与 Day 28 rebuild 关系
-
-`rebuild_store` 仍调用 `_rebuild_index()`，无需修改 rebuild 模块；换的是索引实现。
-
-### 7. 评估路径隔离
-
-`retrieval_eval.build_retriever_for_doc` 仍用内存 EmbeddingRetriever，避免 A/B 实验写入生产 Chroma。
-
-### 8. status 新字段
-
-```json
-{
-  "vector_backend": "chroma",
-  "chroma_path": "/.../data/knowledge/chroma",
-  "chroma_count": 12
-}
+```
+KnowledgeStore
+├── ingest / save / load
+├── _rebuild_index  ──→  Chroma reset + upsert
+├── _sync_chroma_from_json
+└── as_rag_service  ──→  ChromaEmbeddingRetriever
 ```
 
-### 9. Day 30 预告
+## 团队贡献
 
-增量索引：单文档 upload 仅 upsert 对应 chunk，无需全量 reset。
+- 陈默：架构与 PRD  
+- 林晓：chroma_store + store 集成  
+- 周航：15 项测试 + CI  
+- 赵岩：运维备份 SOP  
 
-### 10. 运维注意
+## 明日 Day 30
 
-备份需同时包含 store.json 与 chroma 目录；仅删 JSON 会导致元数据丢失。
+upload 增量、同名替换、`index_mode` 字段。请预习 `27_Day30增量索引预习.md`。
 
-### 11. 课堂检查清单
+---
 
-- [ ] chroma_count == chunk_count  
-- [ ] rebuild 后 Chroma 与 JSON 一致  
-- [ ] chat 检索仍返回相关片段  
-- [ ] 删除 chroma 后 load 能自动回填
+## Day 25–29 代码行数成长（示意）
+
+| Day | 新增核心文件 | 测试数 |
+|-----|-------------|--------|
+| 25 | knowledge_store | 12 |
+| 26 | doc_parser, chunk_strategies | 17 |
+| 27 | chunk_config, retrieval_eval | 15 |
+| 28 | knowledge_rebuild | 14 |
+| 29 | chroma_store, chroma_retriever | 15 |
+
+Phase 3 知识库栈已具 **存-读-调-发-索引** 闭环。
+
+---
+
+## 知识自检 20 问（Phase 3 综合）
+
+1. KnowledgeStore 权威数据源？  
+2. rebuild 与 evaluate 区别？  
+3. chunk_config 何时生效？  
+4. uploads 与 sample 优先级？  
+5. Chroma 存什么不存什么？  
+6. ……（教师可口播其余 15 问）
+
+---
+
+## 致谢
+
+感谢产品部提供真实 PDF 样例，运维部提供备份窗口，QA 通宵跑 regression。

@@ -1,70 +1,78 @@
-# Day 26 总结
+# Phase 3 第二日总结
 
-**需求**：ZL-NA-REQ-026
+Day 25 可写 txt → Day 26 多格式解析 + 章节分块。  
+明日 Day 27：chunk_size/overlap 调参与 hit@1 评估。
 
-## 概述
-
-Day25-26 回顾。
-
-## 核心知识点
-
-### 1. 解析层与索引层分离
-
-赵岩：「解析在 `tools/`，索引仍在 `KnowledgeStore`。」Day 25 只能传 txt，今日扩展 md/pdf。
-
-### 2. ParsedDocument 统一模型
-
-`filename`、`format`、`plain_text`、`sections[]`、`page_count`。
-
-### 3. Markdown 解析
-
-- 剥离 ` ``` ` 代码块  
-- 按 `#` 标题切章节  
-- `chunk_markdown_sections` 按节分块  
-
-### 4. PDF 解析
-
-`pypdf.PdfReader` 逐页 `extract_text()`。扫描件无 OCR 留待后续。
-
-### 5. 分块策略对比
-
-| 策略 | 适用 | 特点 |
-|------|------|------|
-| fixed | txt/pdf | 滑动窗口 overlap |
-| markdown | .md | 章节语义完整 |
-| auto | 上传默认 | md 用章节，其余 fixed |
-
-### 6. API v0.26.0
-
-`POST /api/knowledge/upload` 响应新增 `format` 字段。`status` 返回 `supported_formats`。
-
-### 8. 样例文件
-
-`day26/sample_docs/product_notice.md` 含 5 个章节与代码块。`product_notice.pdf` 由 fpdf2 生成供 CI 抽取测试。
-
-### 9. 与 Day 27 衔接
-
-明日聚焦 `chunk_size` / `overlap` 调参与检索命中率评估，解析层接口保持不变。
-
-### 10. 团队分工回顾
-
-| 角色 | Day 26 贡献 |
-|------|-------------|
-| 陈默 | doc_parser 架构 |
-| 林晓 | markdown_parser |
-| 周航 | pypdf 集成与 CI |
-| 赵岩 | 分块策略选型评审 |
-
-## 实操
-
-```bash
-cd nexus-agent-platform
-export PYTHONPATH=src
-python3 src/day26/chunk_compare_demo.py
+```mermaid
+graph LR
+    D25[txt store] --> D26[md/pdf parse]
+    D26 --> D27[evaluate]
 ```
 
-## 思考题
+总结完。
 
-1. 为何代码块要从 Markdown 剥离？  
-2. PDF 与 Markdown 默认分块策略为何不同？  
-3. 上传后为何要 `clear_all` 会话？
+---
+
+## Phase3 两日时间线详表
+
+| 时间 | Day25 | Day26 |
+|------|-------|-------|
+| 上午 | KnowledgeStore | markdown_parser |
+| 下午 | upload API | pdf + compare |
+| 晚自习 | store.json | chunk_strategies |
+| 验收 | txt chat | md/pdf chat |
+
+## 投资人 Q&A 预案
+
+问：为何不全 OCR？答：成本与教学边界。问：格式更多？答：docx 在 backlog。问：命中率？答：Day27 evaluate。
+
+## 团队士气
+
+林晓日记：「两天把知识管线走通，比刷题踏实。」
+
+总结长文完。
+
+
+---
+
+## 附录
+
+两日合览：txt→md/pdf；fixed→auto。
+
+---
+
+## 话术
+
+三格式、章节分块、PDF 入库。
+
+---
+
+## 五步专节（24_Phase3第二日总结.md）
+
+1. upload multipart
+2. parse_bytes
+3. chunk_from_parsed
+4. ingest_parsed
+5. clear_all
+
+<!-- vol4-26-steps -->
+
+### 索引 26 专属注记
+
+本节与 ZL-NA-REQ-026 第 9 条 FR 呼应。 实验记录编号 EXP-D26-26。 讲师批注：复现 `pytest tests/day26/` 第 10 条相关测试。
+
+
+---
+
+## 合并
+
+Day25 写 + Day26 格式
+
+
+---
+
+## 叙事专节
+
+赵岩：「Day25 知识从哪来，Day26 知识长什么样。」
+
+<!-- narrative-24_Phase3第二日总结.md -->

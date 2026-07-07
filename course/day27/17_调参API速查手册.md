@@ -1,74 +1,90 @@
-# Day 27 速查
+# Day 27 调参 API 速查手册
 
-**需求**：ZL-NA-REQ-027
-
-## 概述
-
-curl 大全。
-
-## 核心知识点
-
-### 1. 为何要调参？
-
-块太大 → 噪声多、检索不精准。块太小 → 语义碎裂、上下文不足。Day 27 用 **hit@1** 在固定评估集上对比。
-
-### 2. ChunkConfig 字段
-
-| 字段 | 含义 | 默认 |
-|------|------|------|
-| chunk_size | 最大字符数 | 200 |
-| overlap | 重叠字符 | 40 |
-| strategy | auto/fixed/markdown | auto |
-| name | 预设名称 | default |
-
-### 3. PRESET_CONFIGS
-
-- compact: 120/20  
-- default: 200/40  
-- wide: 400/60  
-- markdown_wide: 500/50 markdown  
-
-### 4. 评估流程
-
-```
-product_notice.md → parse_bytes → 对每套 config 分块
-→ EmbeddingRetriever → 对 EVAL_QUERIES 检索
-→ hit@1 统计 → 排序推荐 best_config
-```
-
-### 5. API 使用
+## 环境
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/knowledge/evaluate \
-  -H 'Content-Type: application/json' \
-  -d '{"use_presets": true}'
+export PYTHONPATH=src NEXUS_LLM_MOCK=1
+uvicorn api.app:create_app --factory --reload
 ```
 
-### 6. 与上传联动
+## GET /api/knowledge/chunk-config
 
-`PUT chunk-config` 后，新上传文档使用新参数分块；已有块不自动重建。
+```bash
+curl -s http://127.0.0.1:8000/api/knowledge/chunk-config | jq .
+```
 
-### 7. 前端
+响应示例：
 
-`#kb-eval-btn` 调用 evaluate，展示推荐配置名与 chunk_size。
+```json
+{
+  "chunk_size": 200,
+  "overlap": 40,
+  "strategy": "auto",
+  "name": "default"
+}
+```
 
-### 8. 指标解读
+## PUT /api/knowledge/chunk-config
 
-- hit_rate 优先于 avg_top_score  
-- chunk_count 影响存储与检索延迟（教学环境可忽略）  
+```bash
+curl -s -X PUT http://127.0.0.1:8000/api/knowledge/chunk-config \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "chunk_size": 400,
+    "overlap": 60,
+    "strategy": "auto",
+    "name": "wide"
+  }' | jq .
+```
 
-### 9. Day 28 预告
+错误示例（422）：
 
-全库按新配置 **rebuild** 与批量评估流水线。
+```bash
+curl -s -X PUT ... -d '{"chunk_size":50,"overlap":50,"strategy":"auto","name":"x"}'
+```
 
-### 10. 实验纪律
+## POST /api/knowledge/evaluate
 
-固定评估集、固定文档、只改一个变量（chunk_size 或 strategy），记录结果表。
+预设评估：
 
-### 11. 常见误区
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/evaluate \
+  -H 'Content-Type: application/json' \
+  -d '{"use_presets": true}' | jq .
+```
 
-| 误区 | 正解 |
-|------|------|
-| hit 低就加大 overlap 到等于 chunk_size | overlap 须 < chunk_size |
-| 评估通过就自动重建全库 | Day 28 才 rebuild |
-| 只看块数越少越好 | 需同时看 hit_rate |
+自定义配置：
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/evaluate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "use_presets": false,
+    "configs": [
+      {"chunk_size": 180, "overlap": 30, "strategy": "auto", "name": "lab1"}
+    ]
+  }' | jq .best_config
+```
+
+## GET /api/knowledge/status
+
+```bash
+curl -s http://127.0.0.1:8000/api/knowledge/status | jq '.chunk_config, .chunk_count'
+```
+
+## Python TestClient 片段
+
+```python
+from fastapi.testclient import TestClient
+from api.app import create_app
+
+client = TestClient(create_app())
+assert client.post("/api/knowledge/evaluate", json={"use_presets": True}).status_code == 200
+```
+
+## 错误码
+
+| 状态码 | 场景 |
+|--------|------|
+| 422 | validate 失败、请求体非法 |
+| 500 | 样例缺失、评估无结果 |

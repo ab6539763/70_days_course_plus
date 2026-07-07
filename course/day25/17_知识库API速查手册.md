@@ -1,95 +1,114 @@
-# Day 25 速查
+# 知识库 API 速查手册
 
-**需求**：ZL-NA-REQ-025  
-**主题**：企业知识库与文档 Ingestion
+**需求**：ZL-NA-REQ-025 | **版本**：0.25.0
 
-## 概述
-
-curl 与 TestClient 示例。
-
----
-
-## 核心知识点
-
-### 1. 从静态 sample_docs 到可写知识库
-
-Day 19–20 的 RAG 管线通过 `RAGContextService.from_sample_docs()` 只读加载。Day 25 的 `KnowledgeStore` 将同一管线 **可追加、可持久化**：
-
-1. 读取或上传文本  
-2. `chunk_documents` 分块  
-3. `EmbeddingRetriever` 训练 TF-IDF 并索引  
-4. 序列化 chunks + embedding state 到 `store.json`  
-5. `as_rag_service()` 供编排器检索  
-
-### 2. 持久化 JSON 结构
-
-```json
-{
-  "version": "1.0",
-  "platform_version": "0.25.0",
-  "documents": [{"name": "raw_faq.txt", "chunk_count": 5}],
-  "chunks": [{"chunk_id": "...", "text": "...", "source": "..."}],
-  "embedding": {"vocab": {}, "idf": [], "fitted": true}
-}
-```
-
-`TfidfEmbeddingModel.export_state()` / `load_state()` 保证向量空间可恢复。
-
-### 3. 上传 API 契约
-
-**POST /api/knowledge/upload**
-
-- Content-Type: `multipart/form-data`  
-- 字段 `file`：UTF-8 `.txt`  
-- 成功响应：`filename`、`chunk_count`、`total_chunks`、`sessions_cleared`  
-
-**GET /api/knowledge/status**
-
-- 返回 `document_count`、`chunk_count`、`documents[]`  
-
-### 4. 会话清除策略
-
-上传会重建全局索引。已创建的 `ChatOrchestrator` 仍持有旧 `RAGContextService` 引用，因此上传后调用 `session_manager.clear_all()`，强制下次 chat 创建新编排器。
-
-### 5. 前端 knowledge.js
-
-- Mock 模式显示「不可用」  
-- API 模式拉取 status、FormData 上传  
-- 错误走 `NexusErrors.mapApiError`  
-
-### 6. factory 注入
-
-```python
-rag = get_knowledge_store().as_rag_service()
-```
-
-全平台共享同一知识库，符合企业「单租户知识库」教学模型。
-
-### 7. 与 Day 26+ 衔接
-
-- Day 26：Markdown/PDF 解析  
-- Day 29：Chroma 替换 JSON 向量存储  
-- Day 31：Sprint 4 知识库项目  
-
----
-
-## 实操
+## 环境
 
 ```bash
-cd nexus-agent-platform
 export PYTHONPATH=src NEXUS_LLM_MOCK=1
-python3 src/day25/ingestion_demo.py
-python3 -m pytest tests/day25/ -q
 ```
 
-## 思考题
+## curl
 
-1. 为何 MVP 只支持 .txt？  
-2. 上传同名文件会发生什么？（追加块，生产应去重）  
-3. `clear_all` 与 `session/reset` 有何区别？  
+```bash
+# 状态
+curl -s http://127.0.0.1:8000/api/knowledge/status | jq
 
-## 延伸阅读
+# 上传
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/upload \
+  -F "file=@custom_faq.txt;type=text/plain"
+```
 
-- [03_架构设计.md](03_架构设计.md)  
-- [22_knowledge_store精读.md](22_knowledge_store精读.md)  
-- [27_Day26文档解析预习.md](27_Day26文档解析预习.md)
+## TestClient
+
+```python
+from fastapi.testclient import TestClient
+from api.app import create_app
+from rag.knowledge_store import KnowledgeStore, set_knowledge_store
+
+store = KnowledgeStore.bootstrap_from_sample_docs(store_path=tmp_path / "s.json")
+set_knowledge_store(store)
+client = TestClient(create_app())
+client.get("/api/knowledge/status")
+```
+
+## Python 直接入库
+
+```python
+from rag.knowledge_store import get_knowledge_store
+kb = get_knowledge_store()
+kb.ingest_text("内容", filename="a.txt")
+kb.save()
+```
+
+## 响应字段
+
+| 字段 | 含义 |
+|------|------|
+| chunk_count | 本次文档块数 |
+| total_chunks | 库内总块数 |
+| sessions_cleared | 清除会话数 |
+| document_count | 文档篇数 |
+
+速查完。
+
+
+---
+
+## 附录：完整测试夹具（速查专节）
+
+```python
+"""Day 25 知识库存储与 ingestion 测试。"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+SRC = Path(__file__).resolve().parents[2] / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from core.paths import get_path
+from day25.constants import SAMPLE_UPLOAD_TEXT
+from rag.embedding import TfidfEmbeddingModel
+from rag.ingestion import ingest_upload
+from rag.knowledge_store import KnowledgeStore, get_knowledge_store, set_knowledge_store
+
+
+@pytest.fixture
+def tmp_store(tmp_path):
+    store_path = tmp_path / "store.json"
+    store = KnowledgeStore.bootstrap_from_sample_docs(store_path=store_path)
+    set_knowledge_store(store)
+    yield store
+    set_knowledge_store(KnowledgeStore.bootstrap_from_sample_docs())
+
+
+def test_bootstrap_
+```
+
+
+速查附录完。
+
+---
+
+## 附录：schemas 字段（速查 vol2）
+
+KnowledgeUploadResponse 见 `api/schemas.py`：`filename`, `format`, `chunk_count`, `document_count`, `total_chunks`, `sessions_cleared`, `index_mode`, `message`。
+
+前端 `renderStatus` 拼接：`document_count 篇 / chunk_count 块`。
+
+速查 vol2 完。
+
+---
+
+## httpie 替代
+
+```bash
+http -f POST :8000/api/knowledge/upload file@faq.txt
+```
+httpie 完。

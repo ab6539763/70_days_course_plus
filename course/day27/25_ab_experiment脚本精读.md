@@ -1,74 +1,143 @@
-# Day 27 精读
+# ab_experiment 脚本精读
 
-**需求**：ZL-NA-REQ-027
+## ab_experiment_demo.py
 
-## 概述
+CLI 入口，不启动 HTTP 服务。
 
-demo 源码。
+```python
+"""
+分块 A/B 实验演示
 
-## 核心知识点
+运行：PYTHONPATH=src python3 src/day27/ab_experiment_demo.py
+"""
 
-### 1. 为何要调参？
+from __future__ import annotations
 
-块太大 → 噪声多、检索不精准。块太小 → 语义碎裂、上下文不足。Day 27 用 **hit@1** 在固定评估集上对比。
+import sys
+from pathlib import Path
 
-### 2. ChunkConfig 字段
+_SRC = Path(__file__).resolve().parent.parent
+_SAMPLE = _SRC / "day26" / "sample_docs" / "product_notice.md"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-| 字段 | 含义 | 默认 |
-|------|------|------|
-| chunk_size | 最大字符数 | 200 |
-| overlap | 重叠字符 | 40 |
-| strategy | auto/fixed/markdown | auto |
-| name | 预设名称 | default |
+from day27.constants import EVAL_QUERIES
+from rag.chunk_config import PRESET_CONFIGS
+from rag.retrieval_eval import EvalQuery, pick_best_config, run_ab_experiment
+from tools.doc_parser import parse_bytes
 
-### 3. PRESET_CONFIGS
 
-- compact: 120/20  
-- default: 200/40  
-- wide: 400/60  
-- markdown_wide: 500/50 markdown  
+def main() -> int:
+    print("=" * 56)
+    print("  Day 27 分块 A/B 实验")
+    print("=" * 56)
 
-### 4. 评估流程
+    doc = parse_bytes(_SAMPLE.read_bytes(), _SAMPLE.name)
+    queries = [EvalQuery.from_dict(q) for q in EVAL_QUERIES]
+    results = run_ab_experiment(doc, list(PRESET_CONFIGS), queries)
+
+    for r in results:
+        cfg = r.config
+        print(
+            f"\n  [{cfg.name}] size={cfg.chunk_size} overlap={cfg.overlap} "
+            f"strategy={cfg.strategy}"
+        )
+        print(f"    chunks={r.chunk_count} hit_rate={r.hit_rate:.0%} avg_score={r.avg_top_score:.3f}")
+
+    best = pick_best_config(results)
+    if best:
+        print(f"\n  ✅ 推荐配置: {best.config.name} (hit_rate={best.hit_rate:.0%})")
+    print("=" * 56)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+
+### 执行流程
+
+1. 读取 `product_notice.md`  
+2. `EvalQuery.from_dict` 加载 EVAL_QUERIES  
+3. `run_ab_experiment(doc, PRESET_CONFIGS, queries)`  
+4. 打印每套 hit_rate、chunk_count  
+5. `pick_best_config` 输出推荐  
+
+### 预期输出解读
 
 ```
-product_notice.md → parse_bytes → 对每套 config 分块
-→ EmbeddingRetriever → 对 EVAL_QUERIES 检索
-→ hit@1 统计 → 排序推荐 best_config
+[compact] size=120 ... hit_rate=75%
+[wide]    size=400 ... hit_rate=100%
+✅ 推荐配置: wide
 ```
 
-### 5. API 使用
+## chunk_tune_api_demo.py
 
-```bash
-curl -X POST http://127.0.0.1:8000/api/knowledge/evaluate \
-  -H 'Content-Type: application/json' \
-  -d '{"use_presets": true}'
+```python
+"""
+分块调参 API 演示
+
+运行：PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day27/chunk_tune_api_demo.py
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+_SRC = Path(__file__).resolve().parent.parent
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+os.environ.setdefault("NEXUS_LLM_MOCK", "1")
+
+from fastapi.testclient import TestClient
+
+from api.app import create_app
+from rag.knowledge_store import KnowledgeStore, set_knowledge_store
+
+
+def main() -> int:
+    set_knowledge_store(KnowledgeStore.bootstrap_from_sample_docs())
+    client = TestClient(create_app())
+
+    print("=== Day 27 Chunk Tune API Demo ===\n")
+    cfg = client.get("/api/knowledge/chunk-config").json()
+    print(f"  GET chunk-config: {cfg}")
+
+    updated = client.put(
+        "/api/knowledge/chunk-config",
+        json={"chunk_size": 300, "overlap": 50, "strategy": "auto", "name": "tuned"},
+    )
+    print(f"\n  PUT chunk-config: {updated.json()}")
+
+    ev = client.post("/api/knowledge/evaluate", json={"use_presets": True})
+    print(f"\n  POST evaluate best: {ev.json().get('best_config')}")
+    print(f"  eval queries: {ev.json().get('eval_query_count')}")
+
+    health = client.get("/api/health").json()
+    print(f"\n  version: {health.get('version')}")
+    print("\n  ✅ API 演示完成")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 ```
 
-### 6. 与上传联动
 
-`PUT chunk-config` 后，新上传文档使用新参数分块；已有块不自动重建。
+### 与 CLI 差异
 
-### 7. 前端
+- 走 HTTP 层，验证路由与 schema  
+- 需 `NEXUS_LLM_MOCK=1`  
+- 演示 PUT 后 GET 一致性  
 
-`#kb-eval-btn` 调用 evaluate，展示推荐配置名与 chunk_size。
+## 排错
 
-### 8. 指标解读
-
-- hit_rate 优先于 avg_top_score  
-- chunk_count 影响存储与检索延迟（教学环境可忽略）  
-
-### 9. Day 28 预告
-
-全库按新配置 **rebuild** 与批量评估流水线。
-
-### 10. 实验纪律
-
-固定评估集、固定文档、只改一个变量（chunk_size 或 strategy），记录结果表。
-
-### 11. 常见误区
-
-| 误区 | 正解 |
+| 症状 | 检查 |
 |------|------|
-| hit 低就加大 overlap 到等于 chunk_size | overlap 须 < chunk_size |
-| 评估通过就自动重建全库 | Day 28 才 rebuild |
-| 只看块数越少越好 | 需同时看 hit_rate |
+| ModuleNotFoundError: day27 | PYTHONPATH=src |
+| 样例找不到 | day26/sample_docs 是否存在 |
+| evaluate 500 | 查看服务端日志 detail |

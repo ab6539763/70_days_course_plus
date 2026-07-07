@@ -1,71 +1,104 @@
-# Day 29 速查
+# Chroma API 速查手册（Day 29）
 
-**需求**：ZL-NA-REQ-029
+## ChromaVectorIndex
 
-## 概述
-
-Python API。
-
-## 核心知识点
-
-### 1. 为何引入 Chroma？
-
-Day 25–28 向量与词表挤在 `store.json`，随 chunk 增长文件膨胀、全量 load 变慢。Chroma 提供**专用向量持久化**与 ANN 检索能力（教学规模仍可用线性 scan 等价路径）。
-
-### 2. 双存储架构
-
-| 存储 | 内容 | 路径 |
+| 方法 | 签名 | 说明 |
 |------|------|------|
-| JSON | documents、chunks、TF-IDF vocab/idf | store.json |
-| Chroma | chunk_id、embedding、metadata | data/knowledge/chroma |
+| `__init__` | `(persist_path, *, collection_name="nexus_knowledge")` | 延迟连接 |
+| `reset` | `() -> None` | 删 collection 并重建 |
+| `count` | `() -> int` | 当前向量数 |
+| `upsert_chunks` | `(chunks, vectors) -> int` | 批量写入 |
+| `query` | `(query_vector, *, top_k=3, min_score=0.05)` | 检索 |
+| `delete_by_ids` | `(ids: list[str]) -> int` | 按 id 删 |
+| `delete_by_source` | `(source: str) -> int` | 按 metadata 删 |
 
-### 3. _rebuild_index 新流程
+## ChromaEmbeddingRetriever
 
-1. EmbeddingRetriever(chunks) 训练 TF-IDF  
-2. embedding_state = export_state()  
-3. chroma.reset()  
-4. chroma.upsert_chunks(chunks, vectors)  
+| 方法 | 说明 |
+|------|------|
+| `search(query, *, top_k=3)` | 返回 `list[RetrievalResult]` |
+| `chunk_count` | 属性，等同 chroma.count() |
 
-### 4. ChromaVectorIndex API
+## KnowledgeStore（Day 29 相关）
 
-- `reset()` — 删除 collection  
-- `upsert_chunks()` — 写入向量  
-- `query()` — 按 query_embedding 检索  
-- `count()` — 当前向量数  
+| 方法 | 说明 |
+|------|------|
+| `_rebuild_index()` | 全量：fit TF-IDF → reset → upsert |
+| `_sync_chroma_from_json()` | chroma 空时回填 |
+| `_chroma_index()` | 工厂，解析 chroma_path |
+| `status_dict()` | 含 chroma 字段 |
 
-### 5. ChromaEmbeddingRetriever
+## HTTP
 
-实现与 EmbeddingRetriever 相同的 `search(query, top_k)`，供 DocumentIndex 无感切换。
+```bash
+curl -s http://127.0.0.1:8000/api/knowledge/status | jq '{vector_backend,chroma_count,chunk_count}'
+```
 
-### 6. 与 Day 28 rebuild 关系
+## 环境变量
 
-`rebuild_store` 仍调用 `_rebuild_index()`，无需修改 rebuild 模块；换的是索引实现。
+| 变量 | 用途 |
+|------|------|
+| PYTHONPATH=src | 导入路径 |
+| NEXUS_LLM_MOCK=1 | 测试 mock LLM |
 
-### 7. 评估路径隔离
+## 常量
 
-`retrieval_eval.build_retriever_for_doc` 仍用内存 EmbeddingRetriever，避免 A/B 实验写入生产 Chroma。
+- `VECTOR_BACKEND = "chroma"`  
+- `COLLECTION_NAME = "nexus_knowledge"`  
+- `STORE_VERSION = "1.1"`  
 
-### 8. status 新字段
+---
+
+## Python 交互示例
+
+```python
+from pathlib import Path
+from rag.chroma_store import ChromaVectorIndex
+from rag.knowledge_store import KnowledgeStore
+
+store = KnowledgeStore.load_or_bootstrap()
+idx = store._chroma_index()
+print(idx.count(), store.chunk_count)
+```
+
+---
+
+## 错误码与异常（教学）
+
+| 异常 | 场景 |
+|------|------|
+| ValueError chunks/vectors 不一致 | upsert 参数错误 |
+| chromadb 未安装 | import 失败 |
+| sqlite locked | 多进程写同 path |
+
+---
+
+## REST 响应示例（status 节选）
 
 ```json
 {
+  "platform_version": "0.30.0",
+  "document_count": 3,
+  "chunk_count": 12,
   "vector_backend": "chroma",
-  "chroma_path": "/.../data/knowledge/chroma",
-  "chroma_count": 12
+  "chroma_path": "/app/data/knowledge/chroma",
+  "chroma_count": 12,
+  "chunk_config": { "chunk_size": 200, "overlap": 40, "strategy": "auto", "name": "default" },
+  "last_rebuilt_at": "2026-08-04T10:00:00Z",
+  "index_mode": "full"
 }
 ```
 
-### 9. Day 30 预告
+注：`index_mode` / `last_incremental_at` 字段在 Day 30 增量路径更常用；Day 29 rebuild 后一般为 `full`。
 
-增量索引：单文档 upload 仅 upsert 对应 chunk，无需全量 reset。
+---
 
-### 10. 运维注意
+## CLI 速查
 
-备份需同时包含 store.json 与 chroma 目录；仅删 JSON 会导致元数据丢失。
+```bash
+# 只看 chroma 字段
+curl -s localhost:8000/api/knowledge/status | python3 -m json.tool | grep chroma
 
-### 11. 课堂检查清单
-
-- [ ] chroma_count == chunk_count  
-- [ ] rebuild 后 Chroma 与 JSON 一致  
-- [ ] chat 检索仍返回相关片段  
-- [ ] 删除 chroma 后 load 能自动回填
+# 健康
+curl -s localhost:8000/api/health | jq .version
+```

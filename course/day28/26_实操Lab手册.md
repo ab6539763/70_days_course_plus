@@ -1,68 +1,69 @@
-# Day 28 Lab
+# Day 28 实操 Lab 手册
 
-**需求**：ZL-NA-REQ-028
+**分值**：100 分
 
-## 概述
+## Step 0 环境（5 分）
 
-六步。
+```bash
+cd nexus-agent-platform
+export PYTHONPATH=src NEXUS_LLM_MOCK=1
+pytest tests/day28/ -q
+```
 
-## 核心知识点
+## Step 1 观察重建前（10 分）
 
-### 1. 为何需要 rebuild？
+```bash
+python3 -c "
+from rag.knowledge_store import KnowledgeStore
+s = KnowledgeStore.bootstrap_from_sample_docs()
+print(s.chunk_count, s.chunk_config.name)
+"
+```
 
-Day 27 只改默认配置，**已入库块不会自动变化**。rebuild 重扫源文件，全库统一到最新 chunk_config。
+## Step 2 设置 wide 并 rebuild（25 分）
 
-### 2. 双源扫描
+```bash
+python3 src/day28/rebuild_demo.py | tee lab28_rebuild.txt
+```
 
-| 源 | 路径 | 说明 |
-|----|------|------|
-| 样例 | day02/sample_docs | 内置三份 txt |
-| 上传 | data/knowledge/uploads | 运营上传 |
+记录 chunks 变化：______ → ______
 
-同名时 uploads 覆盖 sample。
+## Step 3 API rebuild（25 分）
 
-### 3. rebuild_store 步骤
+```bash
+python3 src/day28/rebuild_api_demo.py
+```
 
-1. collect_source_files  
-2. documents.clear() / chunks.clear()  
-3. 逐文件 parse_bytes → chunk_from_parsed  
-4. _rebuild_index()  
-5. save() + last_rebuilt_at  
+截图含 `last_rebuilt_at`。
 
-### 4. apply_best_config
+## Step 4 apply_best_config（20 分）
 
-先 run_ab_experiment 选 PRESET 最优 → set_chunk_config → rebuild_store。
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/rebuild \
+  -H 'Content-Type: application/json' \
+  -d '{"apply_best_config":true}' | jq '.chunk_config.name, .chunks_after'
+```
 
-### 5. API 响应
+## Step 5 chat 抽测（10 分）
 
-RebuildResponse 含 chunks_before/after、source_files、rebuilt_at、sessions_cleared。
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"赎回多久到账","session_id":"lab28"}' | jq .
+```
 
-### 6. 与 evaluate 关系
+## Step 6 反思（5 分）
 
-| 操作 | 作用域 | 是否写库 |
-|------|--------|----------|
-| evaluate | 样例文档模拟 | 否 |
-| rebuild | 全库源文件 | 是 |
+100 字：rebuild 与 Day 27 evaluate 分工。
 
-### 7. 前端
+## 教师勾选
 
-`#kb-rebuild-btn` 调用 runRebuild(false)，展示块数变化。
+- [ ] lab28_rebuild.txt 已交  
+- [ ] chat 回答含 T+1 或赎回关键词  
 
-### 8. 运维建议
+## Lab 专属辅导
 
-重建前备份 store.json；课堂演示可用 --skip 生产数据。
-
-### 9. Day 29 预告
-
-Chroma 向量库持久化，替换 JSON TF-IDF。
-
-### 10. 风险
-
-重建期间查询短暂不一致；教学环境单进程可忽略。
-
-### 11. 发布检查清单
-
-- [ ] evaluate 已跑且 best_config 已确认  
-- [ ] uploads 目录文档齐全  
-- [ ] rebuild 后 spot-check 三条 EVAL_QUERIES  
-- [ ] last_rebuilt_at 已更新
+**Step 2**：若 chunks 前后不变，检查是否忘记 `set_chunk_config(wide)`。  
+**Step 4**：`apply_best_config` 响应中 `chunk_config.name` 应与 Day 27 evaluate 一致。  
+**Step 5**：chat 失败先查 session 是否需新 `session_id`。  
+**常见扣分**：未提交 `lab28_rebuild.txt`；反思未对比 evaluate vs rebuild 写库差异。

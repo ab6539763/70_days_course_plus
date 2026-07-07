@@ -1,95 +1,75 @@
-# Day 25 全览
+# Phase 3 启动全览（Day 25–31）
 
-**需求**：ZL-NA-REQ-025  
-**主题**：企业知识库与文档 Ingestion
+| Day | 主题 | 需求 |
+|-----|------|------|
+| 25 | 知识库 ingestion + upload API | ZL-NA-REQ-025 |
+| 26 | Markdown/PDF 解析 + 分块策略 | ZL-NA-REQ-026 |
+| 27 | 分块调参 + 检索评估 | ZL-NA-REQ-027 |
+| 28 | 全量 rebuild | ZL-NA-REQ-028 |
+| 29 | Chroma 向量库 | ZL-NA-REQ-029 |
+| 30 | 知识库 Sprint 总结 | ZL-NA-REQ-030 |
+| 31 | Phase 3 答辩 | — |
 
-## 概述
+## Day 25 在路线图的位置
 
-Day 25-31 路线图。
+**数据面第一步**：让知识「可写入」。没有 Day 25，后续解析与向量库无挂载点。
 
----
+## 投资人叙事
 
-## 核心知识点
+赵岩：「Day 24 是脸，Day 25 是脑的记忆皮层。」
 
-### 1. 从静态 sample_docs 到可写知识库
-
-Day 19–20 的 RAG 管线通过 `RAGContextService.from_sample_docs()` 只读加载。Day 25 的 `KnowledgeStore` 将同一管线 **可追加、可持久化**：
-
-1. 读取或上传文本  
-2. `chunk_documents` 分块  
-3. `EmbeddingRetriever` 训练 TF-IDF 并索引  
-4. 序列化 chunks + embedding state 到 `store.json`  
-5. `as_rag_service()` 供编排器检索  
-
-### 2. 持久化 JSON 结构
-
-```json
-{
-  "version": "1.0",
-  "platform_version": "0.25.0",
-  "documents": [{"name": "raw_faq.txt", "chunk_count": 5}],
-  "chunks": [{"chunk_id": "...", "text": "...", "source": "..."}],
-  "embedding": {"vocab": {}, "idf": [], "fitted": true}
-}
-```
-
-`TfidfEmbeddingModel.export_state()` / `load_state()` 保证向量空间可恢复。
-
-### 3. 上传 API 契约
-
-**POST /api/knowledge/upload**
-
-- Content-Type: `multipart/form-data`  
-- 字段 `file`：UTF-8 `.txt`  
-- 成功响应：`filename`、`chunk_count`、`total_chunks`、`sessions_cleared`  
-
-**GET /api/knowledge/status**
-
-- 返回 `document_count`、`chunk_count`、`documents[]`  
-
-### 4. 会话清除策略
-
-上传会重建全局索引。已创建的 `ChatOrchestrator` 仍持有旧 `RAGContextService` 引用，因此上传后调用 `session_manager.clear_all()`，强制下次 chat 创建新编排器。
-
-### 5. 前端 knowledge.js
-
-- Mock 模式显示「不可用」  
-- API 模式拉取 status、FormData 上传  
-- 错误走 `NexusErrors.mapApiError`  
-
-### 6. factory 注入
-
-```python
-rag = get_knowledge_store().as_rag_service()
-```
-
-全平台共享同一知识库，符合企业「单租户知识库」教学模型。
-
-### 7. 与 Day 26+ 衔接
-
-- Day 26：Markdown/PDF 解析  
-- Day 29：Chroma 替换 JSON 向量存储  
-- Day 31：Sprint 4 知识库项目  
+全览完。
 
 ---
 
-## 实操
+## Phase 3 每日_dependencies
 
-```bash
-cd nexus-agent-platform
-export PYTHONPATH=src NEXUS_LLM_MOCK=1
-python3 src/day25/ingestion_demo.py
-python3 -m pytest tests/day25/ -q
+Day 25 不依赖 Day 26；Day 26 依赖 Day 25 store；Day 27 依赖 Day 26 解析；Day 28 rebuild 依赖 Day 27 评估；Day 29 Chroma 依赖稳定 chunk 管线。
+
+## 投资人时间线
+
+| 日期 | 演示能力 |
+|------|----------|
+| 7/30 | 运营上传 txt |
+| 7/31 | 上传 md/pdf |
+| 8/01 | 调参命中提升 |
+| 8/04 | 一键 rebuild |
+| 8/05 | 向量库 |
+
+## 团队产能假设
+
+陈默架构 40%、林晓全栈 30%、周航 CI 20%、赵岩产品 10%。每日 standup 15 分钟。
+
+
+
+---
+
+## 附录：依赖关系图（全览专节）
+
+```mermaid
+graph TD
+    D25[Day25 可写store] --> D26[Day26 解析]
+    D26 --> D27[Day27 调参]
+    D27 --> D28[Day28 rebuild]
+    D28 --> D29[Day29 Chroma]
 ```
 
-## 思考题
+全览附录完。
 
-1. 为何 MVP 只支持 .txt？  
-2. 上传同名文件会发生什么？（追加块，生产应去重）  
-3. `clear_all` 与 `session/reset` 有何区别？  
+---
 
-## 延伸阅读
+## 附录：每周口号（全览 vol2）
 
-- [03_架构设计.md](03_架构设计.md)  
-- [22_knowledge_store精读.md](22_knowledge_store精读.md)  
-- [27_Day26文档解析预习.md](27_Day26文档解析预习.md)
+- Day 25：「知识能上传」  
+- Day 26：「格式能解析」  
+- Day 27：「参数能调优」  
+- Day 28：「库能重建」  
+- Day 29：「向量能生产」  
+
+全览 vol2 完。
+
+---
+
+## 周会预告
+
+周五 Phase 3 周会展示 Day25–26 联调：txt+md 双格式上传。周会预告完。

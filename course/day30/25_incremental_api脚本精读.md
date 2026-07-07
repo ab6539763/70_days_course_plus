@@ -1,69 +1,124 @@
-# Day 30 精读
+# incremental_api 脚本精读
 
-**需求**：ZL-NA-REQ-030
+```python
+"""
+增量索引 API 演示
 
-## 概述
+运行：PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day30/incremental_api_demo.py
+"""
 
-upload 响应。
+from __future__ import annotations
 
-## 核心知识点
+import os
+import sys
+from pathlib import Path
 
-### 1. 为何需要增量？
+_SRC = Path(__file__).resolve().parent.parent
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-全量 reset 在大库上成本高；运营上传单文档是高频操作。
+os.environ.setdefault("NEXUS_LLM_MOCK", "1")
 
-### 2. 双路径对照
+from fastapi.testclient import TestClient
 
-| 路径 | 方法 | Chroma |
-|------|------|--------|
-| upload | `_incremental_index` | upsert only |
-| rebuild | `_rebuild_index` | reset + upsert |
+from api.app import create_app
+from rag.knowledge_store import KnowledgeStore, set_knowledge_store
 
-### 3. _incremental_index 步骤
 
-1. refit TF-IDF on all chunks  
-2. 若词表扩张 → affected = all chunks  
-3. else affected = 新文档 chunks  
-4. chroma.upsert_chunks（无 reset）  
-5. last_incremental_at = now  
+def main() -> int:
+    store = KnowledgeStore.bootstrap_from_sample_docs()
+    set_knowledge_store(store)
+    client = TestClient(create_app())
 
-### 4. 同名替换
+    print("=== Day 30 Incremental API Demo ===\n")
+    sample = _SRC / "day26" / "sample_docs" / "product_notice.md"
+    if not sample.is_file():
+        print("  sample md missing")
+        return 1
 
-`_remove_document_by_source(filename)`：
-- delete_by_ids from Chroma  
-- filter documents/chunks  
-- reindex chunk.index  
+    before = client.get("/api/knowledge/status").json()
+    print(f"  before: {before['chunk_count']} chunks, mode={before.get('index_mode')}")
 
-### 5. ingest_parsed 参数
+    with sample.open("rb") as fh:
+        resp = client.post(
+            "/api/knowledge/upload",
+            files={"file": ("notice.md", fh, "text/markdown")},
+        )
+    print(f"  upload: {resp.status_code} index_mode={resp.json().get('index_mode')}")
 
-`incremental: bool = False`；`ingest_bytes` 默认 True。
+    with sample.open("rb") as fh:
+        resp2 = client.post(
+            "/api/knowledge/upload",
+            files={"file": ("notice.md", fh, "text/markdown")},
+        )
+    after = client.get("/api/knowledge/status").json()
+    print(f"  re-upload docs={after['document_count']} chroma={after['chroma_count']}")
+    print(f"  last_incremental_at: {after.get('last_incremental_at')}")
+    print(f"  version: {client.get('/api/health').json().get('version')}")
+    print("\n  ✅ API 演示完成")
+    return 0
 
-### 6. TF-IDF 词表扩张
 
-新文档引入新词时向量维度变化，Chroma 须 `reset` 后全量 upsert；同内容 re-upload 则仅 upsert 不 reset。
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
 
-- `index_mode`: incremental | full  
-- `last_incremental_at` ISO 时间  
 
-### 7. 与 Day 29 关系
+## test_incremental_api.py
 
-Chroma 引擎不变，变的是**写入节奏**。
+见 22 精读第十八节 API 测试全文；本节仅摘要：
 
-### 8. 与 Day 28 rebuild
+- `test_upload_returns_incremental_mode` — patch reset==0  
+- `test_status_shows_incremental_fields` — last_incremental_at  
+- `test_reupload_same_file_no_duplicate_docs` — document_count  
+- `test_rebuild_switches_to_full_mode` — rebuild 后 full  
+- `test_chat_works_after_incremental_upload` — E2E  
 
-rebuild 后 index_mode=full；upload 后再变 incremental。
+## 关键断言
 
-### 9. Day 31 预告
+`test_upload_returns_incremental_mode`：patch reset 为 0，响应含 incremental。
 
-混合检索：关键词 + 向量融合排序。
+---
 
-### 10. 风险
+## curl 示例
 
-词表变化时需全量 upsert；监控 chroma_count == chunk_count。
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/upload \
+  -F "file=@src/day26/sample_docs/product_notice.md;filename=notice.md"
+curl -s http://127.0.0.1:8000/api/knowledge/status | jq '{index_mode,last_incremental_at,chroma_count}'
+```
 
-### 11. 课堂检查清单
+---
 
-- [ ] upload 不触发 reset  
-- [ ] 重复上传不 duplicate docs  
-- [ ] rebuild 后 mode=full  
-- [ ] chat 检索正常
+## 响应字段说明
+
+| 字段 | 含义 |
+|------|------|
+| index_mode | incremental / full |
+| message | 含「增量」提示文案 |
+| chunk_count | 当前总块数 |
+
+---
+
+## 与 Day29 chroma_api 差异
+
+Day29 `test_upload_updates_chroma_count` 不测 reset；Day30 `test_upload_returns_incremental_mode` **必须** mock reset==0。
+
+---
+
+## incremental_api_demo 逐行注释
+
+| 行 | 作用 |
+|----|------|
+| bootstrap store | 测试数据 |
+| before status | 基线 chunk_count |
+| 第一次 upload | 建立 incremental 状态 |
+| patch reset 内第二次 upload | 核心断言 |
+| after status | doc 数、chroma_count |
+| health version | 0.30.0 |
+
+---
+
+## 与 upload 路由源码提示
+
+阅读 `api/knowledge.py` 中 `upload` 处理函数，确认 `incremental=True` 传参位置（行号随版本变化，以仓库为准）。

@@ -1,68 +1,91 @@
-# Day 28 总结
+# Phase 3 第四日总结（Day 25–28）
 
-**需求**：ZL-NA-REQ-028
+| 日 | 关键词 |
+|----|--------|
+| 25 | 知识库 REST |
+| 26 | md/pdf 解析 |
+| 27 | chunk A/B evaluate |
+| 28 | rebuild 发布 |
 
-## 概述
+## 发布闭环
 
-Day25-28。
+```
+evaluate (实验) → chunk-config (配置) → rebuild (发布) → chat (验证)
+```
 
-## 核心知识点
+## 字段演进
 
-### 1. 为何需要 rebuild？
+store.json：
 
-Day 27 只改默认配置，**已入库块不会自动变化**。rebuild 重扫源文件，全库统一到最新 chunk_config。
+- Day 25: documents, chunks  
+- Day 27: + chunk_config  
+- Day 28: + last_rebuilt_at  
 
-### 2. 双源扫描
+## 测试累计
 
-| 源 | 路径 | 说明 |
-|----|------|------|
-| 样例 | day02/sample_docs | 内置三份 txt |
-| 上传 | data/knowledge/uploads | 运营上传 |
+day25 + day26 + day27 + day28 pytest 作为 Phase 3 回归套件。
 
-同名时 uploads 覆盖 sample。
+## 明日
 
-### 3. rebuild_store 步骤
+Day 29：向量从 JSON 迁至 Chroma，**rebuild 流程不变**，变的是 `_rebuild_index` 内部实现。
 
-1. collect_source_files  
-2. documents.clear() / chunks.clear()  
-3. 逐文件 parse_bytes → chunk_from_parsed  
-4. _rebuild_index()  
-5. save() + last_rebuilt_at  
+---
 
-### 4. apply_best_config
+## Day 25–28 能力栈（详细）
 
-先 run_ab_experiment 选 PRESET 最优 → set_chunk_config → rebuild_store。
+### 知识入库
 
-### 5. API 响应
+- Day 25：`ingest_upload` / `ingest_text`  
+- Day 26：`parse_bytes` 支持 md/pdf  
+- Day 27：默认分块可配置、可评估  
+- Day 28：全库按配置重扫发布  
 
-RebuildResponse 含 chunks_before/after、source_files、rebuilt_at、sessions_cleared。
+### 状态字段演进
 
-### 6. 与 evaluate 关系
+```json
+{
+  "chunk_config": {"name": "wide", "chunk_size": 400},
+  "last_rebuilt_at": "2026-08-04T12:00:00Z",
+  "index_mode": "full"
+}
+```
 
-| 操作 | 作用域 | 是否写库 |
-|------|--------|----------|
-| evaluate | 样例文档模拟 | 否 |
-| rebuild | 全库源文件 | 是 |
+### API 端点累积
 
-### 7. 前端
+| Day | 新端点 |
+|-----|--------|
+| 25 | POST upload, GET status |
+| 27 | GET/PUT chunk-config, POST evaluate |
+| 28 | POST rebuild |
 
-`#kb-rebuild-btn` 调用 runRebuild(false)，展示块数变化。
+### 团队能力验收
 
-### 8. 运维建议
+- 林晓：能独立跑通 evaluate → rebuild  
+- 周航：能备份恢复 store.json  
+- 赵岩：能评审 PRESET 选型报告  
+- 小吴：能执行 chat 抽测并填表  
 
-重建前备份 store.json；课堂演示可用 --skip 生产数据。
+### 常见面试题
 
-### 9. Day 29 预告
+1. 为何 evaluate 不 rebuild？  
+2. uploads 优先的业务含义？  
+3. last_rebuilt_at 与 last_incremental_at 区别？（Day 30）  
 
-Chroma 向量库持久化，替换 JSON TF-IDF。
+### 下一阶段
 
-### 10. 风险
+Day 29 Chroma：rebuild 后检查 `chroma_count == chunk_count`。
 
-重建期间查询短暂不一致；教学环境单进程可忽略。
+## 学员自测 10 问（Day 28）
 
-### 11. 发布检查清单
+1. rebuild 是否删除 uploads？  
+2. apply_best_config 依赖哪份评估样例？  
+3. sessions_cleared 何时大于 0？  
+4. include_sample_docs=false 的典型场景？  
+5. RebuildReport 哪个字段用于审计？  
+6. 与 evaluate 相比谁写入 chunks？  
+7. collect_source_files 返回顺序？  
+8. 重建失败如何回滚？  
+9. Day 30 incremental 与 rebuild 区别？  
+10. 投资人演示前三步 API 是什么？  
 
-- [ ] evaluate 已跑且 best_config 已确认  
-- [ ] uploads 目录文档齐全  
-- [ ] rebuild 后 spot-check 三条 EVAL_QUERIES  
-- [ ] last_rebuilt_at 已更新
+参考答案见 `21_课堂知识竞赛.md` 与 `09_作业答案.md`。

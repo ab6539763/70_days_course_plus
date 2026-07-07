@@ -1,70 +1,117 @@
-# Day 26 Lab
+# Day 26 实操 Lab
 
-**需求**：ZL-NA-REQ-026
-
-## 概述
-
-六步实验。
-
-## 核心知识点
-
-### 1. 解析层与索引层分离
-
-赵岩：「解析在 `tools/`，索引仍在 `KnowledgeStore`。」Day 25 只能传 txt，今日扩展 md/pdf。
-
-### 2. ParsedDocument 统一模型
-
-`filename`、`format`、`plain_text`、`sections[]`、`page_count`。
-
-### 3. Markdown 解析
-
-- 剥离 ` ``` ` 代码块  
-- 按 `#` 标题切章节  
-- `chunk_markdown_sections` 按节分块  
-
-### 4. PDF 解析
-
-`pypdf.PdfReader` 逐页 `extract_text()`。扫描件无 OCR 留待后续。
-
-### 5. 分块策略对比
-
-| 策略 | 适用 | 特点 |
-|------|------|------|
-| fixed | txt/pdf | 滑动窗口 overlap |
-| markdown | .md | 章节语义完整 |
-| auto | 上传默认 | md 用章节，其余 fixed |
-
-### 6. API v0.26.0
-
-`POST /api/knowledge/upload` 响应新增 `format` 字段。`status` 返回 `supported_formats`。
-
-### 8. 样例文件
-
-`day26/sample_docs/product_notice.md` 含 5 个章节与代码块。`product_notice.pdf` 由 fpdf2 生成供 CI 抽取测试。
-
-### 9. 与 Day 27 衔接
-
-明日聚焦 `chunk_size` / `overlap` 调参与检索命中率评估，解析层接口保持不变。
-
-### 10. 团队分工回顾
-
-| 角色 | Day 26 贡献 |
-|------|-------------|
-| 陈默 | doc_parser 架构 |
-| 林晓 | markdown_parser |
-| 周航 | pypdf 集成与 CI |
-| 赵岩 | 分块策略选型评审 |
-
-## 实操
+## Lab 0
 
 ```bash
-cd nexus-agent-platform
+pip install pypdf
 export PYTHONPATH=src
+pytest tests/day26/ -v
+```
+
+## Lab 1 parse_demo
+
+```bash
+python3 src/day26/parse_demo.py
+```
+
+## Lab 2 chunk_compare
+
+```bash
 python3 src/day26/chunk_compare_demo.py
 ```
 
-## 思考题
+记录 fixed vs markdown chunk_count。
 
-1. 为何代码块要从 Markdown 剥离？  
-2. PDF 与 Markdown 默认分块策略为何不同？  
-3. 上传后为何要 `clear_all` 会话？
+## Lab 3 上传 md
+
+Swagger 上传 product_notice.md，`format==markdown`。
+
+## Lab 4 上传 pdf
+
+上传 pdf，`format==pdf`，chat 问起购金额。
+
+## Lab 5 代码块
+
+上传含 code fence 的 md，检索不应命中 fence 内符号。
+
+## Lab 6 策略实验
+
+```python
+from tools.doc_parser import parse_bytes
+from rag.chunk_strategies import chunk_from_parsed
+doc = parse_bytes(open("src/day26/sample_docs/product_notice.md","rb").read(), "p.md")
+print(len(chunk_from_parsed(doc, strategy="fixed")))
+print(len(chunk_from_parsed(doc, strategy="markdown")))
+```
+
+<details><summary>期望</summary>markdown 块数通常更少且语义完整</details>
+
+---
+
+## Lab 7–10 详解
+
+**Lab 7** 上传 docx，记录 422 detail 全文。**Lab 8** 损坏 pdf 400。**Lab 9** strategy_report 表格。**Lab 10** 200 字结论：product_notice 适合 markdown 策略因五章标题清晰。
+
+## 互评 Rubric
+
+| 项 | 通过 |
+|----|------|
+| pytest 17 | 全绿 |
+| md upload | format 对 |
+| compare 输出 | 两行 |
+| chat 命中 | 起购金额 |
+
+Lab 详解完。
+
+
+---
+
+## Lab 7–9 加分
+
+Lab 7：上传 .docx → 422 截图  
+Lab 8：损坏 pdf → 400  
+Lab 9：撰写 strategy_report.md  
+
+## 互评
+
+三人组交换 Lab 6 输出，核对 markdown 块含 `[` 标题前缀。
+
+Lab 专节完。
+
+---
+
+## 安全
+
+禁 PII pdf。
+
+---
+
+## 排错专节（26_实操Lab手册.md）
+
+| 现象 | 处理 |
+|------|------|
+| PDF_EMPTY | 换可编辑 pdf |
+| 422 docx | 仅 txt/md/pdf |
+| chunk 过少 | 检查 auto 策略 |
+
+<!-- vol4-28-debug -->
+
+### 索引 28 专属注记
+
+本节与 ZL-NA-REQ-026 第 2 条 FR 呼应。 实验记录编号 EXP-D26-28。 讲师批注：复现 `pytest tests/day26/` 第 12 条相关测试。
+
+
+---
+
+## Lab10
+
+200 字 compare 结论
+
+
+---
+
+## 叙事专节
+
+Lab 互评：strategy 结论须引用 chunk_count 数字。
+
+<!-- narrative-26_实操Lab手册.md -->

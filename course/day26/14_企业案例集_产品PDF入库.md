@@ -1,70 +1,76 @@
-# Day 26 案例
+# 企业案例：产品 PDF 入库
 
-**需求**：ZL-NA-REQ-026
+合规部提交 `product_notice.pdf`。林晓上传后问「起购门槛」，RAG 命中抽取文本「1000 元」。
 
-## 概述
+## 步骤
 
-产品部上传 PDF。
+1. 侧栏选 PDF  
+2. 确认 format=pdf  
+3. chat 验收  
 
-## 核心知识点
+## 失败
 
-### 1. 解析层与索引层分离
+扫描件 PDF → PDF_EMPTY → 走 OCR 议题。
 
-赵岩：「解析在 `tools/`，索引仍在 `KnowledgeStore`。」Day 25 只能传 txt，今日扩展 md/pdf。
+案例完。
 
-### 2. ParsedDocument 统一模型
+---
 
-`filename`、`format`、`plain_text`、`sections[]`、`page_count`。
+## 合规部周报摘录
 
-### 3. Markdown 解析
+「product_notice.pdf 已入库，chat 可答起购与风险条款。扫描件合同仍走人工。」周航注：PDF_EMPTY 不是 bug，是边界教育。
 
-- 剥离 ` ``` ` 代码块  
-- 按 `#` 标题切章节  
-- `chunk_markdown_sections` 按节分块  
+## 操作录屏时间码
 
-### 4. PDF 解析
+00:00 选择 pdf；00:05 上传；00:12 status 更新；00:20 chat 提问；00:45 展示命中句。
 
-`pypdf.PdfReader` 逐页 `extract_text()`。扫描件无 OCR 留待后续。
+## 失败转工单
 
-### 5. 分块策略对比
+扫描件 → 工单 OCR-2026-0711 → 不在 Day26 范围。
 
-| 策略 | 适用 | 特点 |
-|------|------|------|
-| fixed | txt/pdf | 滑动窗口 overlap |
-| markdown | .md | 章节语义完整 |
-| auto | 上传默认 | md 用章节，其余 fixed |
+案例长文完。
 
-### 6. API v0.26.0
 
-`POST /api/knowledge/upload` 响应新增 `format` 字段。`status` 返回 `supported_formats`。
+---
 
-### 8. 样例文件
+## 附录
 
-`day26/sample_docs/product_notice.md` 含 5 个章节与代码块。`product_notice.pdf` 由 fpdf2 生成供 CI 抽取测试。
+合规 PDF 须可编辑；扫描件走人工 OCR 工单。
 
-### 9. 与 Day 27 衔接
+---
 
-明日聚焦 `chunk_size` / `overlap` 调参与检索命中率评估，解析层接口保持不变。
+## 量化
 
-### 10. 团队分工回顾
+5 分钟上传替代 3 天发版。
 
-| 角色 | Day 26 贡献 |
-|------|-------------|
-| 陈默 | doc_parser 架构 |
-| 林晓 | markdown_parser |
-| 周航 | pypdf 集成与 CI |
-| 赵岩 | 分块策略选型评审 |
+---
 
-## 实操
+## 五步专节（14_企业案例集_产品PDF入库.md）
 
-```bash
-cd nexus-agent-platform
-export PYTHONPATH=src
-python3 src/day26/chunk_compare_demo.py
-```
+1. upload multipart
+2. parse_bytes
+3. chunk_from_parsed
+4. ingest_parsed
+5. clear_all
 
-## 思考题
+<!-- vol4-16-steps -->
 
-1. 为何代码块要从 Markdown 剥离？  
-2. PDF 与 Markdown 默认分块策略为何不同？  
-3. 上传后为何要 `clear_all` 会话？
+### 索引 16 专属注记
+
+本节与 ZL-NA-REQ-026 第 8 条 FR 呼应。 实验记录编号 EXP-D26-16。 讲师批注：复现 `pytest tests/day26/` 第 17 条相关测试。
+
+
+---
+
+## 工单
+
+PDF_EMPTY → OCR 工单
+
+
+---
+
+## 叙事专节
+
+合规周报写：可编辑 pdf 入库 OK，扫描件走 OCR 工单。
+
+<!-- narrative-14_企业案例集_产品PDF入库.md -->

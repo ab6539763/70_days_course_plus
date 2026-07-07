@@ -1,71 +1,66 @@
-# Day 29 验收
+# Day 29 Chroma 验收清单
 
-**需求**：ZL-NA-REQ-029
+**版本**：v0.29.0 | **教师勾选**
 
-## 概述
+## 代码交付
 
-教师表。
+- [ ] `rag/chroma_store.py` 存在且 `VECTOR_BACKEND == "chroma"`  
+- [ ] `rag/chroma_retriever.py` 实现 `search()`  
+- [ ] `knowledge_store._rebuild_index` 调用 `chroma.reset` + upsert  
+- [ ] `knowledge_store._sync_chroma_from_json` 实现冷启动  
+- [ ] `requirements-api.txt` 含 chromadb  
 
-## 核心知识点
+## 测试
 
-### 1. 为何引入 Chroma？
+- [ ] `pytest tests/day29/test_chroma_index.py` 全绿（10 项）  
+- [ ] `pytest tests/day29/test_chroma_api.py` 全绿（5 项）  
+- [ ] `test_chroma_matches_in_memory_retriever_top1` 通过  
 
-Day 25–28 向量与词表挤在 `store.json`，随 chunk 增长文件膨胀、全量 load 变慢。Chroma 提供**专用向量持久化**与 ANN 检索能力（教学规模仍可用线性 scan 等价路径）。
+## API
 
-### 2. 双存储架构
+- [ ] `GET /api/knowledge/status` 含 `vector_backend`, `chroma_path`, `chroma_count`  
+- [ ] `POST /api/knowledge/rebuild` 后 `chroma_count == chunks_after`  
+- [ ] `POST /api/chat` 检索正常  
 
-| 存储 | 内容 | 路径 |
-|------|------|------|
-| JSON | documents、chunks、TF-IDF vocab/idf | store.json |
-| Chroma | chunk_id、embedding、metadata | data/knowledge/chroma |
+## 演示脚本
 
-### 3. _rebuild_index 新流程
+- [ ] `python3 src/day29/chroma_demo.py` 打印 ✅  
+- [ ] `python3 src/day29/chroma_api_demo.py` 打印 ✅  
 
-1. EmbeddingRetriever(chunks) 训练 TF-IDF  
-2. embedding_state = export_state()  
-3. chroma.reset()  
-4. chroma.upsert_chunks(chunks, vectors)  
+## 课件
 
-### 4. ChromaVectorIndex API
+- [ ] 30 篇课件齐全  
+- [ ] `22_chroma_store精读.md` 含完整源码  
+- [ ] 学员 Lab 报告 ≥ 1 份归档  
 
-- `reset()` — 删除 collection  
-- `upsert_chunks()` — 写入向量  
-- `query()` — 按 query_embedding 检索  
-- `count()` — 当前向量数  
+**验收签字**：___________  **日期**：___________
 
-### 5. ChromaEmbeddingRetriever
+---
 
-实现与 EmbeddingRetriever 相同的 `search(query, top_k)`，供 DocumentIndex 无感切换。
+## 验收场景脚本（教师现场）
 
-### 6. 与 Day 28 rebuild 关系
-
-`rebuild_store` 仍调用 `_rebuild_index()`，无需修改 rebuild 模块；换的是索引实现。
-
-### 7. 评估路径隔离
-
-`retrieval_eval.build_retriever_for_doc` 仍用内存 EmbeddingRetriever，避免 A/B 实验写入生产 Chroma。
-
-### 8. status 新字段
-
-```json
-{
-  "vector_backend": "chroma",
-  "chroma_path": "/.../data/knowledge/chroma",
-  "chroma_count": 12
-}
+```bash
+set -e
+export PYTHONPATH=src NEXUS_LLM_MOCK=1
+pytest tests/day29/ -q
+python3 src/day29/chroma_demo.py | grep -q "✅"
+python3 src/day29/chroma_api_demo.py | grep -q "✅"
+echo "DAY29_ACCEPTANCE_OK"
 ```
 
-### 9. Day 30 预告
+---
 
-增量索引：单文档 upload 仅 upsert 对应 chunk，无需全量 reset。
+## 常见验收失败与处置
 
-### 10. 运维注意
+| 失败项 | 处置 |
+|--------|------|
+| chroma_count 偏差 | rebuild + 查 JSON chunks |
+| import chromadb | pip install -r requirements-api.txt |
+| chat 空回复 | 查 embedding_state 是否空 |
+| version 不匹配 | 查 PLATFORM_VERSION 常量 |
 
-备份需同时包含 store.json 与 chroma 目录；仅删 JSON 会导致元数据丢失。
+---
 
-### 11. 课堂检查清单
+## 学员签字确认
 
-- [ ] chroma_count == chunk_count  
-- [ ] rebuild 后 Chroma 与 JSON 一致  
-- [ ] chat 检索仍返回相关片段  
-- [ ] 删除 chroma 后 load 能自动回填
+本人已完成 Lab 六步并理解双存储备份要求：___________ 日期 _______

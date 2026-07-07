@@ -1,68 +1,103 @@
-# Day 28 速查
+# Day 28 重建 API 速查手册
 
-**需求**：ZL-NA-REQ-028
+## POST /api/knowledge/rebuild
 
-## 概述
+默认 body：
 
-curl。
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/rebuild \
+  -H 'Content-Type: application/json' \
+  -d '{}' | jq .
+```
 
-## 核心知识点
+仅 uploads：
 
-### 1. 为何需要 rebuild？
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/rebuild \
+  -H 'Content-Type: application/json' \
+  -d '{"include_sample_docs": false}' | jq .
+```
 
-Day 27 只改默认配置，**已入库块不会自动变化**。rebuild 重扫源文件，全库统一到最新 chunk_config。
+评估 + 重建：
 
-### 2. 双源扫描
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/rebuild \
+  -H 'Content-Type: application/json' \
+  -d '{"include_sample_docs": true, "apply_best_config": true}' | jq .
+```
 
-| 源 | 路径 | 说明 |
-|----|------|------|
-| 样例 | day02/sample_docs | 内置三份 txt |
-| 上传 | data/knowledge/uploads | 运营上传 |
+## 响应字段
 
-同名时 uploads 覆盖 sample。
+```json
+{
+  "documents_before": 3,
+  "chunks_before": 12,
+  "documents_after": 3,
+  "chunks_after": 8,
+  "sources_processed": 3,
+  "chunk_config": {"name": "wide", "chunk_size": 400, ...},
+  "source_files": ["raw_faq.txt", "..."],
+  "rebuilt_at": "2026-08-04T12:00:00Z",
+  "sessions_cleared": 0,
+  "message": "知识库已按当前 chunk_config 全量重建"
+}
+```
 
-### 3. rebuild_store 步骤
+## GET /api/knowledge/status
 
-1. collect_source_files  
-2. documents.clear() / chunks.clear()  
-3. 逐文件 parse_bytes → chunk_from_parsed  
-4. _rebuild_index()  
-5. save() + last_rebuilt_at  
+```bash
+curl -s http://127.0.0.1:8000/api/knowledge/status | jq '.last_rebuilt_at, .chunk_count'
+```
 
-### 4. apply_best_config
+## Python 直接调用
 
-先 run_ab_experiment 选 PRESET 最优 → set_chunk_config → rebuild_store。
+```python
+from rag.knowledge_store import KnowledgeStore
+from rag.knowledge_rebuild import rebuild_store
 
-### 5. API 响应
+store = KnowledgeStore.bootstrap_from_sample_docs()
+report = rebuild_store(store)
+print(report.chunks_before, "->", report.chunks_after)
+```
 
-RebuildResponse 含 chunks_before/after、source_files、rebuilt_at、sessions_cleared。
+## 错误排查
 
-### 6. 与 evaluate 关系
+| 现象 | 可能原因 |
+|------|----------|
+| sources_processed=0 | 无 sample 且无 uploads |
+| chunks_after=0 | 源文件全空 |
+| 500 | store 路径不可写 |
 
-| 操作 | 作用域 | 是否写库 |
-|------|--------|----------|
-| evaluate | 样例文档模拟 | 否 |
-| rebuild | 全库源文件 | 是 |
+---
 
-### 7. 前端
+## curl 完整示例集
 
-`#kb-rebuild-btn` 调用 runRebuild(false)，展示块数变化。
+```bash
+# 1. 查看重建前状态
+curl -s http://127.0.0.1:8000/api/knowledge/status | jq '.chunk_count,.last_rebuilt_at,.chunk_config'
 
-### 8. 运维建议
+# 2. 标准重建
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/rebuild \
+  -H 'Content-Type: application/json' \
+  -d '{"include_sample_docs":true,"apply_best_config":false}' | jq .
 
-重建前备份 store.json；课堂演示可用 --skip 生产数据。
+# 3. 评估驱动重建
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/rebuild \
+  -H 'Content-Type: application/json' \
+  -d '{"apply_best_config":true}' | jq '.chunk_config,.chunks_after,.rebuilt_at'
 
-### 9. Day 29 预告
+# 4. 重建后抽测 chat
+curl -s -X POST http://127.0.0.1:8000/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"投资有风险吗","session_id":"post-rebuild-check"}' | jq .
+```
 
-Chroma 向量库持久化，替换 JSON TF-IDF。
+## 响应字段详解
 
-### 10. 风险
-
-重建期间查询短暂不一致；教学环境单进程可忽略。
-
-### 11. 发布检查清单
-
-- [ ] evaluate 已跑且 best_config 已确认  
-- [ ] uploads 目录文档齐全  
-- [ ] rebuild 后 spot-check 三条 EVAL_QUERIES  
-- [ ] last_rebuilt_at 已更新
+| 字段 | 教学关注点 |
+|------|------------|
+| chunks_before/after | 发布是否改变索引规模 |
+| source_files | 与磁盘源是否一致 |
+| sessions_cleared | 是否通知用户重新对话 |
+| chunk_config | 实际生效的重建配置快照 |
+| message | 人类可读摘要，可打日志 |

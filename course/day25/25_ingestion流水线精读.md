@@ -1,95 +1,204 @@
-# Day 25 精读
+# ingestion 流水线精读
 
-**需求**：ZL-NA-REQ-025  
-**主题**：企业知识库与文档 Ingestion
-
-## 概述
-
-ingest_upload 源码。
+**需求**：ZL-NA-REQ-025 | **文件**：`rag/ingestion.py`
 
 ---
 
-## 核心知识点
-
-### 1. 从静态 sample_docs 到可写知识库
-
-Day 19–20 的 RAG 管线通过 `RAGContextService.from_sample_docs()` 只读加载。Day 25 的 `KnowledgeStore` 将同一管线 **可追加、可持久化**：
-
-1. 读取或上传文本  
-2. `chunk_documents` 分块  
-3. `EmbeddingRetriever` 训练 TF-IDF 并索引  
-4. 序列化 chunks + embedding state 到 `store.json`  
-5. `as_rag_service()` 供编排器检索  
-
-### 2. 持久化 JSON 结构
-
-```json
-{
-  "version": "1.0",
-  "platform_version": "0.25.0",
-  "documents": [{"name": "raw_faq.txt", "chunk_count": 5}],
-  "chunks": [{"chunk_id": "...", "text": "...", "source": "..."}],
-  "embedding": {"vocab": {}, "idf": [], "fitted": true}
-}
-```
-
-`TfidfEmbeddingModel.export_state()` / `load_state()` 保证向量空间可恢复。
-
-### 3. 上传 API 契约
-
-**POST /api/knowledge/upload**
-
-- Content-Type: `multipart/form-data`  
-- 字段 `file`：UTF-8 `.txt`  
-- 成功响应：`filename`、`chunk_count`、`total_chunks`、`sessions_cleared`  
-
-**GET /api/knowledge/status**
-
-- 返回 `document_count`、`chunk_count`、`documents[]`  
-
-### 4. 会话清除策略
-
-上传会重建全局索引。已创建的 `ChatOrchestrator` 仍持有旧 `RAGContextService` 引用，因此上传后调用 `session_manager.clear_all()`，强制下次 chat 创建新编排器。
-
-### 5. 前端 knowledge.js
-
-- Mock 模式显示「不可用」  
-- API 模式拉取 status、FormData 上传  
-- 错误走 `NexusErrors.mapApiError`  
-
-### 6. factory 注入
+## 完整源码
 
 ```python
-rag = get_knowledge_store().as_rag_service()
+"""
+文档 ingestion 流水线 — 读取、解析、清洗、分块、入库
+
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from core.exceptions import NexusError, StorageError
+from rag.knowledge_store import KnowledgeDocument, KnowledgeStore, get_knowledge_store
+from tools.doc_parser import detect_format, parse_bytes, supported_formats
+from tools.doc_reader import read_documents
+
+
+def ingest_directory(
+    directory: Path,
+    *,
+    pattern: str = "*.txt",
+    clean: bool = True,
+    store: KnowledgeStore | None = None,
+) -> list[KnowledgeDocument]:
+    """批量将目录下文本文件写入知识库"""
+    kb = store or get_knowledge_store()
+    docs = read_documents(directory, pattern=pattern, clean=clean)
+    results: list[KnowledgeDocument] = []
+    for doc in docs:
+        content = doc.cleaned if clean and doc.cleaned else doc.content
+        meta = kb.ingest_text(content, filename=doc.name, clean=False)
+        results.append(meta)
+    kb.save()
+    return results
+
+
+def ingest_upload(
+    data: bytes,
+    filename: str,
+    *,
+    store: KnowledgeStore | None = None,
+    uploads_dir: Path | None = None,
+    chunk_strategy: str = "auto",
+) -> KnowledgeDocument:
+    """处理 API 上传：解析 → 落盘 → 入库"""
+    from core.paths import get_path
+
+    kb = store or get_knowledge_store()
+    target_dir = uploads_dir or get_path("knowledge_uploads")
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_name = Path(filename).name
+    try:
+        detect_format(safe_name)
+    except NexusError as exc:
+        raise ValueError(exc.message) from exc
+
+    dest = target_dir / safe_name
+    dest.write_bytes(data)
+    meta = kb.ingest_bytes(
+        data,
+        filename=safe_name,
+        chunk_strategy=chunk_strategy,
+    )
+    kb.save()
+    return meta
+
+
+__all__ = ["ingest_directory", "ingest_upload", "supported_formats"]
 ```
 
-全平台共享同一知识库，符合企业「单租户知识库」教学模型。
-
-### 7. 与 Day 26+ 衔接
-
-- Day 26：Markdown/PDF 解析  
-- Day 29：Chroma 替换 JSON 向量存储  
-- Day 31：Sprint 4 知识库项目  
 
 ---
 
-## 实操
+## ingest_directory 批量路径
 
-```bash
-cd nexus-agent-platform
-export PYTHONPATH=src NEXUS_LLM_MOCK=1
-python3 src/day25/ingestion_demo.py
-python3 -m pytest tests/day25/ -q
+**L17-33**：遍历目录 `read_documents` → 逐文件 `ingest_text` → 最后统一 `save`。适合运维脚本初始化，非 API 热路径。
+
+## ingest_upload API 路径（重点）
+
+| 行号 | 代码 | 说明 |
+|------|------|------|
+| L51 | `safe_name = Path(filename).name` | 防止路径穿越 |
+| L52-55 | `detect_format` | Day 26 扩展；Day 25 仅 .txt 通过 |
+| L57-58 | `dest.write_bytes(data)` | 审计副本，rebuild 可重扫 |
+| L59-63 | `kb.ingest_bytes` | 进入 KnowledgeStore |
+| L64 | `kb.save()` | 持久化 |
+
+## 异常映射
+
+- `NexusError` → API 映射 400/500  
+- `ValueError`（不支持格式）→ 422  
+- `UnicodeDecodeError` → 400 UTF-8  
+
+## 与 api/knowledge.py 衔接
+
+```python
+async def upload_document(
+    file: UploadFile = File(..., description="企业文档 (.txt / .md / .pdf)"),
+) -> KnowledgeUploadResponse:
+    """
+    上传企业文档到知识库：解析 → 落盘 → 分块 → Chroma 向量索引 → 持久化。
+
+    Day 26 起支持 Markdown 与 PDF。上传成功后清除服务端会话。
+    """
+    if not file.filename:
+        raise HTTPException(status_code=422, detail="缺少文件名")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="文件内容为空")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="文件超过 500KB 上限")
+
+    try:
+        meta = ingest_upload(data, file.filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except NexusError as exc:
+        status = 400 if exc.code in (
+            "PDF_PARSE_ERROR", "PDF_EMPTY", "UNSUPPORTED_FORMAT", "EMPTY_FILE"
+        ) else 500
+        raise HTTPException(status_code=status, detail=exc.message) from exc
+    except StorageError as exc:
+        raise HTTPException(status_code=500, detail=exc.message) from exc
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="文本文件须为 UTF-8 编码") from exc
+
+    cleared = session_manager.clear_all()
+    store = get_knowledge_store()
+
+    return KnowledgeUploadResponse(
+        filename=meta.name,
+        format=meta.format,
+        chunk_count=meta.chunk_count,
+        document_count=store.document_count,
+        total_chunks=store.chunk_count,
+        sessions_cleared=cleared,
+        index_mode=store.index_mode,
+        message=f"文档已入库（{meta.format}），增量索引已更新",
+    )
 ```
 
-## 思考题
 
-1. 为何 MVP 只支持 .txt？  
-2. 上传同名文件会发生什么？（追加块，生产应去重）  
-3. `clear_all` 与 `session/reset` 有何区别？  
+上传路由不直接操作 Path，委托 `ingest_upload` 保持单一写入入口。
 
-## 延伸阅读
+## 设计原则
 
-- [03_架构设计.md](03_架构设计.md)  
-- [22_knowledge_store精读.md](22_knowledge_store精读.md)  
-- [27_Day26文档解析预习.md](27_Day26文档解析预习.md)
+**Single Writer**：所有上传必须经 `ingest_upload`，禁止 API 直接 `ingest_text` 绕过落盘。
+
+精读完。
+
+
+---
+
+## 附录：constants 与样例（ingestion 专节）
+
+```python
+"""Day 25 常量"""
+
+DAY = 25
+REQ_ID = "ZL-NA-REQ-025"
+PLATFORM_VERSION = "0.25.0"
+
+SAMPLE_UPLOAD_NAME = "custom_faq.txt"
+SAMPLE_UPLOAD_TEXT = """智链科技新产品 FAQ
+Q: 最低起购金额是多少？
+A: 最低起购金额为 1000 元。
+Q: 赎回多久到账？
+A: T+1 工作日到账。
+投资有风险，入市需谨慎。
+"""
+```
+
+
+`SAMPLE_UPLOAD_NAME` 用于 API 测试夹具文件名，内容含 FAQ 问答对，供 `test_chat_after_upload_uses_kb` 断言。
+
+ingestion 附录完。
+
+---
+
+## 附录：ingest_directory 运维场景（ingestion vol2）
+
+夜间批处理：`ingest_directory(Path("incoming"), pattern="*.txt")` 将运营 FTP 目录灌入 store。与 API upload 共享 `ingest_text` 内核，保证分块一致。
+
+## 安全：safe_name
+
+`Path("../../etc/passwd").name` → `passwd`，阻止目录穿越；但仍须病毒扫描（企业扩展）。
+
+ingestion vol2 完。
+
+---
+
+## 单行注释作业
+
+为 ingest_upload 每行写中文注释，提交 gist 链接可换贴纸。注释作业完。

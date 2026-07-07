@@ -1,69 +1,60 @@
-# Day 30 速查
+# 增量 API 速查
 
-**需求**：ZL-NA-REQ-030
+## ingest
 
-## 概述
+```python
+store.ingest_bytes(data, filename="x.md", incremental=True)
+store.ingest_parsed(parsed, incremental=False)  # 默认
+```
 
-字段说明。
+## status 字段
 
-## 核心知识点
+- `index_mode`  
+- `last_incremental_at`  
+- `chroma_count`  
 
-### 1. 为何需要增量？
+## 常量
 
-全量 reset 在大库上成本高；运营上传单文档是高频操作。
+- `INDEX_MODE_INCREMENTAL = "incremental"`  
+- `INDEX_MODE_FULL = "full"`  
 
-### 2. 双路径对照
+---
 
-| 路径 | 方法 | Chroma |
-|------|------|--------|
-| upload | `_incremental_index` | upsert only |
-| rebuild | `_rebuild_index` | reset + upsert |
+## upload 响应示例
 
-### 3. _incremental_index 步骤
+```json
+{
+  "message": "文档已增量索引",
+  "filename": "notice.md",
+  "format": "md",
+  "chunk_count": 18,
+  "index_mode": "incremental"
+}
+```
 
-1. refit TF-IDF on all chunks  
-2. 若词表扩张 → affected = all chunks  
-3. else affected = 新文档 chunks  
-4. chroma.upsert_chunks（无 reset）  
-5. last_incremental_at = now  
+---
 
-### 4. 同名替换
+## status 完整示例
 
-`_remove_document_by_source(filename)`：
-- delete_by_ids from Chroma  
-- filter documents/chunks  
-- reindex chunk.index  
+```json
+{
+  "platform_version": "0.30.0",
+  "document_count": 4,
+  "chunk_count": 18,
+  "chroma_count": 18,
+  "index_mode": "incremental",
+  "last_incremental_at": "2026-08-06T09:15:00Z",
+  "last_rebuilt_at": "2026-08-05T16:00:00Z",
+  "vector_backend": "chroma"
+}
+```
 
-### 5. ingest_parsed 参数
+---
 
-`incremental: bool = False`；`ingest_bytes` 默认 True。
+## Python 速查
 
-### 6. TF-IDF 词表扩张
-
-新文档引入新词时向量维度变化，Chroma 须 `reset` 后全量 upsert；同内容 re-upload 则仅 upsert 不 reset。
-
-- `index_mode`: incremental | full  
-- `last_incremental_at` ISO 时间  
-
-### 7. 与 Day 29 关系
-
-Chroma 引擎不变，变的是**写入节奏**。
-
-### 8. 与 Day 28 rebuild
-
-rebuild 后 index_mode=full；upload 后再变 incremental。
-
-### 9. Day 31 预告
-
-混合检索：关键词 + 向量融合排序。
-
-### 10. 风险
-
-词表变化时需全量 upsert；监控 chroma_count == chunk_count。
-
-### 11. 课堂检查清单
-
-- [ ] upload 不触发 reset  
-- [ ] 重复上传不 duplicate docs  
-- [ ] rebuild 后 mode=full  
-- [ ] chat 检索正常
+```python
+from rag.knowledge_store import INDEX_MODE_INCREMENTAL
+store.ingest_bytes(b"...", filename="a.md", incremental=True)
+assert store.index_mode == INDEX_MODE_INCREMENTAL
+```

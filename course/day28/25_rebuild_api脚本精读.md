@@ -1,68 +1,132 @@
-# Day 28 精读
+# rebuild_api 脚本精读
 
-**需求**：ZL-NA-REQ-028
+## rebuild_demo.py
 
-## 概述
+```python
+"""
+知识库全量重建演示
 
-API 路由。
+运行：PYTHONPATH=src python3 src/day28/rebuild_demo.py
+"""
 
-## 核心知识点
+from __future__ import annotations
 
-### 1. 为何需要 rebuild？
+import sys
+from pathlib import Path
 
-Day 27 只改默认配置，**已入库块不会自动变化**。rebuild 重扫源文件，全库统一到最新 chunk_config。
+_SRC = Path(__file__).resolve().parent.parent
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-### 2. 双源扫描
+from rag.chunk_config import ChunkConfig
+from rag.knowledge_rebuild import collect_source_files, rebuild_store
+from rag.knowledge_store import KnowledgeStore
 
-| 源 | 路径 | 说明 |
-|----|------|------|
-| 样例 | day02/sample_docs | 内置三份 txt |
-| 上传 | data/knowledge/uploads | 运营上传 |
 
-同名时 uploads 覆盖 sample。
+def main() -> int:
+    print("=" * 56)
+    print("  Day 28 知识库全量重建演示")
+    print("=" * 56)
 
-### 3. rebuild_store 步骤
+    store = KnowledgeStore.bootstrap_from_sample_docs()
+    store.set_chunk_config(ChunkConfig(name="wide", chunk_size=400, overlap=60))
+    print(f"\n  重建前: {store.document_count} 篇 / {store.chunk_count} 块")
+    print(f"  配置: size={store.chunk_config.chunk_size} overlap={store.chunk_config.overlap}")
 
-1. collect_source_files  
-2. documents.clear() / chunks.clear()  
-3. 逐文件 parse_bytes → chunk_from_parsed  
-4. _rebuild_index()  
-5. save() + last_rebuilt_at  
+    sources = collect_source_files()
+    print(f"  源文件: {[p.name for p in sources]}")
 
-### 4. apply_best_config
+    report = rebuild_store(store)
+    print(f"\n  重建后: {report.documents_after} 篇 / {report.chunks_after} 块")
+    print(f"  处理源: {report.sources_processed} 个")
+    print(f"  时间: {report.rebuilt_at}")
+    print("\n  ✅ 重建演示完成")
+    print("=" * 56)
+    return 0
 
-先 run_ab_experiment 选 PRESET 最优 → set_chunk_config → rebuild_store。
 
-### 5. API 响应
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
 
-RebuildResponse 含 chunks_before/after、source_files、rebuilt_at、sessions_cleared。
 
-### 6. 与 evaluate 关系
+**流程**：
 
-| 操作 | 作用域 | 是否写库 |
-|------|--------|----------|
-| evaluate | 样例文档模拟 | 否 |
-| rebuild | 全库源文件 | 是 |
+1. bootstrap store  
+2. 可选 `set_chunk_config(wide)` 使前后块数差异明显  
+3. `collect_source_files()` 打印源列表  
+4. `rebuild_store(store)`  
+5. 打印 RebuildReport 关键字段  
 
-### 7. 前端
+## rebuild_api_demo.py
 
-`#kb-rebuild-btn` 调用 runRebuild(false)，展示块数变化。
+```python
+"""
+重建 API 演示
 
-### 8. 运维建议
+运行：PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day28/rebuild_api_demo.py
+"""
 
-重建前备份 store.json；课堂演示可用 --skip 生产数据。
+from __future__ import annotations
 
-### 9. Day 29 预告
+import os
+import sys
+from pathlib import Path
 
-Chroma 向量库持久化，替换 JSON TF-IDF。
+_SRC = Path(__file__).resolve().parent.parent
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-### 10. 风险
+os.environ.setdefault("NEXUS_LLM_MOCK", "1")
 
-重建期间查询短暂不一致；教学环境单进程可忽略。
+from fastapi.testclient import TestClient
 
-### 11. 发布检查清单
+from api.app import create_app
+from rag.knowledge_store import KnowledgeStore, set_knowledge_store
 
-- [ ] evaluate 已跑且 best_config 已确认  
-- [ ] uploads 目录文档齐全  
-- [ ] rebuild 后 spot-check 三条 EVAL_QUERIES  
-- [ ] last_rebuilt_at 已更新
+
+def main() -> int:
+    set_knowledge_store(KnowledgeStore.bootstrap_from_sample_docs())
+    client = TestClient(create_app())
+
+    print("=== Day 28 Rebuild API Demo ===\n")
+    resp = client.post(
+        "/api/knowledge/rebuild",
+        json={"include_sample_docs": True, "apply_best_config": False},
+    )
+    print(f"  POST rebuild: {resp.status_code}")
+    data = resp.json()
+    print(f"    chunks {data.get('chunks_before')} → {data.get('chunks_after')}")
+    print(f"    sources: {data.get('source_files')}")
+
+    status = client.get("/api/knowledge/status").json()
+    print(f"\n  last_rebuilt_at: {status.get('last_rebuilt_at')}")
+    print(f"  version: {client.get('/api/health').json().get('version')}")
+    print("\n  ✅ API 演示完成")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+
+**验证点**：
+
+- HTTP 200  
+- chunks_before → chunks_after  
+- status.last_rebuilt_at  
+
+## 与单元测试差异
+
+| 层级 | 文件 |
+|------|------|
+| 纯函数 | test_knowledge_rebuild.py |
+| HTTP | test_rebuild_api.py |
+| 手动演示 | rebuild_api_demo.py |
+
+## 常见错误
+
+- 未设 PYTHONPATH  
+- store 路径只读  
+- 忘记 NEXUS_LLM_MOCK 导致 LLM 调用（部分环境）

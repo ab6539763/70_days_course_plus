@@ -1,74 +1,82 @@
-# Day 27 Lab
+# Day 27 实操 Lab 手册
 
-**需求**：ZL-NA-REQ-027
+**时长**：120 分钟 | **分值**：100 分（计入平时成绩）
 
-## 概述
-
-六步实验。
-
-## 核心知识点
-
-### 1. 为何要调参？
-
-块太大 → 噪声多、检索不精准。块太小 → 语义碎裂、上下文不足。Day 27 用 **hit@1** 在固定评估集上对比。
-
-### 2. ChunkConfig 字段
-
-| 字段 | 含义 | 默认 |
-|------|------|------|
-| chunk_size | 最大字符数 | 200 |
-| overlap | 重叠字符 | 40 |
-| strategy | auto/fixed/markdown | auto |
-| name | 预设名称 | default |
-
-### 3. PRESET_CONFIGS
-
-- compact: 120/20  
-- default: 200/40  
-- wide: 400/60  
-- markdown_wide: 500/50 markdown  
-
-### 4. 评估流程
-
-```
-product_notice.md → parse_bytes → 对每套 config 分块
-→ EmbeddingRetriever → 对 EVAL_QUERIES 检索
-→ hit@1 统计 → 排序推荐 best_config
-```
-
-### 5. API 使用
+## 环境准备（5 分）
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/knowledge/evaluate \
-  -H 'Content-Type: application/json' \
-  -d '{"use_presets": true}'
+cd nexus-agent-platform
+pip install -r requirements-api.txt
+export PYTHONPATH=src NEXUS_LLM_MOCK=1
 ```
 
-### 6. 与上传联动
+检查：`python3 -c "from day27.constants import EVAL_QUERIES; print(len(EVAL_QUERIES))"` 输出 4。
 
-`PUT chunk-config` 后，新上传文档使用新参数分块；已有块不自动重建。
+## 步骤 1：CLI A/B（15 分）
 
-### 7. 前端
+```bash
+python3 src/day27/ab_experiment_demo.py | tee lab27_ab.txt
+```
 
-`#kb-eval-btn` 调用 evaluate，展示推荐配置名与 chunk_size。
+**交付**：`lab27_ab.txt` 含四套 PRESET 输出。  
+**评分**：文件存在且含 hit_rate 行。
 
-### 8. 指标解读
+## 步骤 2：找出 best_config（15 分）
 
-- hit_rate 优先于 avg_top_score  
-- chunk_count 影响存储与检索延迟（教学环境可忽略）  
+从输出填写：
 
-### 9. Day 28 预告
+- 推荐配置名：________  
+- 其 hit_rate：________  
+- 其 chunk_count：________  
 
-全库按新配置 **rebuild** 与批量评估流水线。
+## 步骤 3：API evaluate（20 分）
 
-### 10. 实验纪律
+终端 1：
 
-固定评估集、固定文档、只改一个变量（chunk_size 或 strategy），记录结果表。
+```bash
+uvicorn api.app:create_app --factory --port 8000
+```
 
-### 11. 常见误区
+终端 2：
 
-| 误区 | 正解 |
-|------|------|
-| hit 低就加大 overlap 到等于 chunk_size | overlap 须 < chunk_size |
-| 评估通过就自动重建全库 | Day 28 才 rebuild |
-| 只看块数越少越好 | 需同时看 hit_rate |
+```bash
+python3 src/day27/chunk_tune_api_demo.py
+```
+
+**评分**：截图含 PUT 与 POST evaluate 成功。
+
+## 步骤 4：持久化验证（20 分）
+
+```bash
+curl -s -X PUT http://127.0.0.1:8000/api/knowledge/chunk-config \
+  -H 'Content-Type: application/json' \
+  -d '{"chunk_size":350,"overlap":50,"strategy":"auto","name":"lab_wide"}'
+
+curl -s http://127.0.0.1:8000/api/knowledge/status | jq '.chunk_config'
+```
+
+重启服务后再次 GET，确认 chunk_size 仍为 350。
+
+## 步骤 5：pytest（15 分）
+
+```bash
+pytest tests/day27/ -q --tb=no
+```
+
+要求：全部 passed。
+
+## 步骤 6：反思报告（10 分）
+
+200 字：为何 evaluate 后 chunk_count 不变？若要让全库用 lab_wide，明天该调用什么 API？
+
+## 教师验收勾选
+
+- [ ] 步骤 1–6 齐全  
+- [ ] 无抄袭 lab 文件  
+- [ ] 反思提到 rebuild  
+
+## Lab 专属辅导（不与作业重复）
+
+**步骤 2 常见错误**：把 ab 输出中 `avg_top_score` 最高误认为最优 —— 排序第一键是 hit_rate。  
+**步骤 4 常见错误**：未重启 uvicorn 就断言持久化失败。  
+**步骤 6 优秀反思范例**：evaluate 只改内存 retriever；PUT 只改默认配置字段；全库块变化需 Day 28 `POST /rebuild`。

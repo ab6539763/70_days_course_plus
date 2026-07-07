@@ -61,6 +61,12 @@ Day 58-70  → 毕业设计、平台全功能上线
 
 ## 当前进度
 
+课件 Day 24–30 由 `scripts/course_days/dayXX.py` 生成，质量标准对齐 Day 23（每篇独立内容、≥10 万字/期）。一键重生成：
+
+```bash
+python3 scripts/regenerate_courses_day24_30.py
+```
+
 - [x] Day 1-5
 - [x] Day 6：函数、作用域、lambda、递归；`src/utils/` 工具库与 `todo_manager_v3` 重构
 - [x] Day 7：第一周复习、通讯录管理系统、周测（Sprint 1 收官）

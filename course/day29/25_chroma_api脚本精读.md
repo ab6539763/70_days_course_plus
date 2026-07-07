@@ -1,71 +1,190 @@
-# Day 29 精读
+# Day 29 精读：chroma_api_demo.py 与 API 测试
 
-**需求**：ZL-NA-REQ-029
+## chroma_api_demo.py 全文
 
-## 概述
+```python
+"""
+Chroma API 演示
 
-status 字段。
+运行：PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day29/chroma_api_demo.py
+"""
 
-## 核心知识点
+from __future__ import annotations
 
-### 1. 为何引入 Chroma？
+import os
+import sys
+from pathlib import Path
 
-Day 25–28 向量与词表挤在 `store.json`，随 chunk 增长文件膨胀、全量 load 变慢。Chroma 提供**专用向量持久化**与 ANN 检索能力（教学规模仍可用线性 scan 等价路径）。
+_SRC = Path(__file__).resolve().parent.parent
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-### 2. 双存储架构
+os.environ.setdefault("NEXUS_LLM_MOCK", "1")
 
-| 存储 | 内容 | 路径 |
-|------|------|------|
-| JSON | documents、chunks、TF-IDF vocab/idf | store.json |
-| Chroma | chunk_id、embedding、metadata | data/knowledge/chroma |
+from fastapi.testclient import TestClient
 
-### 3. _rebuild_index 新流程
+from api.app import create_app
+from rag.knowledge_store import KnowledgeStore, set_knowledge_store
 
-1. EmbeddingRetriever(chunks) 训练 TF-IDF  
-2. embedding_state = export_state()  
-3. chroma.reset()  
-4. chroma.upsert_chunks(chunks, vectors)  
 
-### 4. ChromaVectorIndex API
+def main() -> int:
+    set_knowledge_store(KnowledgeStore.bootstrap_from_sample_docs())
+    client = TestClient(create_app())
 
-- `reset()` — 删除 collection  
-- `upsert_chunks()` — 写入向量  
-- `query()` — 按 query_embedding 检索  
-- `count()` — 当前向量数  
+    print("=== Day 29 Chroma API Demo ===\n")
+    status = client.get("/api/knowledge/status").json()
+    print(f"  vector_backend: {status.get('vector_backend')}")
+    print(f"  chroma_count: {status.get('chroma_count')}")
+    print(f"  chunk_count: {status.get('chunk_count')}")
 
-### 5. ChromaEmbeddingRetriever
+    resp = client.post("/api/knowledge/rebuild", json={"include_sample_docs": True})
+    print(f"\n  POST rebuild: {resp.status_code}")
+    data = resp.json()
+    print(f"    chunks: {data.get('chunks_after')}")
 
-实现与 EmbeddingRetriever 相同的 `search(query, top_k)`，供 DocumentIndex 无感切换。
+    chat = client.post("/api/chat", json={"message": "产品年化收益？"})
+    print(f"\n  POST chat: {chat.status_code}")
+    print(f"  version: {client.get('/api/health').json().get('version')}")
+    print("\n  ✅ API 演示完成")
+    return 0
 
-### 6. 与 Day 28 rebuild 关系
 
-`rebuild_store` 仍调用 `_rebuild_index()`，无需修改 rebuild 模块；换的是索引实现。
-
-### 7. 评估路径隔离
-
-`retrieval_eval.build_retriever_for_doc` 仍用内存 EmbeddingRetriever，避免 A/B 实验写入生产 Chroma。
-
-### 8. status 新字段
-
-```json
-{
-  "vector_backend": "chroma",
-  "chroma_path": "/.../data/knowledge/chroma",
-  "chroma_count": 12
-}
+if __name__ == "__main__":
+    raise SystemExit(main())
 ```
 
-### 9. Day 30 预告
 
-增量索引：单文档 upload 仅 upsert 对应 chunk，无需全量 reset。
+## 脚本逻辑
 
-### 10. 运维注意
+1. `set_knowledge_store(KnowledgeStore.bootstrap_from_sample_docs())` — 注入全局单例  
+2. `TestClient(create_app())` — 无需起 uvicorn  
+3. 打印 status 的 `vector_backend` / `chroma_count`  
+4. `POST /api/knowledge/rebuild` 验证重建后块数  
+5. `POST /api/chat` 验证检索链路  
+6. `GET /api/health` 读版本号  
 
-备份需同时包含 store.json 与 chroma 目录；仅删 JSON 会导致元数据丢失。
+## test_chroma_api.py 全文
 
-### 11. 课堂检查清单
+```python
+"""Day 29 Chroma API 测试。"""
 
-- [ ] chroma_count == chunk_count  
-- [ ] rebuild 后 Chroma 与 JSON 一致  
-- [ ] chat 检索仍返回相关片段  
-- [ ] 删除 chroma 后 load 能自动回填
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+SRC = Path(__file__).resolve().parents[2] / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+os.environ.setdefault("NEXUS_LLM_MOCK", "1")
+
+from api.app import create_app
+from rag.knowledge_store import KnowledgeStore, set_knowledge_store
+
+
+@pytest.fixture
+def client(tmp_path):
+    path = tmp_path / "store.json"
+    store = KnowledgeStore.bootstrap_from_sample_docs(store_path=path)
+    store.chroma_path = tmp_path / "chroma"
+    store.save(path)
+    set_knowledge_store(store)
+    return TestClient(create_app())
+
+
+def test_health_version(client):
+    assert client.get("/api/health").json()["version"] == "0.30.0"
+
+
+def test_status_includes_chroma_fields(client):
+    data = client.get("/api/knowledge/status").json()
+    assert data["platform_version"] == "0.30.0"
+    assert data["vector_backend"] == "chroma"
+    assert data["chroma_count"] == data["chunk_count"]
+    assert data["chroma_path"]
+
+
+def test_rebuild_keeps_chroma_in_sync(client):
+    before = client.get("/api/knowledge/status").json()["chroma_count"]
+    resp = client.post("/api/knowledge/rebuild", json={"include_sample_docs": True})
+    assert resp.status_code == 200
+    after = client.get("/api/knowledge/status").json()
+    assert after["chroma_count"] == after["chunk_count"]
+    assert after["chroma_count"] == resp.json()["chunks_after"]
+
+
+def test_chat_after_chroma_index(client):
+    resp = client.post("/api/chat", json={"message": "产品收益怎么样？"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reply"]
+    assert body["session_id"]
+
+
+def test_upload_updates_chroma_count(client, tmp_path):
+    md = SRC / "day26" / "sample_docs" / "product_notice.md"
+    if not md.is_file():
+        pytest.skip("sample md missing")
+    with md.open("rb") as fh:
+        resp = client.post(
+            "/api/knowledge/upload",
+            files={"file": ("notice.md", fh, "text/markdown")},
+        )
+    assert resp.status_code == 200
+    status = client.get("/api/knowledge/status").json()
+    assert status["chroma_count"] == status["chunk_count"]
+```
+
+
+## 断言设计点评
+
+- `test_health_version`：平台版本与发版一致  
+- `test_status_includes_chroma_fields`：`chroma_count == chunk_count`  
+- `test_rebuild_keeps_chroma_in_sync`：rebuild 后仍相等  
+- `test_chat_after_chroma_index`：端到端  
+- `test_upload_updates_chroma_count`：Day 29 upload 仍全量，但 chroma 同步  
+
+## curl 等价命令
+
+```bash
+curl -s http://127.0.0.1:8000/api/knowledge/status
+curl -X POST http://127.0.0.1:8000/api/knowledge/rebuild \
+  -H 'Content-Type: application/json' -d '{"include_sample_docs": true}'
+curl -X POST http://127.0.0.1:8000/api/chat \
+  -H 'Content-Type: application/json' -d '{"message": "产品收益？"}'
+```
+
+---
+
+## incremental_api 对比说明（Day 30 预习）
+
+Day 29 的 `test_upload_updates_chroma_count` 验证 upload 后 chroma 仍同步，但**不**验证 reset 未调用——那是 Day 30 `test_incremental_api` 的职责。阅读本测试时注意：Day 29 upload 仍会触发全量 `_rebuild_index`。
+
+---
+
+## Mock 与 TestClient 模式
+
+`chroma_api_demo` 与测试均用 `TestClient` 而非真实 uvicorn，原因：
+
+1. 启动快，适合 CI  
+2. 同步调用，不断言端口  
+3. `set_knowledge_store` 注入隔离数据  
+
+生产环境行为一致，除非 middleware 依赖真实 ASGI 生命周期。
+
+---
+
+## 字段断言清单（教师）
+
+| 测试 | 关键断言 |
+|------|----------|
+| test_health_version | version == 平台发版号 |
+| test_status_includes_chroma_fields | chroma_count == chunk_count |
+| test_rebuild_keeps_chroma_in_sync | rebuild 后仍相等 |
+| test_chat_after_chroma_index | reply 非空 |
+| test_upload_updates_chroma_count | upload 后仍相等 |

@@ -1,69 +1,45 @@
-# Day 30 总结
+# Phase 3 第六日总结（Day 25–30）
 
-**需求**：ZL-NA-REQ-030
+| Day | 主题 |
+|-----|------|
+| 25 | KnowledgeStore |
+| 26 | 多格式解析 |
+| 27 | 调参 A/B |
+| 28 | rebuild |
+| 29 | Chroma |
+| 30 | 增量索引 |
 
-## 概述
+Day 30 完成「运营级」上传体验；Day 31 混合检索提升问答质量。
 
-Day25-30。
+---
 
-## 核心知识点
+## Day25–30 技能树
 
-### 1. 为何需要增量？
+```
+ingest → parse → chunk → [evaluate] → rebuild
+                              ↓
+                         Chroma 持久化 (D29)
+                              ↓
+                         incremental (D30)
+                              ↓
+                         hybrid (D31 预告)
+```
 
-全量 reset 在大库上成本高；运营上传单文档是高频操作。
+---
 
-### 2. 双路径对照
+## 版本线
 
-| 路径 | 方法 | Chroma |
-|------|------|--------|
-| upload | `_incremental_index` | upsert only |
-| rebuild | `_rebuild_index` | reset + upsert |
+| 版本 | 里程碑 |
+|------|--------|
+| 0.25 | 知识库 MVP |
+| 0.28 | rebuild 发布 |
+| 0.29 | Chroma |
+| 0.30 | incremental |
 
-### 3. _incremental_index 步骤
+---
 
-1. refit TF-IDF on all chunks  
-2. 若词表扩张 → affected = all chunks  
-3. else affected = 新文档 chunks  
-4. chroma.upsert_chunks（无 reset）  
-5. last_incremental_at = now  
+## 团队复盘三句话
 
-### 4. 同名替换
-
-`_remove_document_by_source(filename)`：
-- delete_by_ids from Chroma  
-- filter documents/chunks  
-- reindex chunk.index  
-
-### 5. ingest_parsed 参数
-
-`incremental: bool = False`；`ingest_bytes` 默认 True。
-
-### 6. TF-IDF 词表扩张
-
-新文档引入新词时向量维度变化，Chroma 须 `reset` 后全量 upsert；同内容 re-upload 则仅 upsert 不 reset。
-
-- `index_mode`: incremental | full  
-- `last_incremental_at` ISO 时间  
-
-### 7. 与 Day 29 关系
-
-Chroma 引擎不变，变的是**写入节奏**。
-
-### 8. 与 Day 28 rebuild
-
-rebuild 后 index_mode=full；upload 后再变 incremental。
-
-### 9. Day 31 预告
-
-混合检索：关键词 + 向量融合排序。
-
-### 10. 风险
-
-词表变化时需全量 upsert；监控 chroma_count == chunk_count。
-
-### 11. 课堂检查清单
-
-- [ ] upload 不触发 reset  
-- [ ] 重复上传不 duplicate docs  
-- [ ] rebuild 后 mode=full  
-- [ ] chat 检索正常
+1. 扩张 reset 是正确性不是偷懒  
+2. mock reset 测试是发布门禁  
+3. 明日混合检索别忘 Day27 评估方法论
