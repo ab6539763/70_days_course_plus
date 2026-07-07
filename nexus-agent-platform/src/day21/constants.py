@@ -1,0 +1,5 @@
+"""Day 21 常量"""
+
+DAY = 21
+REQ_ID = "ZL-NA-REQ-021"
+QUIZ_PASS_SCORE = 60
