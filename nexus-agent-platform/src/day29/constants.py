@@ -1,0 +1,6 @@
+"""Day 29 常量"""
+
+DAY = 29
+REQ_ID = "ZL-NA-REQ-029"
+PLATFORM_VERSION = "0.29.0"
+VECTOR_BACKEND = "chroma"
