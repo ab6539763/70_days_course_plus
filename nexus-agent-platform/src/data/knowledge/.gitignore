@@ -1,0 +1,5 @@
+store.json
+uploads/*
+!uploads/.gitkeep
+chroma/*
+!chroma/.gitkeep
