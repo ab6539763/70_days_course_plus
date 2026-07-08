@@ -99,4 +99,5 @@ python3 scripts/regenerate_courses_day24_30.py
 - [x] Day 34：引用溯源（Citation Traceability — chat citations[] + 可解释 RAG）
 - [x] Day 35：多查询扩展（HyDE / Query Expansion — 宽召回 + merge 去重）
 - [x] Day 36：自适应路由（Query Router — 按意图动态 expand/rewrite）
-- [ ] Day 37-70：持续更新中
+- [x] Day 37：Self-RAG 答案校验（Answer Validation — 生成后 citations 一致性校验）
+- [ ] Day 38-70：持续更新中

@@ -380,6 +380,13 @@ body {
   line-height: 1.35;
 }
 
+.msg__validation {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: #b45309;
+  line-height: 1.35;
+}
+
 .chat__loading {
   display: flex;
   align-items: center;

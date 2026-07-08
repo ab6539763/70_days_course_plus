@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037
 """
 
 from __future__ import annotations
@@ -37,6 +37,10 @@ from api.schemas import (
     RouteConfigResponse,
     RoutePreviewRequest,
     RoutePreviewResponse,
+    ValidationConfigRequest,
+    ValidationConfigResponse,
+    ValidationPreviewRequest,
+    ValidationPreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -52,6 +56,7 @@ from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.query_router import RuleBasedQueryRouter
 from rag.route_config import RouteConfig
+from rag.validation_config import ValidationConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
@@ -228,6 +233,45 @@ def route_preview(body: RoutePreviewRequest) -> RoutePreviewResponse:
     router = RuleBasedQueryRouter(config=cfg)
     result = router.route(body.query)
     return RoutePreviewResponse(**result.to_dict())
+
+
+@router.get("/validation-config", response_model=ValidationConfigResponse)
+def get_validation_config() -> ValidationConfigResponse:
+    """返回答案校验开关与阈值"""
+    cfg = get_knowledge_store().get_validation_config()
+    return ValidationConfigResponse(**cfg.to_dict())
+
+
+@router.put("/validation-config", response_model=ValidationConfigResponse)
+def update_validation_config(body: ValidationConfigRequest) -> ValidationConfigResponse:
+    """更新答案校验策略并持久化"""
+    store = get_knowledge_store()
+    try:
+        cfg = ValidationConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_validation_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ValidationConfigResponse(**cfg.to_dict())
+
+
+@router.post("/validation-preview", response_model=ValidationPreviewResponse)
+def validation_preview(body: ValidationPreviewRequest) -> ValidationPreviewResponse:
+    """预览单条 query + reply 的引用一致性校验"""
+    from rag.answer_validator import RuleBasedAnswerValidator
+
+    store = get_knowledge_store()
+    citations = list(body.citations)
+    if not citations:
+        cite_data = store.fetch_citations(body.query)
+        citations = cite_data.get("citations") or []
+    cfg = store.get_validation_config()
+    preview_cfg = ValidationConfig.from_dict({**cfg.to_dict(), "enabled": True})
+    result = RuleBasedAnswerValidator(config=preview_cfg).validate(
+        body.query, body.reply, citations
+    )
+    return ValidationPreviewResponse(**result.to_dict())
 
 
 @router.get("/chunk-config", response_model=ChunkConfigResponse)

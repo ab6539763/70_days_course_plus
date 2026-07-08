@@ -132,6 +132,7 @@
       rewrite: data.rewrite || null,
       expansion: data.expansion || null,
       route: data.route || null,
+      validation: data.validation || null,
     };
   }
 

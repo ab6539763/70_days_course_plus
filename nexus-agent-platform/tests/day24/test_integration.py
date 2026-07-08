@@ -35,7 +35,7 @@ def test_e2e_smoke_runner():
 
 def test_health_version_024(client):
     data = client.get("/api/health").json()
-    assert data["version"] == "0.36.0"
+    assert data["version"] == "0.37.0"
 
 
 def test_session_reset_endpoint(client):

@@ -334,6 +334,16 @@ jobs:
           python src/day36/phase3_route_review.py
           PYTHONPATH=src pytest tests/day36/ -q
 
+      - name: Day 37 Answer validation
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day37/validation_demo.py
+          python src/day37/validation_api_demo.py
+          python src/day37/phase3_validation_review.py
+          PYTHONPATH=src pytest tests/day37/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

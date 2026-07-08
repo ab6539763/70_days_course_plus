@@ -24,8 +24,10 @@ from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
 from rag.citation_config import CitationConfig
 from rag.expanding_retriever import ExpandingRetriever
 from rag.expansion_config import ExpansionConfig
+from rag.answer_validator import RuleBasedAnswerValidator, ValidationResult
 from rag.route_config import RouteConfig
 from rag.routing_retriever import RoutingRetriever
+from rag.validation_config import ValidationConfig
 from rag.hybrid_retriever import HybridRetriever
 from rag.rerank_config import RerankConfig
 from rag.reranker import MockCrossEncoderReranker
@@ -39,7 +41,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.36.0"
+PLATFORM_VERSION = "0.37.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -99,6 +101,7 @@ class KnowledgeStore:
     citation_config: CitationConfig = field(default_factory=CitationConfig)
     expansion_config: ExpansionConfig = field(default_factory=ExpansionConfig)
     route_config: RouteConfig = field(default_factory=RouteConfig)
+    validation_config: ValidationConfig = field(default_factory=ValidationConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -180,6 +183,27 @@ class KnowledgeStore:
         self.route_config = RouteConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.route_config
+
+    def get_validation_config(self) -> ValidationConfig:
+        return ValidationConfig.from_dict(self.validation_config.to_dict())
+
+    def set_validation_config(self, config: ValidationConfig) -> ValidationConfig:
+        config.validate()
+        self.validation_config = ValidationConfig.from_dict(config.to_dict())
+        return self.validation_config
+
+    def validate_answer(
+        self,
+        query: str,
+        reply: str,
+        citations: list[dict[str, Any]],
+    ) -> ValidationResult | None:
+        """按当前 validation_config 校验 reply 与 citations 一致性"""
+        cfg = self.get_validation_config()
+        if not cfg.enabled:
+            return None
+        validator = RuleBasedAnswerValidator(config=cfg)
+        return validator.validate(query, reply, citations)
 
     def fetch_citations(self, query: str) -> dict[str, Any]:
         """按当前 citation_config 检索并返回引用包 dict"""
@@ -359,6 +383,7 @@ class KnowledgeStore:
             "citation_config": self.citation_config.to_dict(),
             "expansion_config": self.expansion_config.to_dict(),
             "route_config": self.route_config.to_dict(),
+            "validation_config": self.validation_config.to_dict(),
         }
         save_json(target, payload)
         return target
@@ -394,6 +419,8 @@ class KnowledgeStore:
             store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
         if raw.get("route_config"):
             store.route_config = RouteConfig.from_dict(raw["route_config"])
+        if raw.get("validation_config"):
+            store.validation_config = ValidationConfig.from_dict(raw["validation_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -457,6 +484,7 @@ class KnowledgeStore:
             "citation_config": self.citation_config.to_dict(),
             "expansion_config": self.expansion_config.to_dict(),
             "route_config": self.route_config.to_dict(),
+            "validation_config": self.validation_config.to_dict(),
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,

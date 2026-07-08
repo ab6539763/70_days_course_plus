@@ -1,7 +1,34 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.36.0（Day 36 自适应路由）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-036
+**版本**：v0.37.0（Day 37 Self-RAG 答案校验）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-037
+
+## Day 37 新增
+
+```
+src/rag/answer_validator.py
+  RuleBasedAnswerValidator — 引用-回复一致性打分
+src/rag/validation_config.py
+  ValidationConfig — enabled / min_score / refuse_on_fail
+src/day37/
+  validation_demo.py
+  validation_api_demo.py
+  phase3_validation_review.py
+```
+
+## API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/knowledge/validation-config` | 答案校验开关与阈值 |
+| PUT | `/api/knowledge/validation-config` | 更新校验策略 |
+| POST | `/api/knowledge/validation-preview` | 单条 query+reply 校验预览 |
+
+`store.json` 新增 `validation_config` 字段；默认 `enabled=true`，`min_score=0.35`。
+
+`POST /api/chat` 响应扩展 `validation` 审计元数据（passed、score、reason）。
+
+管线：`route → expand? → rewrite → hybrid → rerank → citations → LLM → validate`
 
 ## Day 36 新增
 

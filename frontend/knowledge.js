@@ -42,7 +42,9 @@
       .slice(-5)
       .join("、");
     el.textContent = `${data.document_count} 篇 / ${data.chunk_count} 块${
-      data.route_config && data.route_config.enabled
+      data.validation_config && data.validation_config.enabled
+        ? " · validate"
+        : data.route_config && data.route_config.enabled
         ? " · route"
         : data.expansion_config && data.expansion_config.enabled
         ? " · expand"

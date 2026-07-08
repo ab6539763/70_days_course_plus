@@ -110,6 +110,14 @@
       bubble.appendChild(rt);
     }
 
+    if (extras && extras.validation) {
+      const vl = document.createElement("div");
+      vl.className = "msg__validation";
+      const status = extras.validation.passed ? "通过" : "未通过";
+      vl.textContent = `校验: ${status} · score=${(extras.validation.score || 0).toFixed(2)} · ${extras.validation.reason || ""}`;
+      bubble.appendChild(vl);
+    }
+
     if (meta) {
       const metaEl = document.createElement("span");
       metaEl.className = "msg__meta";
@@ -161,6 +169,7 @@
         rewrite: result.rewrite,
         expansion: result.expansion,
         route: result.route,
+        validation: result.validation,
       });
     } catch (err) {
       appendMessage("bot", `错误：${err.message}`, "请求失败");

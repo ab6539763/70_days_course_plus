@@ -31,6 +31,7 @@ class ChatResponse(BaseModel):
     rewrite: dict | None = None
     expansion: dict | None = None
     route: dict | None = None
+    validation: dict | None = None
 
 
 class HealthResponse(BaseModel):
@@ -83,6 +84,7 @@ class KnowledgeStatusResponse(BaseModel):
     citation_config: dict = Field(default_factory=dict)
     expansion_config: dict = Field(default_factory=dict)
     route_config: dict = Field(default_factory=dict)
+    validation_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -243,6 +245,46 @@ class RoutePreviewResponse(BaseModel):
     rule_id: str | None = None
     confidence: float
     label: str
+
+
+class ValidationConfigRequest(BaseModel):
+    """PUT /api/knowledge/validation-config"""
+
+    enabled: bool = True
+    mode: str = Field("overlap", pattern="^(overlap|strict)$")
+    min_score: float = Field(0.35, ge=0.0, le=1.0)
+    refuse_on_fail: bool = True
+    retry_on_fail: bool = False
+    max_retries: int = Field(1, ge=0, le=3)
+
+
+class ValidationConfigResponse(BaseModel):
+    enabled: bool
+    mode: str
+    min_score: float
+    refuse_on_fail: bool
+    retry_on_fail: bool
+    max_retries: int
+
+
+class ValidationPreviewRequest(BaseModel):
+    """POST /api/knowledge/validation-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+    reply: str = Field(..., min_length=1, max_length=4000)
+    citations: list[dict] = Field(default_factory=list)
+
+
+class ValidationPreviewResponse(BaseModel):
+    query: str
+    reply: str
+    passed: bool
+    score: float
+    reason: str
+    citation_coverage: float
+    matched_citation_ranks: list[int]
+    refused: bool = False
+    retries: int = 0
 
 
 class RebuildRequest(BaseModel):

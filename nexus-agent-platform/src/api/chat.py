@@ -13,9 +13,10 @@ from api.schemas import ChatRequest, ChatResponse, HealthResponse, SessionResetR
 from api.sessions import SessionManager, session_manager
 from chat.orchestrator import ChatOrchestrator
 from rag.knowledge_store import get_knowledge_store
+from rag.validation_config import REFUSAL_MESSAGE
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.36.0"
+API_VERSION = "0.37.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -63,6 +64,15 @@ def chat(
     expansion = cite_data.get("expansion")
     route = cite_data.get("route")
 
+    store = get_knowledge_store()
+    validation = None
+    val_result = store.validate_answer(message, reply, citations)
+    if val_result is not None:
+        validation = val_result.to_dict()
+        if not val_result.passed and store.get_validation_config().refuse_on_fail:
+            reply = f"[校验未通过] {REFUSAL_MESSAGE}"
+            validation = {**validation, "refused": True}
+
     return ChatResponse(
         reply=reply,
         meta=meta,
@@ -72,6 +82,7 @@ def chat(
         rewrite=rewrite,
         expansion=expansion,
         route=route,
+        validation=validation,
     )
 
 
