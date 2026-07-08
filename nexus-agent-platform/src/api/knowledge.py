@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from api.schemas import (
     KnowledgeUploadResponse,
     RebuildRequest,
     RebuildResponse,
+    RerankConfigRequest,
+    RerankConfigResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -28,6 +30,7 @@ from rag.chunk_config import PRESET_CONFIGS, ChunkConfig
 from rag.ingestion import ingest_upload
 from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
+from rag.rerank_config import RerankConfig
 from rag.retrieval_config import RetrievalConfig
 from rag.retrieval_eval import EvalQuery, pick_best_config, run_ab_experiment
 from tools.doc_parser import parse_bytes
@@ -59,6 +62,27 @@ def update_retrieval_config(body: RetrievalConfigRequest) -> RetrievalConfigResp
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return RetrievalConfigResponse(**cfg.to_dict())
+
+
+@router.get("/rerank-config", response_model=RerankConfigResponse)
+def get_rerank_config() -> RerankConfigResponse:
+    """返回 rerank 开关、候选池大小与模型标识"""
+    cfg = get_knowledge_store().get_rerank_config()
+    return RerankConfigResponse(**cfg.to_dict())
+
+
+@router.put("/rerank-config", response_model=RerankConfigResponse)
+def update_rerank_config(body: RerankConfigRequest) -> RerankConfigResponse:
+    """更新 rerank 策略；变更后清除 RAG 缓存"""
+    store = get_knowledge_store()
+    try:
+        cfg = RerankConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_rerank_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RerankConfigResponse(**cfg.to_dict())
 
 
 @router.get("/chunk-config", response_model=ChunkConfigResponse)

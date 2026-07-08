@@ -15,6 +15,7 @@ from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.chroma_store import ChromaVectorIndex
 from rag.embedding import EmbeddingClient
 from rag.hybrid_retriever import HybridRetriever, _rrf_merge, _weighted_merge
+from rag.reranking_retriever import RerankingRetriever
 from rag.knowledge_store import KnowledgeStore
 from rag.retrieval_config import (
     FUSION_RRF,
@@ -38,6 +39,9 @@ def _hybrid_store(tmp_path: Path) -> KnowledgeStore:
 def _build_hybrid(store: KnowledgeStore) -> HybridRetriever:
     rag = store.as_rag_service()
     retriever = rag.index.retriever
+    if isinstance(retriever, RerankingRetriever):
+        assert isinstance(retriever.inner, HybridRetriever)
+        return retriever.inner
     assert isinstance(retriever, HybridRetriever)
     return retriever
 

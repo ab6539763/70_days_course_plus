@@ -74,6 +74,7 @@ class KnowledgeStatusResponse(BaseModel):
     chroma_path: str | None = None
     chroma_count: int = 0
     retrieval_config: dict = Field(default_factory=dict)
+    rerank_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -92,6 +93,20 @@ class RetrievalConfigResponse(BaseModel):
     vector_weight: float
     fusion: str
     rrf_k: int
+
+
+class RerankConfigRequest(BaseModel):
+    """PUT /api/knowledge/rerank-config"""
+
+    enabled: bool = True
+    candidate_pool: int = Field(20, ge=1, le=100)
+    model: str = Field("mock", pattern="^mock$")
+
+
+class RerankConfigResponse(BaseModel):
+    enabled: bool
+    candidate_pool: int
+    model: str
 
 
 class RebuildRequest(BaseModel):

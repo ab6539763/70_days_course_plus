@@ -22,6 +22,9 @@ from rag.context import DocumentIndex, RAGContextService
 from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
 from rag.hybrid_retriever import HybridRetriever
+from rag.rerank_config import RerankConfig
+from rag.reranker import MockCrossEncoderReranker
+from rag.reranking_retriever import RerankingRetriever
 from rag.retrieval_config import RetrievalConfig
 from tools.doc_reader import DocumentRecord, read_text_file
 from tools.parsers.base import ParsedDocument
@@ -29,7 +32,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.31.0"
+PLATFORM_VERSION = "0.32.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -84,6 +87,7 @@ class KnowledgeStore:
     last_incremental_at: str | None = None
     index_mode: str = INDEX_MODE_FULL
     retrieval_config: RetrievalConfig = field(default_factory=RetrievalConfig)
+    rerank_config: RerankConfig = field(default_factory=RerankConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -121,6 +125,15 @@ class KnowledgeStore:
         self.retrieval_config = RetrievalConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.retrieval_config
+
+    def get_rerank_config(self) -> RerankConfig:
+        return RerankConfig.from_dict(self.rerank_config.to_dict())
+
+    def set_rerank_config(self, config: RerankConfig) -> RerankConfig:
+        config.validate()
+        self.rerank_config = RerankConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.rerank_config
 
     def ingest_text(
         self,
@@ -280,6 +293,7 @@ class KnowledgeStore:
             "last_incremental_at": self.last_incremental_at,
             "index_mode": self.index_mode,
             "retrieval_config": self.retrieval_config.to_dict(),
+            "rerank_config": self.rerank_config.to_dict(),
         }
         save_json(target, payload)
         return target
@@ -305,6 +319,8 @@ class KnowledgeStore:
         store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
         if raw.get("retrieval_config"):
             store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
+        if raw.get("rerank_config"):
+            store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -363,6 +379,7 @@ class KnowledgeStore:
             "last_incremental_at": self.last_incremental_at,
             "index_mode": self.index_mode,
             "retrieval_config": self.retrieval_config.to_dict(),
+            "rerank_config": self.rerank_config.to_dict(),
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,
@@ -521,7 +538,13 @@ class KnowledgeStore:
         vector = ChromaEmbeddingRetriever(self.chunks, chroma, client=client)
         keyword = KeywordRetriever(self.chunks)
         cfg = self.get_retrieval_config()
-        retriever = HybridRetriever(self.chunks, keyword, vector, config=cfg)
+        hybrid = HybridRetriever(self.chunks, keyword, vector, config=cfg)
+        rerank_cfg = self.get_rerank_config()
+        retriever = RerankingRetriever(
+            hybrid,
+            reranker=MockCrossEncoderReranker(),
+            config=rerank_cfg,
+        )
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 
