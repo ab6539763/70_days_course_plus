@@ -424,6 +424,8 @@ from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
 from rag.citation_config import CitationConfig
 from rag.expanding_retriever import ExpandingRetriever
 from rag.expansion_config import ExpansionConfig
+from rag.route_config import RouteConfig
+from rag.routing_retriever import RoutingRetriever
 from rag.hybrid_retriever import HybridRetriever
 from rag.rerank_config import RerankConfig
 from rag.reranker import MockCrossEncoderReranker
@@ -431,8 +433,6 @@ from rag.reranking_retriever import RerankingRetriever
 from rag.retrieval_config import RetrievalConfig
 from rag.rewrite_config import RewriteConfig
 from rag.rewriting_retriever import RewritingRetriever
-from tools.doc_reader import DocumentRecord, read_text_file
-from tools.parsers.base import ParsedDocument
 ```
 
 
@@ -524,6 +524,8 @@ def load(cls, path: Path) -> KnowledgeStore:
             store.citation_config = CitationConfig.from_dict(raw["citation_config"])
         if raw.get("expansion_config"):
             store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
+        if raw.get("route_config"):
+            store.route_config = RouteConfig.from_dict(raw["route_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -559,7 +561,9 @@ def _build_rag_service(self) -> RAGContextService:
         rewrite_cfg = self.get_rewrite_config()
         rewriting = RewritingRetriever(reranking, config=rewrite_cfg)
         expansion_cfg = self.get_expansion_config()
-        retriever = ExpandingRetriever(rewriting, config=expansion_cfg)
+        expanding = ExpandingRetriever(rewriting, config=expansion_cfg)
+        route_cfg = self.get_route_config()
+        retriever = RoutingRetriever(expanding, config=route_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 ```

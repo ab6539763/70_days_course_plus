@@ -28,7 +28,7 @@ def client(tmp_path):
 
 
 def test_health_version_028(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_rebuild_endpoint(client):
@@ -56,7 +56,7 @@ def test_rebuild_with_best_config(client):
 def test_status_after_rebuild(client):
     client.post("/api/knowledge/rebuild", json={})
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status.get("last_rebuilt_at")
 
 

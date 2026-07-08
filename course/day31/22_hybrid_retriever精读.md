@@ -447,7 +447,9 @@ def _build_rag_service(self) -> RAGContextService:
         rewrite_cfg = self.get_rewrite_config()
         rewriting = RewritingRetriever(reranking, config=rewrite_cfg)
         expansion_cfg = self.get_expansion_config()
-        retriever = ExpandingRetriever(rewriting, config=expansion_cfg)
+        expanding = ExpandingRetriever(rewriting, config=expansion_cfg)
+        route_cfg = self.get_route_config()
+        retriever = RoutingRetriever(expanding, config=route_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 ```
@@ -478,6 +480,7 @@ from rag.chroma_store import ChromaVectorIndex
 from rag.embedding import EmbeddingClient
 from rag.hybrid_retriever import HybridRetriever, _rrf_merge, _weighted_merge
 from rag.expanding_retriever import ExpandingRetriever
+from rag.routing_retriever import RoutingRetriever
 from rag.reranking_retriever import RerankingRetriever
 from rag.rewriting_retriever import RewritingRetriever
 from rag.knowledge_store import KnowledgeStore
@@ -503,6 +506,8 @@ def _hybrid_store(tmp_path: Path) -> KnowledgeStore:
 def _build_hybrid(store: KnowledgeStore) -> HybridRetriever:
     rag = store.as_rag_service()
     retriever = rag.index.retriever
+    if isinstance(retriever, RoutingRetriever):
+        retriever = retriever.inner
     if isinstance(retriever, ExpandingRetriever):
         retriever = retriever.inner
     if isinstance(retriever, RewritingRetriever):
@@ -657,7 +662,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_get_retrieval_config_default_hybrid(client):
@@ -683,7 +688,7 @@ def test_put_retrieval_config_rrf(client):
 
 def test_status_includes_retrieval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["retrieval_config"]["mode"] == "hybrid"
 
 
@@ -795,6 +800,15 @@ def get_retrieval_config(self) -> RetrievalConfig:
         self.invalidate_cache()
         return self.expansion_config
 
+    def get_route_config(self) -> RouteConfig:
+        return RouteConfig.from_dict(self.route_config.to_dict())
+
+    def set_route_config(self, config: RouteConfig) -> RouteConfig:
+        config.validate()
+        self.route_config = RouteConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.route_config
+
     def fetch_citations(self, query: str) -> dict[str, Any]:
         """按当前 citation_config 检索并返回引用包 dict"""
         cfg = self.get_citation_config()
@@ -804,6 +818,7 @@ def get_retrieval_config(self) -> RetrievalConfig:
                 "citations": [],
                 "rewrite": None,
                 "expansion": None,
+                "route": None,
             }
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
@@ -1136,7 +1151,7 @@ function HYBRID_SEARCH(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036
 """
 
 from __future__ import annotations
@@ -1168,6 +1183,10 @@ from api.schemas import (
     RewriteConfigResponse,
     RewritePreviewRequest,
     RewritePreviewResponse,
+    RouteConfigRequest,
+    RouteConfigResponse,
+    RoutePreviewRequest,
+    RoutePreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -1181,6 +1200,8 @@ from rag.citation_config import CitationConfig
 from rag.expansion_config import ExpansionConfig
 from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
+from rag.query_router import RuleBasedQueryRouter
+from rag.route_config import RouteConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
@@ -1328,33 +1349,28 @@ def expansion_preview(body: ExpansionPreviewRequest) -> ExpansionPreviewResponse
     return ExpansionPreviewResponse(**result.to_dict())
 
 
-@router.get("/chunk-config", response_model=ChunkConfigResponse)
-def get_chunk_config() -> ChunkConfigResponse:
-    """返回当前知识库默认分块参数"""
-    cfg = get_knowledge_store().get_chunk_config()
-    return ChunkConfigResponse(**cfg.to_dict())
+@router.get("/route-config", response_model=RouteConfigResponse)
+def get_route_config() -> RouteConfigResponse:
+    """返回检索管线路由开关与默认意图"""
+    cfg = get_knowledge_store().get_route_config()
+    return RouteConfigResponse(**cfg.to_dict())
 
 
-@router.put("/chunk-config", response_model=ChunkConfigResponse)
-def update_chunk_config(body: ChunkConfigRequest) -> ChunkConfigResponse:
-    """更新默认分块参数（影响后续上传）"""
+@router.put("/route-config", response_model=RouteConfigResponse)
+def update_route_config(body: RouteConfigRequest) -> RouteConfigResponse:
+    """更新检索管线路由策略并持久化"""
     store = get_knowledge_store()
     try:
-        cfg = ChunkConfig.from_dict(body.model_dump())
+        cfg = RouteConfig.from_dict(body.model_dump())
         cfg.validate()
-        store.set_chunk_config(cfg)
+        store.set_route_config(cfg)
         store.save()
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return ChunkConfigResponse(**cfg.to_dict())
+    return RouteConfigResponse(**cfg.to_dict())
 
 
-@router.post("/evaluate", response_model=EvaluateResponse)
-def evaluate_chunk_configs(body: EvaluateRequest | None = None) -> EvaluateResponse:
-    """
-    对内置样例文档运行 A/B 分块评估，返回 hit@1 与推荐配置。
-
-    默认使用 PRESET_CONFIGS 四套预设与 day27 评估问句集。
+@router.post("/route-previe
 ```
 
 
@@ -1442,7 +1458,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_get_retrieval_config_default_hybrid(client):
@@ -1468,7 +1484,7 @@ def test_put_retrieval_config_rrf(client):
 
 def test_status_includes_retrieval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["retrieval_config"]["mode"] == "hybrid"
 
 

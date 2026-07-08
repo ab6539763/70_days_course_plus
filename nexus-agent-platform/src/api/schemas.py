@@ -30,6 +30,7 @@ class ChatResponse(BaseModel):
     citations: list[dict] = Field(default_factory=list)
     rewrite: dict | None = None
     expansion: dict | None = None
+    route: dict | None = None
 
 
 class HealthResponse(BaseModel):
@@ -81,6 +82,7 @@ class KnowledgeStatusResponse(BaseModel):
     rewrite_config: dict = Field(default_factory=dict)
     citation_config: dict = Field(default_factory=dict)
     expansion_config: dict = Field(default_factory=dict)
+    route_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -152,6 +154,7 @@ class CitationConfigRequest(BaseModel):
     preview_max_chars: int = Field(120, ge=20, le=500)
     include_rewrite_meta: bool = True
     include_expansion_meta: bool = True
+    include_route_meta: bool = True
 
 
 class CitationConfigResponse(BaseModel):
@@ -160,6 +163,7 @@ class CitationConfigResponse(BaseModel):
     preview_max_chars: int
     include_rewrite_meta: bool
     include_expansion_meta: bool
+    include_route_meta: bool
 
 
 class CitationPreviewRequest(BaseModel):
@@ -173,6 +177,7 @@ class CitationPreviewResponse(BaseModel):
     citations: list[dict]
     rewrite: dict | None = None
     expansion: dict | None = None
+    route: dict | None = None
 
 
 class ExpansionConfigRequest(BaseModel):
@@ -205,6 +210,39 @@ class ExpansionPreviewResponse(BaseModel):
     changed: bool
     mode: str
     rule_id: str | None = None
+
+
+class RouteConfigRequest(BaseModel):
+    """PUT /api/knowledge/route-config"""
+
+    enabled: bool = True
+    mode: str = Field("rules", pattern="^rules$")
+    fallback_intent: str = Field(
+        "rag_standard",
+        pattern="^(faq_fast|rag_standard|rag_wide)$",
+    )
+
+
+class RouteConfigResponse(BaseModel):
+    enabled: bool
+    mode: str
+    fallback_intent: str
+
+
+class RoutePreviewRequest(BaseModel):
+    """POST /api/knowledge/route-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+
+
+class RoutePreviewResponse(BaseModel):
+    original: str
+    intent: str
+    expand: bool
+    rewrite: bool
+    rule_id: str | None = None
+    confidence: float
+    label: str
 
 
 class RebuildRequest(BaseModel):

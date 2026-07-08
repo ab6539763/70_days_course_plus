@@ -22,7 +22,9 @@ from rag.citation_config import CitationConfig
 from rag.expanding_retriever import ExpandingRetriever
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
+from rag.query_router import RouteResult
 from rag.rewriting_retriever import RewritingRetriever
+from rag.routing_retriever import RoutingRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
 from tools.doc_reader import DocumentRecord, read_documents
 
@@ -35,6 +37,7 @@ Retriever = (
     | RerankingRetriever
     | RewritingRetriever
     | ExpandingRetriever
+    | RoutingRetriever
 )
 
 
@@ -187,6 +190,7 @@ class RAGContextService:
         results = self.index.search(query, top_k=k)
         rewrite = _find_last_rewrite(self.index.retriever)
         expansion = _find_last_expansion(self.index.retriever)
+        route = _find_last_route(self.index.retriever)
 
         return build_citation_bundle(
             query,
@@ -194,10 +198,13 @@ class RAGContextService:
             config=cfg,
             rewrite=rewrite,
             expansion=expansion,
+            route=route,
         )
 
 
 def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return _find_last_rewrite(retriever.inner)
     if isinstance(retriever, ExpandingRetriever):
         if retriever.last_inner_rewrite is not None:
             return retriever.last_inner_rewrite
@@ -208,6 +215,14 @@ def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
 
 
 def _find_last_expansion(retriever: Retriever) -> ExpansionResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return _find_last_expansion(retriever.inner)
     if isinstance(retriever, ExpandingRetriever):
         return retriever.last_expansion
+    return None
+
+
+def _find_last_route(retriever: Retriever) -> RouteResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return retriever.last_route
     return None

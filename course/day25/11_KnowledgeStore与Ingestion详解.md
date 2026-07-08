@@ -137,7 +137,21 @@ ingest_text ValueError → API 422；StorageError → 500；UnicodeDecodeError �
 ## 附录：_append_chunks 与 _rebuild_index（详解专节）
 
 ```python
-if not raw:
+"retrieval_config": self.retrieval_config.to_dict(),
+            "rerank_config": self.rerank_config.to_dict(),
+            "rewrite_config": self.rewrite_config.to_dict(),
+            "citation_config": self.citation_config.to_dict(),
+            "expansion_config": self.expansion_config.to_dict(),
+            "route_config": self.route_config.to_dict(),
+        }
+        save_json(target, payload)
+        return target
+
+    @classmethod
+    def load(cls, path: Path) -> KnowledgeStore:
+        """从 JSON 加载知识库"""
+        raw = load_json(path, default=None)
+        if not raw:
             return cls.bootstrap_from_sample_docs(store_path=path)
 
         store = cls(store_path=path)
@@ -153,42 +167,27 @@ if not raw:
         store.last_incremental_at = raw.get("last_incremental_at")
         store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
         if raw.get("retrieval_config"):
-            store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
-        if raw.get("rerank_config"):
-            store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
-        if raw.get("rewrite_config"):
-            store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
-        if raw.get("citation_config"):
-            store.citation_config = CitationConfig.from_dict(raw["citation_config"])
-        if raw.get("expansion_config"):
-            store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
-        store._sync_chroma_from_json()
-        store._rag_service = store._build_rag_service()
-        return store
-
-    @classmethod
 ```
 
 
 **`_append_chunks`**：新块 `index` 从 `len(self.chunks)` 递增，避免与旧块冲突。每 append 同步追加 `KnowledgeDocument` 元数据行。
 
 ```python
-"chunk_config": self.chunk_config.to_dict(),
-            "last_rebuilt_at": self.last_rebuilt_at,
-            "last_incremental_at": self.last_incremental_at,
-            "index_mode": self.index_mode,
-            "retrieval_config": self.retrieval_config.to_dict(),
-            "rerank_config": self.rerank_config.to_dict(),
-            "rewrite_config": self.rewrite_config.to_dict(),
-            "citation_config": self.citation_config.to_dict(),
-            "expansion_config": self.expansion_config.to_dict(),
-            "vector_backend": self.vector_backend,
-            "chroma_path": str(self._resolve_chroma_path()),
-            "chroma_count": self._chroma_index().count() if self.chunks else 0,
-        }
+if isinstance(retriever, EmbeddingRetriever):
+            store.embedding_state = retriever._client.model.export_state()
+        store._rebuild_index()
+        return store
 
-    def _append_chunks(
-        self,
+    def status_dict(self) -> dict[str, Any]:
+        from tools.doc_parser import supported_formats
+
+        return {
+            "document_count": self.document_count,
+            "chunk_count": self.chunk_count,
+            "documents": [d.to_dict() for d in self.documents],
+            "store_path": str(self.store_path) if self.store_path else None,
+            "platform_version": PLATFORM_VERSION,
+            "supported_formats": supported_formats(),
 ```
 
 

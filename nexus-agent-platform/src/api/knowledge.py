@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036
 """
 
 from __future__ import annotations
@@ -33,6 +33,10 @@ from api.schemas import (
     RewriteConfigResponse,
     RewritePreviewRequest,
     RewritePreviewResponse,
+    RouteConfigRequest,
+    RouteConfigResponse,
+    RoutePreviewRequest,
+    RoutePreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -46,6 +50,8 @@ from rag.citation_config import CitationConfig
 from rag.expansion_config import ExpansionConfig
 from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
+from rag.query_router import RuleBasedQueryRouter
+from rag.route_config import RouteConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
@@ -191,6 +197,37 @@ def expansion_preview(body: ExpansionPreviewRequest) -> ExpansionPreviewResponse
     expander = build_expander(cfg)
     result = expander.expand(body.query)
     return ExpansionPreviewResponse(**result.to_dict())
+
+
+@router.get("/route-config", response_model=RouteConfigResponse)
+def get_route_config() -> RouteConfigResponse:
+    """返回检索管线路由开关与默认意图"""
+    cfg = get_knowledge_store().get_route_config()
+    return RouteConfigResponse(**cfg.to_dict())
+
+
+@router.put("/route-config", response_model=RouteConfigResponse)
+def update_route_config(body: RouteConfigRequest) -> RouteConfigResponse:
+    """更新检索管线路由策略并持久化"""
+    store = get_knowledge_store()
+    try:
+        cfg = RouteConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_route_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RouteConfigResponse(**cfg.to_dict())
+
+
+@router.post("/route-preview", response_model=RoutePreviewResponse)
+def route_preview(body: RoutePreviewRequest) -> RoutePreviewResponse:
+    """预览单条 query 的路由决策（expand/rewrite 开关）"""
+    store = get_knowledge_store()
+    cfg = store.get_route_config()
+    router = RuleBasedQueryRouter(config=cfg)
+    result = router.route(body.query)
+    return RoutePreviewResponse(**result.to_dict())
 
 
 @router.get("/chunk-config", response_model=ChunkConfigResponse)

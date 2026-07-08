@@ -15,6 +15,7 @@ from typing import Any
 from rag.citation_config import CitationConfig
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
+from rag.query_router import RouteResult
 from rag.retriever import RetrievalResult
 
 
@@ -47,6 +48,7 @@ class CitationBundle:
     citations: list[Citation]
     rewrite: RewriteResult | None = None
     expansion: ExpansionResult | None = None
+    route: RouteResult | None = None
     query: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -58,6 +60,8 @@ class CitationBundle:
             data["rewrite"] = self.rewrite.to_dict()
         if self.expansion is not None:
             data["expansion"] = self.expansion.to_dict()
+        if self.route is not None:
+            data["route"] = self.route.to_dict()
         return data
 
 
@@ -93,6 +97,7 @@ def build_citation_bundle(
     config: CitationConfig | None = None,
     rewrite: RewriteResult | None = None,
     expansion: ExpansionResult | None = None,
+    route: RouteResult | None = None,
 ) -> CitationBundle:
     """组装完整引用包"""
     cfg = config or CitationConfig()
@@ -103,9 +108,11 @@ def build_citation_bundle(
     )
     rewrite_meta = rewrite if cfg.include_rewrite_meta else None
     expansion_meta = expansion if cfg.include_expansion_meta else None
+    route_meta = route if cfg.include_route_meta else None
     return CitationBundle(
         citations=citations,
         rewrite=rewrite_meta,
         expansion=expansion_meta,
+        route=route_meta,
         query=query.strip(),
     )

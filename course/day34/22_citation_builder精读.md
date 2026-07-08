@@ -24,6 +24,7 @@ from typing import Any
 from rag.citation_config import CitationConfig
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
+from rag.query_router import RouteResult
 from rag.retriever import RetrievalResult
 
 
@@ -56,6 +57,7 @@ class CitationBundle:
     citations: list[Citation]
     rewrite: RewriteResult | None = None
     expansion: ExpansionResult | None = None
+    route: RouteResult | None = None
     query: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -67,6 +69,8 @@ class CitationBundle:
             data["rewrite"] = self.rewrite.to_dict()
         if self.expansion is not None:
             data["expansion"] = self.expansion.to_dict()
+        if self.route is not None:
+            data["route"] = self.route.to_dict()
         return data
 
 
@@ -102,6 +106,7 @@ def build_citation_bundle(
     config: CitationConfig | None = None,
     rewrite: RewriteResult | None = None,
     expansion: ExpansionResult | None = None,
+    route: RouteResult | None = None,
 ) -> CitationBundle:
     """组装完整引用包"""
     cfg = config or CitationConfig()
@@ -112,10 +117,12 @@ def build_citation_bundle(
     )
     rewrite_meta = rewrite if cfg.include_rewrite_meta else None
     expansion_meta = expansion if cfg.include_expansion_meta else None
+    route_meta = route if cfg.include_route_meta else None
     return CitationBundle(
         citations=citations,
         rewrite=rewrite_meta,
         expansion=expansion_meta,
+        route=route_meta,
         query=query.strip(),
     )
 ```
@@ -266,7 +273,9 @@ from rag.citation_config import CitationConfig
 from rag.expanding_retriever import ExpandingRetriever
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
+from rag.query_router import RouteResult
 from rag.rewriting_retriever import RewritingRetriever
+from rag.routing_retriever import RoutingRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
 from tools.doc_reader import DocumentRecord, read_documents
 
@@ -279,6 +288,7 @@ Retriever = (
     | RerankingRetriever
     | RewritingRetriever
     | ExpandingRetriever
+    | RoutingRetriever
 )
 
 
@@ -431,6 +441,7 @@ class RAGContextService:
         results = self.index.search(query, top_k=k)
         rewrite = _find_last_rewrite(self.index.retriever)
         expansion = _find_last_expansion(self.index.retriever)
+        route = _find_last_route(self.index.retriever)
 
         return build_citation_bundle(
             query,
@@ -438,10 +449,13 @@ class RAGContextService:
             config=cfg,
             rewrite=rewrite,
             expansion=expansion,
+            route=route,
         )
 
 
 def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return _find_last_rewrite(retriever.inner)
     if isinstance(retriever, ExpandingRetriever):
         if retriever.last_inner_rewrite is not None:
             return retriever.last_inner_rewrite
@@ -452,8 +466,16 @@ def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
 
 
 def _find_last_expansion(retriever: Retriever) -> ExpansionResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return _find_last_expansion(retriever.inner)
     if isinstance(retriever, ExpandingRetriever):
         return retriever.last_expansion
+    return None
+
+
+def _find_last_route(retriever: Retriever) -> RouteResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return retriever.last_route
     return None
 ```
 
@@ -500,6 +522,7 @@ class CitationConfig:
     preview_max_chars: int = 120
     include_rewrite_meta: bool = True
     include_expansion_meta: bool = True
+    include_route_meta: bool = True
 
     def validate(self) -> None:
         if self.max_citations < 1:
@@ -518,6 +541,7 @@ class CitationConfig:
             "preview_max_chars": self.preview_max_chars,
             "include_rewrite_meta": self.include_rewrite_meta,
             "include_expansion_meta": self.include_expansion_meta,
+            "include_route_meta": self.include_route_meta,
         }
 
     @classmethod
@@ -530,6 +554,7 @@ class CitationConfig:
             preview_max_chars=int(data.get("preview_max_chars", 120)),
             include_rewrite_meta=bool(data.get("include_rewrite_meta", True)),
             include_expansion_meta=bool(data.get("include_expansion_meta", True)),
+            include_route_meta=bool(data.get("include_route_meta", True)),
         )
 ```
 
@@ -565,7 +590,9 @@ def _build_rag_service(self) -> RAGContextService:
         rewrite_cfg = self.get_rewrite_config()
         rewriting = RewritingRetriever(reranking, config=rewrite_cfg)
         expansion_cfg = self.get_expansion_config()
-        retriever = ExpandingRetriever(rewriting, config=expansion_cfg)
+        expanding = ExpandingRetriever(rewriting, config=expansion_cfg)
+        route_cfg = self.get_route_config()
+        retriever = RoutingRetriever(expanding, config=route_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 ```
@@ -759,7 +786,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_get_citation_config_default(client):
@@ -806,7 +833,7 @@ def test_citation_preview_with_rewrite(client):
 
 def test_status_includes_citation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["citation_config"]["enabled"] is True
 
 
@@ -906,6 +933,15 @@ def get_citation_config(self) -> CitationConfig:
         self.expansion_config = ExpansionConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.expansion_config
+
+    def get_route_config(self) -> RouteConfig:
+        return RouteConfig.from_dict(self.route_config.to_dict())
+
+    def set_route_config(self, config: RouteConfig) -> RouteConfig:
+        config.validate()
+        self.route_config = RouteConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.route_config
 ```
 
 
@@ -962,6 +998,7 @@ from typing import Any
 from rag.citation_config import CitationConfig
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
+from rag.query_router import RouteResult
 from rag.retriever import RetrievalResult
 
 
@@ -994,6 +1031,7 @@ class CitationBundle:
     citations: list[Citation]
     rewrite: RewriteResult | None = None
     expansion: ExpansionResult | None = None
+    route: RouteResult | None = None
     query: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -1005,6 +1043,8 @@ class CitationBundle:
             data["rewrite"] = self.rewrite.to_dict()
         if self.expansion is not None:
             data["expansion"] = self.expansion.to_dict()
+        if self.route is not None:
+            data["route"] = self.route.to_dict()
         return data
 
 
@@ -1040,6 +1080,7 @@ def build_citation_bundle(
     config: CitationConfig | None = None,
     rewrite: RewriteResult | None = None,
     expansion: ExpansionResult | None = None,
+    route: RouteResult | None = None,
 ) -> CitationBundle:
     """组装完整引用包"""
     cfg = config or CitationConfig()
@@ -1050,10 +1091,12 @@ def build_citation_bundle(
     )
     rewrite_meta = rewrite if cfg.include_rewrite_meta else None
     expansion_meta = expansion if cfg.include_expansion_meta else None
+    route_meta = route if cfg.include_route_meta else None
     return CitationBundle(
         citations=citations,
         rewrite=rewrite_meta,
         expansion=expansion_meta,
+        route=route_meta,
         query=query.strip(),
     )
 ```
@@ -1104,7 +1147,7 @@ function FETCH_CITATIONS(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036
 """
 
 from __future__ import annotations
@@ -1136,6 +1179,10 @@ from api.schemas import (
     RewriteConfigResponse,
     RewritePreviewRequest,
     RewritePreviewResponse,
+    RouteConfigRequest,
+    RouteConfigResponse,
+    RoutePreviewRequest,
+    RoutePreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -1149,6 +1196,8 @@ from rag.citation_config import CitationConfig
 from rag.expansion_config import ExpansionConfig
 from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
+from rag.query_router import RuleBasedQueryRouter
+from rag.route_config import RouteConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
@@ -1261,13 +1310,7 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
     """预览单条 query 的检索引用（含 rewrite / expansion 审计）"""
     store = get_knowledge_store()
-    data = store.fetch_citations(body.query)
-    return CitationPreviewResponse(**data)
-
-
-@router.get("/expansion-config", response_model=ExpansionConfigResponse)
-def get_expansion_config() -> ExpansionConfigResponse:
-    """返回多 query 扩展开关与参数""
+    data = store.fetch_citations(body
 ```
 
 
@@ -1355,7 +1398,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_get_citation_config_default(client):
@@ -1402,7 +1445,7 @@ def test_citation_preview_with_rewrite(client):
 
 def test_status_includes_citation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["citation_config"]["enabled"] is True
 
 
@@ -1493,7 +1536,9 @@ from rag.citation_config import CitationConfig
 from rag.expanding_retriever import ExpandingRetriever
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
+from rag.query_router import RouteResult
 from rag.rewriting_retriever import RewritingRetriever
+from rag.routing_retriever import RoutingRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
 from tools.doc_reader import DocumentRecord, read_documents
 
@@ -1506,6 +1551,7 @@ Retriever = (
     | RerankingRetriever
     | RewritingRetriever
     | ExpandingRetriever
+    | RoutingRetriever
 )
 
 
@@ -1658,6 +1704,7 @@ class RAGContextService:
         results = self.index.search(query, top_k=k)
         rewrite = _find_last_rewrite(self.index.retriever)
         expansion = _find_last_expansion(self.index.retriever)
+        route = _find_last_route(self.index.retriever)
 
         return build_citation_bundle(
             query,
@@ -1665,10 +1712,13 @@ class RAGContextService:
             config=cfg,
             rewrite=rewrite,
             expansion=expansion,
+            route=route,
         )
 
 
 def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return _find_last_rewrite(retriever.inner)
     if isinstance(retriever, ExpandingRetriever):
         if retriever.last_inner_rewrite is not None:
             return retriever.last_inner_rewrite
@@ -1679,8 +1729,16 @@ def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
 
 
 def _find_last_expansion(retriever: Retriever) -> ExpansionResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return _find_last_expansion(retriever.inner)
     if isinstance(retriever, ExpandingRetriever):
         return retriever.last_expansion
+    return None
+
+
+def _find_last_route(retriever: Retriever) -> RouteResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return retriever.last_route
     return None
 ```
 
@@ -1800,6 +1858,7 @@ from typing import Any
 from rag.citation_config import CitationConfig
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
+from rag.query_router import RouteResult
 from rag.retriever import RetrievalResult
 
 
@@ -1832,6 +1891,7 @@ class CitationBundle:
     citations: list[Citation]
     rewrite: RewriteResult | None = None
     expansion: ExpansionResult | None = None
+    route: RouteResult | None = None
     query: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -1843,6 +1903,8 @@ class CitationBundle:
             data["rewrite"] = self.rewrite.to_dict()
         if self.expansion is not None:
             data["expansion"] = self.expansion.to_dict()
+        if self.route is not None:
+            data["route"] = self.route.to_dict()
         return data
 
 
@@ -1878,6 +1940,7 @@ def build_citation_bundle(
     config: CitationConfig | None = None,
     rewrite: RewriteResult | None = None,
     expansion: ExpansionResult | None = None,
+    route: RouteResult | None = None,
 ) -> CitationBundle:
     """组装完整引用包"""
     cfg = config or CitationConfig()
@@ -1888,10 +1951,12 @@ def build_citation_bundle(
     )
     rewrite_meta = rewrite if cfg.include_rewrite_meta else None
     expansion_meta = expansion if cfg.include_expansion_meta else None
+    route_meta = route if cfg.include_route_meta else None
     return CitationBundle(
         citations=citations,
         rewrite=rewrite_meta,
         expansion=expansion_meta,
+        route=route_meta,
         query=query.strip(),
     )
 ```
@@ -1906,6 +1971,7 @@ cite_data = get_knowledge_store().fetch_citations(message)
     citations = cite_data.get("citations") or []
     rewrite = cite_data.get("rewrite")
     expansion = cite_data.get("expansion")
+    route = cite_data.get("route")
 ```
 
 
@@ -1923,6 +1989,7 @@ def fetch_citations(self, query: str) -> dict[str, Any]:
                 "citations": [],
                 "rewrite": None,
                 "expansion": None,
+                "route": None,
             }
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
@@ -2139,7 +2206,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_get_citation_config_default(client):
@@ -2186,7 +2253,7 @@ def test_citation_preview_with_rewrite(client):
 
 def test_status_includes_citation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["citation_config"]["enabled"] is True
 
 

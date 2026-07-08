@@ -103,6 +103,13 @@
       bubble.appendChild(ex);
     }
 
+    if (extras && extras.route) {
+      const rt = document.createElement("div");
+      rt.className = "msg__route";
+      rt.textContent = `路由: ${extras.route.intent} · expand=${extras.route.expand} · rewrite=${extras.route.rewrite}`;
+      bubble.appendChild(rt);
+    }
+
     if (meta) {
       const metaEl = document.createElement("span");
       metaEl.className = "msg__meta";
@@ -153,6 +160,7 @@
         citations: result.citations,
         rewrite: result.rewrite,
         expansion: result.expansion,
+        route: result.route,
       });
     } catch (err) {
       appendMessage("bot", `错误：${err.message}`, "请求失败");

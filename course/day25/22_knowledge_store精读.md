@@ -33,7 +33,7 @@ from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
 from rag.citation_config import CitationConfig
 from rag.expanding_retriever import ExpandingRetriever
 from rag.expansion_config import ExpansionConfig
-from rag.hybrid_retriever import HybridRetriever
+from rag.route_config import RouteConfig
 ```
 
 
@@ -44,11 +44,13 @@ from rag.hybrid_retriever import HybridRetriever
 ## KnowledgeDocument 元数据类
 
 ```python
+from tools.doc_reader import DocumentRecord, read_text_file
+from tools.parsers.base import ParsedDocument
 from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.35.0"
+PLATFORM_VERSION = "0.36.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -69,8 +71,6 @@ class KnowledgeDocument:
             "ingested_at": self.ingested_at,
             "size_bytes": self.size_bytes,
             "chunk_count": self.chunk_count,
-            "format": self.format,
-        }
 ```
 
 
@@ -85,7 +85,9 @@ class KnowledgeDocument:
 ## KnowledgeStore 字段
 
 ```python
-return cls(
+@classmethod
+    def from_dict(cls, data: dict[str, Any]) -> KnowledgeDocument:
+        return cls(
             name=str(data.get("name", "")),
             ingested_at=str(data.get("ingested_at", "")),
             size_bytes=int(data.get("size_bytes", 0)),
@@ -104,8 +106,6 @@ class KnowledgeStore:
         store.ingest_text("新产品说明…", filename="notice.txt")
         rag = store.as_rag_service()
     """
-
-    documents: list[KnowledgeDocument] = field(default_factory=list)
 ```
 
 
@@ -119,7 +119,9 @@ class KnowledgeStore:
 ## ingest_text 核心写入
 
 ```python
-if self._rag_service is None:
+def as_rag_service(self) -> RAGContextService:
+        """构建或返回缓存的 RAGContextService"""
+        if self._rag_service is None:
             self._rag_service = self._build_rag_service()
         return self._rag_service
 
@@ -154,9 +156,6 @@ if self._rag_service is None:
 
     def get_rewrite_config(self) -> RewriteConfig:
         return RewriteConfig.from_dict(self.rewrite_config.to_dict())
-
-    def set_rewrite_config(self, config: RewriteConfig) -> RewriteConfig:
-        config.validate()
 ```
 
 
@@ -172,23 +171,23 @@ if self._rag_service is None:
 ## save 持久化 envelope
 
 ```python
-self,
+cleaned=cleaned,
+        )
+        new_chunks = chunk_documents(
+            [doc],
+            chunk_size=chunk_size,
+            overlap=overlap,
+            use_cleaned=clean,
+        )
+        self._append_chunks(path.name, new_chunks, size_bytes=doc.size_bytes)
+        self._rebuild_index()
+        return self.documents[-1]
+
+    def ingest_bytes(
+        self,
         data: bytes,
         *,
         filename: str,
-        clean: bool = True,
-        chunk_strategy: str = "auto",
-        incremental: bool = True,
-    ) -> KnowledgeDocument:
-        """处理上传二进制 — Day 26 起委托 doc_parser"""
-        from tools.doc_parser import parse_bytes
-
-        parsed = parse_bytes(data, filename)
-        cfg = self.get_chunk_config()
-        return self.ingest_parsed(
-            parsed,
-            clean=clean,
-            chunk_strategy=chunk_strategy if chunk_strategy != "auto" else cfg.strategy,
 ```
 
 
@@ -199,7 +198,21 @@ self,
 ## load / load_or_bootstrap
 
 ```python
-def ingest_parsed(
+incremental: bool = True,
+    ) -> KnowledgeDocument:
+        """处理上传二进制 — Day 26 起委托 doc_parser"""
+        from tools.doc_parser import parse_bytes
+
+        parsed = parse_bytes(data, filename)
+        cfg = self.get_chunk_config()
+        return self.ingest_parsed(
+            parsed,
+            clean=clean,
+            chunk_strategy=chunk_strategy if chunk_strategy != "auto" else cfg.strategy,
+            incremental=incremental,
+        )
+
+    def ingest_parsed(
         self,
         parsed: ParsedDocument,
         *,
@@ -216,19 +229,6 @@ def ingest_parsed(
         ov = overlap if overlap is not None else cfg.overlap
         text = (parsed.plain_text or "").strip()
         if not text:
-            raise ValueError("解析结果为空")
-
-        if clean:
-            text, _ = clean_text(text)
-            parsed.plain_text = text
-            for section in parsed.sections:
-                section.body, _ = clean_text(section.body)
-
-        new_chunks = chunk_from_parsed(
-            parsed,
-            strategy=strategy,
-            chunk_size=cs,
-            overlap=ov,
 ```
 
 
@@ -239,7 +239,21 @@ def ingest_parsed(
 ## bootstrap_from_sample_docs
 
 ```python
-if incremental:
+if clean:
+            text, _ = clean_text(text)
+            parsed.plain_text = text
+            for section in parsed.sections:
+                section.body, _ = clean_text(section.body)
+
+        new_chunks = chunk_from_parsed(
+            parsed,
+            strategy=strategy,
+            chunk_size=cs,
+            overlap=ov,
+        )
+        size_bytes = len(parsed.plain_text.encode("utf-8"))
+
+        if incremental:
             removed = self._remove_document_by_source(parsed.filename)
             self._append_chunks(
                 parsed.filename,
@@ -252,19 +266,6 @@ if incremental:
             self._append_chunks(
                 parsed.filename,
                 new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
-            )
-            self._rebuild_index()
-        return self.documents[-1]
-
-    def save(self, path: Path | None = None) -> Path:
-        """持久化到 JSON"""
-        target = path or self.store_path or _default_store_path()
-        self.store_path = target
-        payload = {
-            "version": STORE_VERSION,
-            "platform_version": PLATFORM_VERSION,
 ```
 
 
@@ -275,17 +276,17 @@ if incremental:
 ## 单例 get_knowledge_store
 
 ```python
-def _chroma_index(self) -> ChromaVectorIndex:
-        return ChromaVectorIndex(self._resolve_chroma_path())
+text=c.text,
+                source=c.source,
+                index=i,
+                start_char=c.start_char,
+                end_char=c.end_char,
+            )
+            for i, c in enumerate(self.chunks)
+        ]
+        return removed_ids
 
-    def _sync_chroma_from_json(self) -> None:
-        """从 JSON 元数据恢复 Chroma（迁移或冷启动）"""
-        if not self.chunks or not self.embedding_state:
-            return
-        chroma = self._chroma_index()
-        if chroma.count() > 0:
-            return
-        from rag.embedding import EmbeddingClient
+    def _resolve_chroma_path(self) -> Path:
 ```
 
 
@@ -308,7 +309,10 @@ def _chroma_index(self) -> ChromaVectorIndex:
 ## 扩展精读：ingest_file 与 ingest_bytes
 
 ```python
-self.invalidate_cache()
+def set_rewrite_config(self, config: RewriteConfig) -> RewriteConfig:
+        config.validate()
+        self.rewrite_config = RewriteConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
         return self.rewrite_config
 
     def get_citation_config(self) -> CitationConfig:
@@ -328,6 +332,15 @@ self.invalidate_cache()
         self.invalidate_cache()
         return self.expansion_config
 
+    def get_route_config(self) -> RouteConfig:
+        return RouteConfig.from_dict(self.route_config.to_dict())
+
+    def set_route_config(self, config: RouteConfig) -> RouteConfig:
+        config.validate()
+        self.route_config = RouteConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.route_config
+
     def fetch_citations(self, query: str) -> dict[str, Any]:
         """按当前 citation_config 检索并返回引用包 dict"""
         cfg = self.get_citation_config()
@@ -337,6 +350,7 @@ self.invalidate_cache()
                 "citations": [],
                 "rewrite": None,
                 "expansion": None,
+                "route": None,
             }
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
@@ -345,19 +359,6 @@ self.invalidate_cache()
     def ingest_text(
         self,
         content: str,
-        *,
-        filename: str,
-        clean: bool = True,
-        chunk_size: int | None = None,
-        overlap: int | None = None,
-    ) -> KnowledgeDocument:
-        """将文本写入知识库并重建索引"""
-        cfg = self.get_chunk_config()
-        cs = chunk_size if chunk_size is not None else cfg.chunk_size
-        ov = overlap if overlap is not None else cfg.overlap
-        text = (content or "").strip()
-        if not text:
-            raise ValueError("文档内容不能为空")
 ```
 
 
@@ -369,15 +370,16 @@ self.invalidate_cache()
 ## 扩展精读：as_rag_service 与 _build_rag_service
 
 ```python
-citation_config: CitationConfig = field(default_factory=CitationConfig)
+rerank_config: RerankConfig = field(default_factory=RerankConfig)
+    rewrite_config: RewriteConfig = field(default_factory=RewriteConfig)
+    citation_config: CitationConfig = field(default_factory=CitationConfig)
     expansion_config: ExpansionConfig = field(default_factory=ExpansionConfig)
+    route_config: RouteConfig = field(default_factory=RouteConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
 
     @property
-    def chunk_count(self) -> int:
-        return len(self.chunks)
 ```
 
 
@@ -461,7 +463,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.35.0"
+    assert data["platform_version"] == "0.36.0"
     assert isinstance(data["documents"], list)
 
 
@@ -493,7 +495,7 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.35.0"
+    assert raw["platform_version"] == "0.36.0"
 ```
 
 
@@ -510,7 +512,21 @@ def test_store_json_has_version(tmp_store, tmp_path):
 ## 扩展精读：ingest_parsed（Day 26 衔接）
 
 ```python
-cleaned = text
+clean: bool = True,
+        chunk_size: int | None = None,
+        overlap: int | None = None,
+    ) -> KnowledgeDocument:
+        """将文本写入知识库并重建索引"""
+        cfg = self.get_chunk_config()
+        cs = chunk_size if chunk_size is not None else cfg.chunk_size
+        ov = overlap if overlap is not None else cfg.overlap
+        text = (content or "").strip()
+        if not text:
+            raise ValueError("文档内容不能为空")
+        if not filename.strip():
+            raise ValueError("filename 不能为空")
+
+        cleaned = text
         if clean:
             cleaned, _ = clean_text(text)
         doc = DocumentRecord(
@@ -546,19 +562,6 @@ cleaned = text
         doc = DocumentRecord(
             path=path,
             content=content,
-            encoding=encoding,
-            size_bytes=path.stat().st_size,
-            cleaned=cleaned,
-        )
-        new_chunks = chunk_documents(
-            [doc],
-            chunk_size=chunk_size,
-            overlap=overlap,
-            use_cleaned=clean,
-        )
-        self._append_chunks(path.name, new_chunks, size_bytes=doc.size_bytes)
-        self._rebuild_index()
-        return self.documents[-1]
 ```
 
 
@@ -611,7 +614,9 @@ cleaned = text
       .slice(-5)
       .join("、");
     el.textContent = `${data.document_count} 篇 / ${data.chunk_count} 块${
-      data.expansion_config && data.expansion_config.enabled
+      data.route_config && data.route_config.enabled
+        ? " · route"
+        : data.expansion_config && data.expansion_config.enabled
         ? " · expand"
         : data.citation_config && data.citation_config.enabled
         ? " · cite"
@@ -770,23 +775,23 @@ cleaned = text
 ## 附录：status_dict 与测试对照（精读专节）
 
 ```python
-"embedding": self.embedding_state,
+)
+            self._rebuild_index()
+        return self.documents[-1]
+
+    def save(self, path: Path | None = None) -> Path:
+        """持久化到 JSON"""
+        target = path or self.store_path or _default_store_path()
+        self.store_path = target
+        payload = {
+            "version": STORE_VERSION,
+            "platform_version": PLATFORM_VERSION,
+            "documents": [d.to_dict() for d in self.documents],
+            "chunks": [_chunk_to_dict(c) for c in self.chunks],
+            "embedding": self.embedding_state,
             "vector_backend": self.vector_backend,
             "chunk_config": self.chunk_config.to_dict(),
             "last_rebuilt_at": self.last_rebuilt_at,
-            "last_incremental_at": self.last_incremental_at,
-            "index_mode": self.index_mode,
-            "retrieval_config": self.retrieval_config.to_dict(),
-            "rerank_config": self.rerank_config.to_dict(),
-            "rewrite_config": self.rewrite_config.to_dict(),
-            "citation_config": self.citation_config.to_dict(),
-            "expansion_config": self.expansion_config.to_dict(),
-        }
-        save_json(target, payload)
-        return target
-
-    @classmethod
-    def load(cls, path: Path) -> KnowledgeStore:
 ```
 
 
@@ -856,7 +861,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.35.0"
+    assert data["platform_version"] == "0.36.0"
     assert isinstance(data["documents"], list)
 
 
@@ -888,7 +893,7 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.35.0"
+    assert raw["platform_version"] == "0.36.0"
 ```
 
 
@@ -911,16 +916,15 @@ def test_store_json_has_version(tmp_store, tmp_path):
 ## 节选：_chunk_to_dict
 
 ```python
-vectors = retriever._client.embed_batch([c.text for c in self.chunks])
-        chroma = self._chroma_index()
-        chroma.reset()
+client = EmbeddingClient()
+        client.model.load_state(self.embedding_state)
+        vectors = client.embed_batch([c.text for c in self.chunks])
         chroma.upsert_chunks(self.chunks, vectors)
-        self.index_mode = INDEX_MODE_FULL
-        self.invalidate_cache()
 
-    def _incremental_index(
-        self,
-        affected_chunks: list[TextChunk],
+    def _rebuild_index(self) -> None:
+        from rag.embedding_retriever import EmbeddingRetriever
+
+        if not self.chunks:
 ```
 
 
@@ -947,25 +951,24 @@ JSON 序列化丢弃 runtime 对象，只留可恢复字段。
 Day 25 `ingest_bytes` 在 Day 26 仓库中首行调用 `parse_bytes`：
 
 ```python
-bundle = rag.retrieve_citation_bundle(query, config=cfg)
+def fetch_citations(self, query: str) -> dict[str, Any]:
+        """按当前 citation_config 检索并返回引用包 dict"""
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return {
+                "query": query.strip(),
+                "citations": [],
+                "rewrite": None,
+                "expansion": None,
+                "route": None,
+            }
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(query, config=cfg)
         return bundle.to_dict()
 
     def ingest_text(
         self,
         content: str,
-        *,
-        filename: str,
-        clean: bool = True,
-        chunk_size: int | None = None,
-        overlap: int | None = None,
-    ) -> KnowledgeDocument:
-        """将文本写入知识库并重建索引"""
-        cfg = self.get_chunk_config()
-        cs = chunk_size if chunk_size is not None else cfg.chunk_size
-        ov = overlap if overlap is not None else cfg.overlap
-        text = (content or "").strip()
-        if not text:
-            raise ValueError("文档内容不能为空")
 ```
 
 

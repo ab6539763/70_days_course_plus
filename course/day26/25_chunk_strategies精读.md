@@ -162,7 +162,21 @@ if strategy == "auto":
 ## ingest_parsed 衔接
 
 ```python
-cleaned = text
+clean: bool = True,
+        chunk_size: int | None = None,
+        overlap: int | None = None,
+    ) -> KnowledgeDocument:
+        """将文本写入知识库并重建索引"""
+        cfg = self.get_chunk_config()
+        cs = chunk_size if chunk_size is not None else cfg.chunk_size
+        ov = overlap if overlap is not None else cfg.overlap
+        text = (content or "").strip()
+        if not text:
+            raise ValueError("文档内容不能为空")
+        if not filename.strip():
+            raise ValueError("filename 不能为空")
+
+        cleaned = text
         if clean:
             cleaned, _ = clean_text(text)
         doc = DocumentRecord(
@@ -178,19 +192,6 @@ cleaned = text
             overlap=ov,
             use_cleaned=clean,
         )
-        self._append_chunks(filename, new_chunks, size_bytes=doc.size_bytes)
-        self._rebuild_index()
-        return self.documents[-1]
-
-    def ingest_file(
-        self,
-        path: Path,
-        *,
-        clean: bool = True,
-        chunk_size: int = 200,
-        overlap: int = 40,
-    ) -> KnowledgeDocument:
-        """从磁盘文件 ingestion"""
 ```
 
 
@@ -201,7 +202,21 @@ cleaned = text
 ## 附录：KnowledgeStore.ingest_parsed 全文节选
 
 ```python
-cleaned = text
+clean: bool = True,
+        chunk_size: int | None = None,
+        overlap: int | None = None,
+    ) -> KnowledgeDocument:
+        """将文本写入知识库并重建索引"""
+        cfg = self.get_chunk_config()
+        cs = chunk_size if chunk_size is not None else cfg.chunk_size
+        ov = overlap if overlap is not None else cfg.overlap
+        text = (content or "").strip()
+        if not text:
+            raise ValueError("文档内容不能为空")
+        if not filename.strip():
+            raise ValueError("filename 不能为空")
+
+        cleaned = text
         if clean:
             cleaned, _ = clean_text(text)
         doc = DocumentRecord(
@@ -238,18 +253,6 @@ cleaned = text
             path=path,
             content=content,
             encoding=encoding,
-            size_bytes=path.stat().st_size,
-            cleaned=cleaned,
-        )
-        new_chunks = chunk_documents(
-            [doc],
-            chunk_size=chunk_size,
-            overlap=overlap,
-            use_cleaned=clean,
-        )
-        self._append_chunks(path.name, new_chunks, size_bytes=doc.size_bytes)
-        self._rebuild_index()
-        return self.documents[-1]
 ```
 
 

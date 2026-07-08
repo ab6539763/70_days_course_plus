@@ -16,6 +16,7 @@ from rag.chroma_store import ChromaVectorIndex
 from rag.embedding import EmbeddingClient
 from rag.hybrid_retriever import HybridRetriever, _rrf_merge, _weighted_merge
 from rag.expanding_retriever import ExpandingRetriever
+from rag.routing_retriever import RoutingRetriever
 from rag.reranking_retriever import RerankingRetriever
 from rag.rewriting_retriever import RewritingRetriever
 from rag.knowledge_store import KnowledgeStore
@@ -41,6 +42,8 @@ def _hybrid_store(tmp_path: Path) -> KnowledgeStore:
 def _build_hybrid(store: KnowledgeStore) -> HybridRetriever:
     rag = store.as_rag_service()
     retriever = rag.index.retriever
+    if isinstance(retriever, RoutingRetriever):
+        retriever = retriever.inner
     if isinstance(retriever, ExpandingRetriever):
         retriever = retriever.inner
     if isinstance(retriever, RewritingRetriever):

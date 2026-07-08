@@ -131,6 +131,7 @@
       citations: data.citations || [],
       rewrite: data.rewrite || null,
       expansion: data.expansion || null,
+      route: data.route || null,
     };
   }
 

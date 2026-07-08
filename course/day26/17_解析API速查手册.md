@@ -61,7 +61,7 @@ curl 见正文；Python 用 parse_bytes+chunk_from_parsed 两行；错误码见 
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036
 """
 
 from __future__ import annotations
@@ -93,6 +93,10 @@ from api.schemas import (
     RewriteConfigResponse,
     RewritePreviewRequest,
     RewritePreviewResponse,
+    RouteConfigRequest,
+    RouteConfigResponse,
+    RoutePreviewRequest,
+    RoutePreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -106,6 +110,8 @@ from rag.citation_config import CitationConfig
 from rag.expansion_config import ExpansionConfig
 from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
+from rag.query_router import RuleBasedQueryRouter
+from rag.route_config import RouteConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
@@ -227,13 +233,6 @@ def get_expansion_config() -> ExpansionConfigResponse:
     """返回多 query 扩展开关与参数"""
     cfg = get_knowledge_store().get_expansion_config()
     return ExpansionConfigResponse(**cfg.to_dict())
-
-
-@router.put("/expansion-config", response_model=ExpansionConfigResponse)
-def update_expansion_config(body: ExpansionConfigRequest) -> ExpansionConfigResponse:
-    """更新多 query 扩展策略并持久化"""
-    store = get_knowledge_store()
-    try:
 ```
 
 

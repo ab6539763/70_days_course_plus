@@ -103,7 +103,13 @@ __all__ = ["ingest_directory", "ingest_upload", "supported_formats"]
 ## 与 api/knowledge.py 衔接
 
 ```python
-result = rewriter.rewrite(body.query)
+@router.post("/rewrite-preview", response_model=RewritePreviewResponse)
+def rewrite_preview(body: RewritePreviewRequest) -> RewritePreviewResponse:
+    """预览单条 query 的规则改写结果（不触发检索）"""
+    store = get_knowledge_store()
+    cfg = store.get_rewrite_config()
+    rewriter = RuleBasedQueryRewriter(config=cfg)
+    result = rewriter.rewrite(body.query)
     return RewritePreviewResponse(**result.to_dict())
 
 
@@ -141,12 +147,6 @@ def get_expansion_config() -> ExpansionConfigResponse:
     """返回多 query 扩展开关与参数"""
     cfg = get_knowledge_store().get_expansion_config()
     return ExpansionConfigResponse(**cfg.to_dict())
-
-
-@router.put("/expansion-config", response_model=ExpansionConfigResponse)
-def update_expansion_config(body: ExpansionConfigRequest) -> ExpansionConfigResponse:
-    """更新多 query 扩展策略并持久化"""
-    store = get_knowledge_store()
 ```
 
 

@@ -303,14 +303,21 @@ class RewritingRetriever:
     def chunk_count(self) -> int:
         return getattr(self._inner, "chunk_count", 0)
 
-    def search(self, query: str, *, top_k: int = 3) -> list[RetrievalResult]:
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 3,
+        rewrite_override: bool | None = None,
+    ) -> list[RetrievalResult]:
         query = (query or "").strip()
         if not query:
             self._last_rewrite = None
             return []
 
         cfg = self._config
-        if not cfg.enabled:
+        enabled = rewrite_override if rewrite_override is not None else cfg.enabled
+        if not enabled:
             self._last_rewrite = RewriteResult(
                 original=query, rewritten=query, changed=False
             )
@@ -328,11 +335,7 @@ class RewritingRetriever:
 ## 七、search 主流程
 
 ```python
-def search(self, query: str, *, top_k: int = 3) -> list[RetrievalResult]:
-        query = (query or "").strip()
-        if not query:
-            self._last_rewrite = None
-            return []
+
 ```
 
 
@@ -431,7 +434,9 @@ def _build_rag_service(self) -> RAGContextService:
         rewrite_cfg = self.get_rewrite_config()
         rewriting = RewritingRetriever(reranking, config=rewrite_cfg)
         expansion_cfg = self.get_expansion_config()
-        retriever = ExpandingRetriever(rewriting, config=expansion_cfg)
+        expanding = ExpandingRetriever(rewriting, config=expansion_cfg)
+        route_cfg = self.get_route_config()
+        retriever = RoutingRetriever(expanding, config=route_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 ```
@@ -464,6 +469,7 @@ from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.reranking_retriever import RerankingRetriever
 from rag.rewrite_config import RewriteConfig
 from rag.rewriting_retriever import RewritingRetriever
+from rag.routing_retriever import RoutingRetriever
 
 
 def _store(tmp_path: Path) -> KnowledgeStore:
@@ -477,6 +483,8 @@ def _store(tmp_path: Path) -> KnowledgeStore:
 def _get_rewriting(store: KnowledgeStore) -> RewritingRetriever:
     rag = store.as_rag_service()
     retriever = rag.index.retriever
+    if isinstance(retriever, RoutingRetriever):
+        retriever = retriever.inner
     if isinstance(retriever, ExpandingRetriever):
         retriever = retriever.inner
     assert isinstance(retriever, RewritingRetriever)
@@ -626,7 +634,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_get_rewrite_config_default(client):
@@ -662,7 +670,7 @@ def test_rewrite_preview_colloquial(client):
 
 def test_status_includes_rewrite_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["rewrite_config"]["enabled"] is True
 
 
@@ -761,6 +769,15 @@ def get_rewrite_config(self) -> RewriteConfig:
         self.invalidate_cache()
         return self.expansion_config
 
+    def get_route_config(self) -> RouteConfig:
+        return RouteConfig.from_dict(self.route_config.to_dict())
+
+    def set_route_config(self, config: RouteConfig) -> RouteConfig:
+        config.validate()
+        self.route_config = RouteConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.route_config
+
     def fetch_citations(self, query: str) -> dict[str, Any]:
         """按当前 citation_config 检索并返回引用包 dict"""
         cfg = self.get_citation_config()
@@ -770,6 +787,7 @@ def get_rewrite_config(self) -> RewriteConfig:
                 "citations": [],
                 "rewrite": None,
                 "expansion": None,
+                "route": None,
             }
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
@@ -1042,7 +1060,7 @@ function RERANKING_SEARCH(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036
 """
 
 from __future__ import annotations
@@ -1074,6 +1092,10 @@ from api.schemas import (
     RewriteConfigResponse,
     RewritePreviewRequest,
     RewritePreviewResponse,
+    RouteConfigRequest,
+    RouteConfigResponse,
+    RoutePreviewRequest,
+    RoutePreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -1087,6 +1109,8 @@ from rag.citation_config import CitationConfig
 from rag.expansion_config import ExpansionConfig
 from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
+from rag.query_router import RuleBasedQueryRouter
+from rag.route_config import RouteConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
@@ -1199,13 +1223,7 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
     """预览单条 query 的检索引用（含 rewrite / expansion 审计）"""
     store = get_knowledge_store()
-    data = store.fetch_citations(body.query)
-    return CitationPreviewResponse(**data)
-
-
-@router.get("/expansion-config", response_model=ExpansionConfigResponse)
-def get_expansion_config() -> ExpansionConfigResponse:
-    """返回多 query 扩展开关与参数""
+    data = store.fetch_citations(body
 ```
 
 
@@ -1293,7 +1311,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_get_rewrite_config_default(client):
@@ -1329,7 +1347,7 @@ def test_rewrite_preview_colloquial(client):
 
 def test_status_includes_rewrite_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["rewrite_config"]["enabled"] is True
 
 
@@ -1437,14 +1455,21 @@ class RewritingRetriever:
     def chunk_count(self) -> int:
         return getattr(self._inner, "chunk_count", 0)
 
-    def search(self, query: str, *, top_k: int = 3) -> list[RetrievalResult]:
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 3,
+        rewrite_override: bool | None = None,
+    ) -> list[RetrievalResult]:
         query = (query or "").strip()
         if not query:
             self._last_rewrite = None
             return []
 
         cfg = self._config
-        if not cfg.enabled:
+        enabled = rewrite_override if rewrite_override is not None else cfg.enabled
+        if not enabled:
             self._last_rewrite = RewriteResult(
                 original=query, rewritten=query, changed=False
             )

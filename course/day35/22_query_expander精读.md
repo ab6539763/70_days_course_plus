@@ -363,7 +363,9 @@ from rag.citation_config import CitationConfig
 from rag.expanding_retriever import ExpandingRetriever
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
+from rag.query_router import RouteResult
 from rag.rewriting_retriever import RewritingRetriever
+from rag.routing_retriever import RoutingRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
 from tools.doc_reader import DocumentRecord, read_documents
 
@@ -376,6 +378,7 @@ Retriever = (
     | RerankingRetriever
     | RewritingRetriever
     | ExpandingRetriever
+    | RoutingRetriever
 )
 
 
@@ -528,6 +531,7 @@ class RAGContextService:
         results = self.index.search(query, top_k=k)
         rewrite = _find_last_rewrite(self.index.retriever)
         expansion = _find_last_expansion(self.index.retriever)
+        route = _find_last_route(self.index.retriever)
 
         return build_citation_bundle(
             query,
@@ -535,10 +539,13 @@ class RAGContextService:
             config=cfg,
             rewrite=rewrite,
             expansion=expansion,
+            route=route,
         )
 
 
 def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return _find_last_rewrite(retriever.inner)
     if isinstance(retriever, ExpandingRetriever):
         if retriever.last_inner_rewrite is not None:
             return retriever.last_inner_rewrite
@@ -549,8 +556,16 @@ def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
 
 
 def _find_last_expansion(retriever: Retriever) -> ExpansionResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return _find_last_expansion(retriever.inner)
     if isinstance(retriever, ExpandingRetriever):
         return retriever.last_expansion
+    return None
+
+
+def _find_last_route(retriever: Retriever) -> RouteResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return retriever.last_route
     return None
 ```
 
@@ -560,48 +575,7 @@ def _find_last_expansion(retriever: Retriever) -> ExpansionResult | None:
 ## 七、search 主流程
 
 ```python
-def search(self, query: str, *, top_k: int = 3) -> list[RetrievalResult]:
-        query = (query or "").strip()
-        if not query:
-            self._last_expansion = None
-            self._last_inner_rewrite = None
-            return []
-
-        cfg = self._config
-        if not cfg.enabled:
-            self._last_expansion = ExpansionResult(
-                original=query,
-                queries=(query,),
-                changed=False,
-                mode=cfg.mode,
-            )
-            self._last_inner_rewrite = None
-            if isinstance(self._inner, RewritingRetriever):
-                self._inner.search(query, top_k=top_k)
-                self._last_inner_rewrite = self._inner.last_rewrite
-            return self._inner.search(query, top_k=top_k)
-
-        expansion = self._expander.expand(query)
-        self._last_expansion = expansion
-        self._last_inner_rewrite = None
-        queries = expansion.queries[: cfg.max_queries]
-        if not queries:
-            queries = (query,)
-
-        per_k = max(top_k, cfg.per_query_top_k)
-        batches: list[list[RetrievalResult]] = []
-        for i, q in enumerate(queries):
-            q = q.strip()
-            if q:
-                batch = self._inner.search(q, top_k=per_k)
-                if i == 0 and isinstance(self._inner, RewritingRetriever):
-                    self._last_inner_rewrite = self._inner.last_rewrite
-                batches.append(batch)
-
-        if not batches:
-            return self._inner.search(query, top_k=top_k)
-
-        return merge_retrieval_results(batches, top_k=top_k)
+)
 ```
 
 
@@ -708,7 +682,9 @@ def _build_rag_service(self) -> RAGContextService:
         rewrite_cfg = self.get_rewrite_config()
         rewriting = RewritingRetriever(reranking, config=rewrite_cfg)
         expansion_cfg = self.get_expansion_config()
-        retriever = ExpandingRetriever(rewriting, config=expansion_cfg)
+        expanding = ExpandingRetriever(rewriting, config=expansion_cfg)
+        route_cfg = self.get_route_config()
+        retriever = RoutingRetriever(expanding, config=route_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 ```
@@ -737,6 +713,7 @@ if str(SRC) not in sys.path:
 from rag.chunker import TextChunk
 from rag.expansion_config import ExpansionConfig
 from rag.expanding_retriever import ExpandingRetriever
+from rag.routing_retriever import RoutingRetriever
 from rag.knowledge_store import KnowledgeStore
 from rag.query_expander import HyDEMockExpander, TemplateQueryExpander, build_expander
 from rag.result_merger import merge_retrieval_results
@@ -816,11 +793,13 @@ def test_expanding_retriever_merges_paths():
     store = KnowledgeStore.bootstrap_from_sample_docs()
     rag = store.as_rag_service()
     retriever = rag.index.retriever
-    assert isinstance(retriever, ExpandingRetriever)
+    assert isinstance(retriever, RoutingRetriever)
+    expanding = retriever.inner
+    assert isinstance(expanding, ExpandingRetriever)
     hits = retriever.search("理财安全吗", top_k=3)
     assert hits
-    assert retriever.last_expansion
-    assert len(retriever.last_expansion.queries) >= 2
+    assert expanding.last_expansion
+    assert len(expanding.last_expansion.queries) >= 2
 
 
 def test_fetch_citations_includes_expansion(tmp_path):
@@ -846,7 +825,7 @@ def test_knowledge_store_persists_expansion_config(tmp_path):
 def test_status_includes_expansion_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["expansion_config"]["enabled"] is True
 
 
@@ -911,7 +890,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_get_expansion_config_default(client):
@@ -960,7 +939,7 @@ def test_citation_preview_with_expansion(client):
 
 def test_status_includes_expansion_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["expansion_config"]["enabled"] is True
 
 
@@ -1055,6 +1034,15 @@ def get_expansion_config(self) -> ExpansionConfig:
         self.expansion_config = ExpansionConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.expansion_config
+
+    def get_route_config(self) -> RouteConfig:
+        return RouteConfig.from_dict(self.route_config.to_dict())
+
+    def set_route_config(self, config: RouteConfig) -> RouteConfig:
+        config.validate()
+        self.route_config = RouteConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.route_config
 ```
 
 
@@ -1345,7 +1333,7 @@ function FETCH_CITATIONS(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036
 """
 
 from __future__ import annotations
@@ -1377,6 +1365,10 @@ from api.schemas import (
     RewriteConfigResponse,
     RewritePreviewRequest,
     RewritePreviewResponse,
+    RouteConfigRequest,
+    RouteConfigResponse,
+    RoutePreviewRequest,
+    RoutePreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -1390,6 +1382,8 @@ from rag.citation_config import CitationConfig
 from rag.expansion_config import ExpansionConfig
 from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
+from rag.query_router import RuleBasedQueryRouter
+from rag.route_config import RouteConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
@@ -1502,13 +1496,7 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
     """预览单条 query 的检索引用（含 rewrite / expansion 审计）"""
     store = get_knowledge_store()
-    data = store.fetch_citations(body.query)
-    return CitationPreviewResponse(**data)
-
-
-@router.get("/expansion-config", response_model=ExpansionConfigResponse)
-def get_expansion_config() -> ExpansionConfigResponse:
-    """返回多 query 扩展开关与参数""
+    data = store.fetch_citations(body
 ```
 
 
@@ -1596,7 +1584,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_get_expansion_config_default(client):
@@ -1645,7 +1633,7 @@ def test_citation_preview_with_expansion(client):
 
 def test_status_includes_expansion_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["expansion_config"]["enabled"] is True
 
 
@@ -1739,7 +1727,9 @@ from rag.citation_config import CitationConfig
 from rag.expanding_retriever import ExpandingRetriever
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
+from rag.query_router import RouteResult
 from rag.rewriting_retriever import RewritingRetriever
+from rag.routing_retriever import RoutingRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
 from tools.doc_reader import DocumentRecord, read_documents
 
@@ -1752,6 +1742,7 @@ Retriever = (
     | RerankingRetriever
     | RewritingRetriever
     | ExpandingRetriever
+    | RoutingRetriever
 )
 
 
@@ -1904,6 +1895,7 @@ class RAGContextService:
         results = self.index.search(query, top_k=k)
         rewrite = _find_last_rewrite(self.index.retriever)
         expansion = _find_last_expansion(self.index.retriever)
+        route = _find_last_route(self.index.retriever)
 
         return build_citation_bundle(
             query,
@@ -1911,10 +1903,13 @@ class RAGContextService:
             config=cfg,
             rewrite=rewrite,
             expansion=expansion,
+            route=route,
         )
 
 
 def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return _find_last_rewrite(retriever.inner)
     if isinstance(retriever, ExpandingRetriever):
         if retriever.last_inner_rewrite is not None:
             return retriever.last_inner_rewrite
@@ -1925,8 +1920,16 @@ def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
 
 
 def _find_last_expansion(retriever: Retriever) -> ExpansionResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return _find_last_expansion(retriever.inner)
     if isinstance(retriever, ExpandingRetriever):
         return retriever.last_expansion
+    return None
+
+
+def _find_last_route(retriever: Retriever) -> RouteResult | None:
+    if isinstance(retriever, RoutingRetriever):
+        return retriever.last_route
     return None
 ```
 
@@ -2244,6 +2247,7 @@ cite_data = get_knowledge_store().fetch_citations(message)
     citations = cite_data.get("citations") or []
     rewrite = cite_data.get("rewrite")
     expansion = cite_data.get("expansion")
+    route = cite_data.get("route")
 ```
 
 
@@ -2261,6 +2265,7 @@ def fetch_citations(self, query: str) -> dict[str, Any]:
                 "citations": [],
                 "rewrite": None,
                 "expansion": None,
+                "route": None,
             }
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
@@ -2296,48 +2301,7 @@ def fetch_citations(self, query: str) -> dict[str, Any]:
 ## 四十六、完整 context.py 引用段
 
 ```python
-def search(self, query: str, *, top_k: int = 3) -> list[RetrievalResult]:
-        query = (query or "").strip()
-        if not query:
-            self._last_expansion = None
-            self._last_inner_rewrite = None
-            return []
-
-        cfg = self._config
-        if not cfg.enabled:
-            self._last_expansion = ExpansionResult(
-                original=query,
-                queries=(query,),
-                changed=False,
-                mode=cfg.mode,
-            )
-            self._last_inner_rewrite = None
-            if isinstance(self._inner, RewritingRetriever):
-                self._inner.search(query, top_k=top_k)
-                self._last_inner_rewrite = self._inner.last_rewrite
-            return self._inner.search(query, top_k=top_k)
-
-        expansion = self._expander.expand(query)
-        self._last_expansion = expansion
-        self._last_inner_rewrite = None
-        queries = expansion.queries[: cfg.max_queries]
-        if not queries:
-            queries = (query,)
-
-        per_k = max(top_k, cfg.per_query_top_k)
-        batches: list[list[RetrievalResult]] = []
-        for i, q in enumerate(queries):
-            q = q.strip()
-            if q:
-                batch = self._inner.search(q, top_k=per_k)
-                if i == 0 and isinstance(self._inner, RewritingRetriever):
-                    self._last_inner_rewrite = self._inner.last_rewrite
-                batches.append(batch)
-
-        if not batches:
-            return self._inner.search(query, top_k=top_k)
-
-        return merge_retrieval_results(batches, top_k=top_k)
+)
 ```
 
 
@@ -2362,6 +2326,7 @@ if str(SRC) not in sys.path:
 from rag.chunker import TextChunk
 from rag.expansion_config import ExpansionConfig
 from rag.expanding_retriever import ExpandingRetriever
+from rag.routing_retriever import RoutingRetriever
 from rag.knowledge_store import KnowledgeStore
 from rag.query_expander import HyDEMockExpander, TemplateQueryExpander, build_expander
 from rag.result_merger import merge_retrieval_results
@@ -2441,11 +2406,13 @@ def test_expanding_retriever_merges_paths():
     store = KnowledgeStore.bootstrap_from_sample_docs()
     rag = store.as_rag_service()
     retriever = rag.index.retriever
-    assert isinstance(retriever, ExpandingRetriever)
+    assert isinstance(retriever, RoutingRetriever)
+    expanding = retriever.inner
+    assert isinstance(expanding, ExpandingRetriever)
     hits = retriever.search("理财安全吗", top_k=3)
     assert hits
-    assert retriever.last_expansion
-    assert len(retriever.last_expansion.queries) >= 2
+    assert expanding.last_expansion
+    assert len(expanding.last_expansion.queries) >= 2
 
 
 def test_fetch_citations_includes_expansion(tmp_path):
@@ -2471,7 +2438,7 @@ def test_knowledge_store_persists_expansion_config(tmp_path):
 def test_status_includes_expansion_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["expansion_config"]["enabled"] is True
 
 
@@ -2527,7 +2494,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.35.0"
+    assert client.get("/api/health").json()["version"] == "0.36.0"
 
 
 def test_get_expansion_config_default(client):
@@ -2576,7 +2543,7 @@ def test_citation_preview_with_expansion(client):
 
 def test_status_includes_expansion_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["expansion_config"]["enabled"] is True
 
 

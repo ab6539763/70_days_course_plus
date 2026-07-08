@@ -373,6 +373,13 @@ body {
   line-height: 1.35;
 }
 
+.msg__route {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: #0f766e;
+  line-height: 1.35;
+}
+
 .chat__loading {
   display: flex;
   align-items: center;

@@ -14,6 +14,7 @@ if str(SRC) not in sys.path:
 from rag.chunker import TextChunk
 from rag.expansion_config import ExpansionConfig
 from rag.expanding_retriever import ExpandingRetriever
+from rag.routing_retriever import RoutingRetriever
 from rag.knowledge_store import KnowledgeStore
 from rag.query_expander import HyDEMockExpander, TemplateQueryExpander, build_expander
 from rag.result_merger import merge_retrieval_results
@@ -93,11 +94,13 @@ def test_expanding_retriever_merges_paths():
     store = KnowledgeStore.bootstrap_from_sample_docs()
     rag = store.as_rag_service()
     retriever = rag.index.retriever
-    assert isinstance(retriever, ExpandingRetriever)
+    assert isinstance(retriever, RoutingRetriever)
+    expanding = retriever.inner
+    assert isinstance(expanding, ExpandingRetriever)
     hits = retriever.search("理财安全吗", top_k=3)
     assert hits
-    assert retriever.last_expansion
-    assert len(retriever.last_expansion.queries) >= 2
+    assert expanding.last_expansion
+    assert len(expanding.last_expansion.queries) >= 2
 
 
 def test_fetch_citations_includes_expansion(tmp_path):
@@ -123,7 +126,7 @@ def test_knowledge_store_persists_expansion_config(tmp_path):
 def test_status_includes_expansion_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.35.0"
+    assert status["platform_version"] == "0.36.0"
     assert status["expansion_config"]["enabled"] is True
 
 

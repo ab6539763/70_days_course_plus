@@ -18,6 +18,7 @@ from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.reranking_retriever import RerankingRetriever
 from rag.rewrite_config import RewriteConfig
 from rag.rewriting_retriever import RewritingRetriever
+from rag.routing_retriever import RoutingRetriever
 
 
 def _store(tmp_path: Path) -> KnowledgeStore:
@@ -31,6 +32,8 @@ def _store(tmp_path: Path) -> KnowledgeStore:
 def _get_rewriting(store: KnowledgeStore) -> RewritingRetriever:
     rag = store.as_rag_service()
     retriever = rag.index.retriever
+    if isinstance(retriever, RoutingRetriever):
+        retriever = retriever.inner
     if isinstance(retriever, ExpandingRetriever):
         retriever = retriever.inner
     assert isinstance(retriever, RewritingRetriever)

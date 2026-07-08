@@ -1,7 +1,36 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.35.0（Day 35 多查询扩展）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-035
+**版本**：v0.36.0（Day 36 自适应路由）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-036
+
+## Day 36 新增
+
+```
+src/rag/query_router.py
+  RuleBasedQueryRouter — faq_fast / rag_standard / rag_wide
+src/rag/routing_retriever.py
+  RoutingRetriever — 动态 expand/rewrite 开关
+src/rag/route_config.py
+  RouteConfig — enabled / fallback_intent
+src/day36/
+  route_demo.py
+  route_api_demo.py
+  phase3_route_review.py
+```
+
+## API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/knowledge/route-config` | 路由开关与默认意图 |
+| PUT | `/api/knowledge/route-config` | 更新路由策略 |
+| POST | `/api/knowledge/route-preview` | 单条 query 路由预览 |
+
+`store.json` 新增 `route_config` 字段；默认 `enabled=true`，`fallback_intent=rag_standard`。
+
+`POST /api/chat` 响应扩展 `route` 审计元数据（intent、expand、rewrite）。
+
+检索管线（外→内）：`RoutingRetriever` → `ExpandingRetriever` → `RewritingRetriever` → …
 
 ## Day 35 新增
 

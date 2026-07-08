@@ -59,7 +59,14 @@ class ExpandingRetriever:
     def chunk_count(self) -> int:
         return getattr(self._inner, "chunk_count", 0)
 
-    def search(self, query: str, *, top_k: int = 3) -> list[RetrievalResult]:
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 3,
+        expand_override: bool | None = None,
+        rewrite_override: bool | None = None,
+    ) -> list[RetrievalResult]:
         query = (query or "").strip()
         if not query:
             self._last_expansion = None
@@ -67,7 +74,8 @@ class ExpandingRetriever:
             return []
 
         cfg = self._config
-        if not cfg.enabled:
+        expand_enabled = expand_override if expand_override is not None else cfg.enabled
+        if not expand_enabled:
             self._last_expansion = ExpansionResult(
                 original=query,
                 queries=(query,),
@@ -76,8 +84,13 @@ class ExpandingRetriever:
             )
             self._last_inner_rewrite = None
             if isinstance(self._inner, RewritingRetriever):
-                self._inner.search(query, top_k=top_k)
+                self._inner.search(
+                    query, top_k=top_k, rewrite_override=rewrite_override
+                )
                 self._last_inner_rewrite = self._inner.last_rewrite
+                return self._inner.search(
+                    query, top_k=top_k, rewrite_override=rewrite_override
+                )
             return self._inner.search(query, top_k=top_k)
 
         expansion = self._expander.expand(query)
@@ -92,12 +105,23 @@ class ExpandingRetriever:
         for i, q in enumerate(queries):
             q = q.strip()
             if q:
-                batch = self._inner.search(q, top_k=per_k)
+                if isinstance(self._inner, RewritingRetriever):
+                    batch = self._inner.search(
+                        q,
+                        top_k=per_k,
+                        rewrite_override=rewrite_override,
+                    )
+                else:
+                    batch = self._inner.search(q, top_k=per_k)
                 if i == 0 and isinstance(self._inner, RewritingRetriever):
                     self._last_inner_rewrite = self._inner.last_rewrite
                 batches.append(batch)
 
         if not batches:
+            if isinstance(self._inner, RewritingRetriever):
+                return self._inner.search(
+                    query, top_k=top_k, rewrite_override=rewrite_override
+                )
             return self._inner.search(query, top_k=top_k)
 
         return merge_retrieval_results(batches, top_k=top_k)
