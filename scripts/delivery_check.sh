@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "========== 1/3 Course audit day01-37 =========="
-python3 scripts/audit_all_courses.py
+python3 scripts/audit_all_courses.py --ensure-code
 
 echo "========== 2/3 E2E demos day01-37 =========="
 bash scripts/e2e_full_check.sh

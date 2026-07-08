@@ -12,7 +12,7 @@ export PYTHONPATH=src NEXUS_LLM_MOCK=1
 ## Lab 0：环境自检（10 min）
 
 ```bash
-python3 -c "import rag.citation_builder; print('ok')"
+python3 -c "import rag.query_expander; print('ok')"
 pytest tests/day35/ --collect-only -q
 ```
 
@@ -44,7 +44,7 @@ python3 src/day35/expansion_demo.py | tee /tmp/day36_demo.txt
 
 ---
 
-## Lab 3：citation-preview API（20 min）
+## Lab 3：expansion-preview API（20 min）
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/knowledge/citation-preview \

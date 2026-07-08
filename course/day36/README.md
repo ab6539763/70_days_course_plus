@@ -51,7 +51,7 @@ Day 35 让检索**更广** → Day 36 让管线**更省**：`RuleBasedQueryRoute
 | 阶段 | 组件 | 输出 |
 |------|------|------|
 | 路由 | RoutingRetriever | intent + expand/rewrite |
-| 扩展 | ExpandingRetriever | queries[] |
+| 扩展 | RoutingRetriever | queries[] |
 | 改写 | RewritingRetriever | rewritten query |
 | 召回+融合 | HybridRetriever | candidates |
 | 精排 | RerankingRetriever | top-k |

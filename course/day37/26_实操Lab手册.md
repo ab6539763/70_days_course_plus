@@ -12,7 +12,7 @@ export PYTHONPATH=src NEXUS_LLM_MOCK=1
 ## Lab 0：环境自检（10 min）
 
 ```bash
-python3 -c "import rag.citation_builder; print('ok')"
+python3 -c "import rag.answer_validator; print('ok')"
 pytest tests/day37/ --collect-only -q
 ```
 

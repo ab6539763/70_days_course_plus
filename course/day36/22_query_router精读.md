@@ -4,7 +4,7 @@
 
 ---
 
-## 一、citation_builder.py 全文
+## 一、query_router.py 全文
 
 ```python
 """
@@ -291,7 +291,7 @@ from rag.hybrid_retriever import HybridRetriever
 from rag.reranking_retriever import RerankingRetriever
 from rag.citation_builder import CitationBundle, build_citation_bundle
 from rag.citation_config import CitationConfig
-from rag.expanding_retriever import ExpandingRetriever
+from rag.expanding_retriever import RoutingRetriever
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
 from rag.query_router import RouteResult
@@ -308,7 +308,7 @@ Retriever = (
     | HybridRetriever
     | RerankingRetriever
     | RewritingRetriever
-    | ExpandingRetriever
+    | RoutingRetriever
     | RoutingRetriever
 )
 
@@ -477,7 +477,7 @@ class RAGContextService:
 def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
     if isinstance(retriever, RoutingRetriever):
         return _find_last_rewrite(retriever.inner)
-    if isinstance(retriever, ExpandingRetriever):
+    if isinstance(retriever, RoutingRetriever):
         if retriever.last_inner_rewrite is not None:
             return retriever.last_inner_rewrite
         return _find_last_rewrite(retriever.inner)
@@ -489,7 +489,7 @@ def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
 def _find_last_expansion(retriever: Retriever) -> ExpansionResult | None:
     if isinstance(retriever, RoutingRetriever):
         return _find_last_expansion(retriever.inner)
-    if isinstance(retriever, ExpandingRetriever):
+    if isinstance(retriever, RoutingRetriever):
         return retriever.last_expansion
     return None
 
@@ -605,7 +605,7 @@ def _build_rag_service(self) -> RAGContextService:
         rewrite_cfg = self.get_rewrite_config()
         rewriting = RewritingRetriever(reranking, config=rewrite_cfg)
         expansion_cfg = self.get_expansion_config()
-        expanding = ExpandingRetriever(rewriting, config=expansion_cfg)
+        expanding = RoutingRetriever(rewriting, config=expansion_cfg)
         route_cfg = self.get_route_config()
         retriever = RoutingRetriever(expanding, config=route_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
@@ -633,7 +633,7 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from rag.expanding_retriever import ExpandingRetriever
+from rag.expanding_retriever import RoutingRetriever
 from rag.knowledge_store import KnowledgeStore
 from rag.query_router import RuleBasedQueryRouter
 from rag.route_config import INTENT_FAQ_FAST, INTENT_RAG_WIDE, RouteConfig
@@ -694,7 +694,7 @@ def test_routing_retriever_applies_fast_path(tmp_path):
     assert retriever.last_route
     assert retriever.last_route.expand is False
     exp = retriever.inner
-    assert isinstance(exp, ExpandingRetriever)
+    assert isinstance(exp, RoutingRetriever)
     assert exp.last_expansion
     assert len(exp.last_expansion.queries) == 1
 
@@ -732,13 +732,13 @@ def test_routing_stack_outermost(tmp_path):
     store = _store(tmp_path)
     retriever = store.as_rag_service().index.retriever
     assert isinstance(retriever, RoutingRetriever)
-    assert isinstance(retriever.inner, ExpandingRetriever)
+    assert isinstance(retriever.inner, RoutingRetriever)
 ```
 
 
 | 测试 | 要点 |
 |------|------|
-| test_RuleBasedQueryRouter.route_from_results_candidates | **翻牌金测** |
+| test_query_router_classifies_intent_candidates | **翻牌金测** |
 | test_rewrite_exact_substring | 子串=1.0 |
 | test_citation_preview_with_rewrite | 业务号码 |
 | test_context_disabled | 降级路径 |
@@ -967,7 +967,7 @@ def get_route_config(self) -> RouteConfig:
 
 ---
 
-## 二十一、citation_builder 完整源码（重复嵌入便于打印）
+## 二十一、query_router 完整源码（重复嵌入便于打印）
 
 ```python
 """
@@ -1157,7 +1157,7 @@ function FETCH_CITATIONS(q, top_k):
 | 测试 | FR/NFR |
 |------|--------|
 | test_citation_config_validate | FR-004 |
-| test_RuleBasedQueryRouter.route_from_results_candidates | FR-002 |
+| test_query_router_classifies_intent_candidates | FR-002 |
 | test_context_enabled | FR-003 |
 | test_citation_preview_with_rewrite | AC-03 |
 | test_knowledge_store_persists_citation_config | FR-005 |
@@ -1173,7 +1173,7 @@ function FETCH_CITATIONS(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-036 / ZL-NA-REQ-036 / ZL-NA-REQ-037
 """
 
 from __future__ import annotations
@@ -1189,8 +1189,8 @@ from api.schemas import (
     CitationConfigResponse,
     CitationPreviewRequest,
     CitationPreviewResponse,
-    ExpansionConfigRequest,
-    ExpansionConfigResponse,
+    RouteConfigRequest,
+    RouteConfigResponse,
     ExpansionPreviewRequest,
     ExpansionPreviewResponse,
     EvaluateRequest,
@@ -1223,7 +1223,7 @@ from rag.ingestion import ingest_upload
 from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
 from rag.citation_config import CitationConfig
-from rag.expansion_config import ExpansionConfig
+from rag.expansion_config import RouteConfig
 from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.query_router import RuleBasedQueryRouter
@@ -1550,7 +1550,7 @@ from rag.hybrid_retriever import HybridRetriever
 from rag.reranking_retriever import RerankingRetriever
 from rag.citation_builder import CitationBundle, build_citation_bundle
 from rag.citation_config import CitationConfig
-from rag.expanding_retriever import ExpandingRetriever
+from rag.expanding_retriever import RoutingRetriever
 from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
 from rag.query_router import RouteResult
@@ -1567,7 +1567,7 @@ Retriever = (
     | HybridRetriever
     | RerankingRetriever
     | RewritingRetriever
-    | ExpandingRetriever
+    | RoutingRetriever
     | RoutingRetriever
 )
 
@@ -1736,7 +1736,7 @@ class RAGContextService:
 def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
     if isinstance(retriever, RoutingRetriever):
         return _find_last_rewrite(retriever.inner)
-    if isinstance(retriever, ExpandingRetriever):
+    if isinstance(retriever, RoutingRetriever):
         if retriever.last_inner_rewrite is not None:
             return retriever.last_inner_rewrite
         return _find_last_rewrite(retriever.inner)
@@ -1748,7 +1748,7 @@ def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
 def _find_last_expansion(retriever: Retriever) -> ExpansionResult | None:
     if isinstance(retriever, RoutingRetriever):
         return _find_last_expansion(retriever.inner)
-    if isinstance(retriever, ExpandingRetriever):
+    if isinstance(retriever, RoutingRetriever):
         return retriever.last_expansion
     return None
 
@@ -1854,7 +1854,7 @@ ColBERT late interaction 介于 bi 与 cross；本课不展开。
 
 ---
 
-## 四十、citation_builder 全文嵌入
+## 四十、query_router 全文嵌入
 
 ```python
 """
@@ -2077,7 +2077,7 @@ def fetch_citations(self, query: str) -> dict[str, Any]:
 
 | 测试 | FR |
 |------|-----|
-| test_RuleBasedQueryRouter.route_from_results | FR-002 |
+| test_query_router_classifies_intent | FR-002 |
 | test_fetch_citations_with_hits | FR-003 |
 | test_chat_includes_citations | FR-006 |
 | test_citation_preview_with_rewrite | FR-005 |
@@ -2109,7 +2109,7 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from rag.expanding_retriever import ExpandingRetriever
+from rag.expanding_retriever import RoutingRetriever
 from rag.knowledge_store import KnowledgeStore
 from rag.query_router import RuleBasedQueryRouter
 from rag.route_config import INTENT_FAQ_FAST, INTENT_RAG_WIDE, RouteConfig
@@ -2170,7 +2170,7 @@ def test_routing_retriever_applies_fast_path(tmp_path):
     assert retriever.last_route
     assert retriever.last_route.expand is False
     exp = retriever.inner
-    assert isinstance(exp, ExpandingRetriever)
+    assert isinstance(exp, RoutingRetriever)
     assert exp.last_expansion
     assert len(exp.last_expansion.queries) == 1
 
@@ -2208,7 +2208,7 @@ def test_routing_stack_outermost(tmp_path):
     store = _store(tmp_path)
     retriever = store.as_rag_service().index.retriever
     assert isinstance(retriever, RoutingRetriever)
-    assert isinstance(retriever.inner, ExpandingRetriever)
+    assert isinstance(retriever.inner, RoutingRetriever)
 ```
 
 
@@ -2333,10 +2333,10 @@ def test_route_preview_wide(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 citation_builder，Citation 有 rank chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 query_router，RouteDecision 有 intent chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-036。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 36 · Citation · ZL-NA-REQ-036 · citation_builder 精读完**
+**NexusAgent 课程 · Phase 3 · Day 37 · Citation · ZL-NA-REQ-036 · query_router 精读完**

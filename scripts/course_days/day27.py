@@ -1378,8 +1378,8 @@ TruLens 通过 instrumentation 记录 retrieval → generation 链，适合调�
 
 def _code_walkthrough() -> str:
     constants = _src("day27/constants.py")
-    tests = _src("tests/day27/test_chunk_tuning.py")
-    api_tests = _src("tests/day27/test_tune_api.py")
+    tests = read_repo("nexus-agent-platform/tests/day27/test_chunk_tuning.py")
+    api_tests = read_repo("nexus-agent-platform/tests/day27/test_tune_api.py")
     api_slice = _src("api/knowledge.py", limit=95)
     return f"""# Day 27 完整代码走查
 

@@ -1739,7 +1739,7 @@ curl -s -X POST http://127.0.0.1:8000/api/session/reset \\
 
 
 def _day23对照() -> str:
-    return f"""# Day 23 与 Day {DAY} 能力对照表
+    return f"""# Day {DAY} 与 Day 23 能力对照表
 
 | 维度 | Day 23 | Day {DAY} |
 |------|--------|-----------|

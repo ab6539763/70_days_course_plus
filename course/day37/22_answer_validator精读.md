@@ -978,12 +978,12 @@ def test_validator_empty_citations_fails():
 
 | 测试 | 要点 |
 |------|------|
-| test_RuleBasedAnswerValidator.route_from_results_candidates | **翻牌金测** |
+| test_rule_based_validator_passes_good_answer_candidates | **翻牌金测** |
 | test_rewrite_exact_substring | 子串=1.0 |
 | test_citation_preview_with_rewrite | 业务号码 |
 | test_context_disabled | 降级路径 |
 | test_fetch_citations_with_hits_accessible | inner 类型 |
-| test_knowledge_store_persists_citation_config | 持久化 |
+| test_knowledge_store_persists_validation_config | 持久化 |
 
 ---
 
@@ -1455,7 +1455,7 @@ class RuleBasedAnswerValidator(AnswerValidator):
 
 ---
 
-## 二十二、自适应路由伪代码
+## 二十二、Self-RAG 校验伪代码
 
 ```
 function FETCH_CITATIONS(q, top_k):
@@ -1482,10 +1482,10 @@ function FETCH_CITATIONS(q, top_k):
 | 测试 | FR/NFR |
 |------|--------|
 | test_citation_config_validate | FR-004 |
-| test_RuleBasedAnswerValidator.route_from_results_candidates | FR-002 |
+| test_rule_based_validator_passes_good_answer_candidates | FR-002 |
 | test_context_enabled | FR-003 |
 | test_citation_preview_with_rewrite | AC-03 |
-| test_knowledge_store_persists_citation_config | FR-005 |
+| test_knowledge_store_persists_validation_config | FR-005 |
 | test_health_version | FR-008 |
 | test_put_citation_config_disable | AC-02 |
 | test_chat_includes_citations | AC-05 |
@@ -1498,7 +1498,7 @@ function FETCH_CITATIONS(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-037 / ZL-NA-REQ-036 / ZL-NA-REQ-037
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-037 / ZL-NA-REQ-037 / ZL-NA-REQ-037
 """
 
 from __future__ import annotations
@@ -1530,8 +1530,8 @@ from api.schemas import (
     RewriteConfigResponse,
     RewritePreviewRequest,
     RewritePreviewResponse,
-    RouteConfigRequest,
-    RouteConfigResponse,
+    ValidationConfigRequest,
+    ValidationConfigResponse,
     RoutePreviewRequest,
     RoutePreviewResponse,
     ValidationConfigRequest,
@@ -1552,7 +1552,7 @@ from rag.expansion_config import ExpansionConfig
 from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.query_router import RuleBasedAnswerValidator
-from rag.route_config import RouteConfig
+from rag.route_config import ValidationConfig
 from rag.validation_config import ValidationConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
@@ -1888,7 +1888,7 @@ def test_validation_preview_with_explicit_citations(client):
 ```
 feat(rag): cross-encoder rewrite pipeline (ZL-NA-REQ-032)
 
-- RAGContextService + RouteConfig
+- RAGContextService + ValidationConfig
 - GET/PUT /api/knowledge/validation-config
 - tests/day37 (20 cases)
 ```
@@ -2492,7 +2492,7 @@ def fetch_citations(self, query: str) -> dict[str, Any]:
 
 | 测试 | FR |
 |------|-----|
-| test_RuleBasedAnswerValidator.route_from_results | FR-002 |
+| test_rule_based_validator_passes_good_answer | FR-002 |
 | test_fetch_citations_with_hits | FR-003 |
 | test_chat_includes_citations | FR-006 |
 | test_citation_preview_with_rewrite | FR-005 |

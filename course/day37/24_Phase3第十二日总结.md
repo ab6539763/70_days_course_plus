@@ -13,7 +13,7 @@
 
 ## Day 37 交付物
 
-- AnswerValidator + RouteConfig  
+- AnswerValidator + ValidationConfig  
 - validation-config / citation-preview API  
 - chat 响应 validation passed score reason + rewrite  
 - 前端引用展示  

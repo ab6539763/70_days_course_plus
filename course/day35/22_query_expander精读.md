@@ -4,7 +4,7 @@
 
 ---
 
-## 一、citation_builder.py 全文
+## 一、query_expander.py 全文
 
 ```python
 """
@@ -846,9 +846,9 @@ def test_build_expander_mode():
 
 | 测试 | 要点 |
 |------|------|
-| test_merge_retrieval_results_from_results_candidates | **翻牌金测** |
+| test_expand_produces_multiple_queries_candidates | **翻牌金测** |
 | test_rewrite_exact_substring | 子串=1.0 |
-| test_citation_preview_with_rewrite | 业务号码 |
+| test_expansion_preview_returns_queries | 业务号码 |
 | test_context_disabled | 降级路径 |
 | test_fetch_citations_with_hits_accessible | inner 类型 |
 | test_knowledge_store_persists_citation_config | 持久化 |
@@ -1035,12 +1035,12 @@ def get_expansion_config(self) -> ExpansionConfig:
         self.invalidate_cache()
         return self.expansion_config
 
-    def get_route_config(self) -> RouteConfig:
-        return RouteConfig.from_dict(self.route_config.to_dict())
+    def get_route_config(self) -> ExpansionConfig:
+        return ExpansionConfig.from_dict(self.route_config.to_dict())
 
-    def set_route_config(self, config: RouteConfig) -> RouteConfig:
+    def set_route_config(self, config: ExpansionConfig) -> ExpansionConfig:
         config.validate()
-        self.route_config = RouteConfig.from_dict(config.to_dict())
+        self.route_config = ExpansionConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.route_config
 
@@ -1100,7 +1100,7 @@ def get_expansion_config(self) -> ExpansionConfig:
 
 ---
 
-## 二十一、citation_builder 完整源码（重复嵌入便于打印）
+## 二十一、query_expander 完整源码（重复嵌入便于打印）
 
 ```python
 """
@@ -1338,9 +1338,9 @@ function FETCH_CITATIONS(q, top_k):
 | 测试 | FR/NFR |
 |------|--------|
 | test_citation_config_validate | FR-004 |
-| test_merge_retrieval_results_from_results_candidates | FR-002 |
+| test_expand_produces_multiple_queries_candidates | FR-002 |
 | test_context_enabled | FR-003 |
-| test_citation_preview_with_rewrite | AC-03 |
+| test_expansion_preview_returns_queries | AC-03 |
 | test_knowledge_store_persists_citation_config | FR-005 |
 | test_health_version | FR-008 |
 | test_put_citation_config_disable | AC-02 |
@@ -1386,8 +1386,8 @@ from api.schemas import (
     RewriteConfigResponse,
     RewritePreviewRequest,
     RewritePreviewResponse,
-    RouteConfigRequest,
-    RouteConfigResponse,
+    ExpansionConfigRequest,
+    ExpansionConfigResponse,
     RoutePreviewRequest,
     RoutePreviewResponse,
     ValidationConfigRequest,
@@ -1408,7 +1408,7 @@ from rag.expansion_config import ExpansionConfig
 from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.query_router import RuleBasedQueryRouter
-from rag.route_config import RouteConfig
+from rag.route_config import ExpansionConfig
 from rag.validation_config import ValidationConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
@@ -1707,7 +1707,7 @@ def test_expansion_preview_hyde_mode(client):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 context，找 search。先看 enabled：关了就 hybrid。开则 pool=max(20,top_k)。inner 召回，citation_builder 逐对 rewrite，截断 top_k。这就是 ZL-NA-REQ-032 的读取路径。」
+「打开 ExpandingRetriever，找 search。先看 enabled：关了就 inner。开则 QueryExpander 生成多 query，逐路 search 后 merge 去重。这就是 ZL-NA-REQ-035 的读取路径。」
 
 ---
 
@@ -2052,7 +2052,7 @@ ColBERT late interaction 介于 bi 与 cross；本课不展开。
 
 ---
 
-## 四十、citation_builder 全文嵌入
+## 四十、query_expander 全文嵌入
 
 ```python
 """
@@ -2323,10 +2323,10 @@ def fetch_citations(self, query: str) -> dict[str, Any]:
 
 | 测试 | FR |
 |------|-----|
-| test_merge_retrieval_results_from_results | FR-002 |
+| test_expand_produces_multiple_queries | FR-002 |
 | test_fetch_citations_with_hits | FR-003 |
 | test_chat_includes_citations | FR-006 |
-| test_citation_preview_with_rewrite | FR-005 |
+| test_expansion_preview_returns_queries | FR-005 |
 
 ---
 
@@ -2626,10 +2626,10 @@ def test_expansion_preview_hyde_mode(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 citation_builder，Citation 有 rank chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 query_expander，ExpansionResult 有 queries chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 35 · Citation · ZL-NA-REQ-035 · citation_builder 精读完**
+**NexusAgent 课程 · Phase 3 · Day 36 · Citation · ZL-NA-REQ-035 · query_expander 精读完**

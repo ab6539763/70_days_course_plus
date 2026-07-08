@@ -1441,8 +1441,8 @@ Spark 批处理重算特征 vs 流式增量 —— 对应 Day 28 rebuild vs Day 
 
 
 def _code_walkthrough() -> str:
-    tests = _src("tests/day28/test_knowledge_rebuild.py")
-    api_tests = _src("tests/day28/test_rebuild_api.py")
+    tests = read_repo("nexus-agent-platform/tests/day28/test_knowledge_rebuild.py")
+    api_tests = read_repo("nexus-agent-platform/tests/day28/test_rebuild_api.py")
     api_slice = _src("api/knowledge.py", limit=125)
     schemas = read_repo("nexus-agent-platform/src/api/schemas.py", limit=140)
     return f"""# Day 28 完整代码走查

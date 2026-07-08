@@ -61,10 +61,16 @@ Day 58-70  → 毕业设计、平台全功能上线
 
 ## 当前进度
 
-课件 Day 24–31 由 `scripts/course_days/dayXX.py` 生成，质量标准对齐 Day 23（每篇独立内容、≥10 万字/期）。一键重生成：
+课件 Day 24–37 由 `scripts/course_days/dayXX.py` 生成，质量标准对齐 Day 23（每篇独立内容、≥10 万字/期）。一键重生成：
 
 ```bash
 python3 scripts/regenerate_courses_day24_30.py
+```
+
+全链路交付门禁（课件审计 + day01–37 E2E + Sprint3 冒烟）：
+
+```bash
+bash scripts/delivery_check.sh
 ```
 
 - [x] Day 1-5
