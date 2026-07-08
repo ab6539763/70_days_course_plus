@@ -15,11 +15,12 @@ from core.paths import get_path
 from rag.chunker import TextChunk, chunk_documents
 from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.embedding_retriever import EmbeddingRetriever
+from rag.hybrid_retriever import HybridRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
 from tools.doc_reader import DocumentRecord, read_documents
 
 
-Retriever = KeywordRetriever | EmbeddingRetriever | ChromaEmbeddingRetriever
+Retriever = KeywordRetriever | EmbeddingRetriever | ChromaEmbeddingRetriever | HybridRetriever
 
 
 @dataclass

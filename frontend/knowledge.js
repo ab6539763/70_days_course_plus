@@ -42,7 +42,11 @@
       .slice(-5)
       .join("、");
     el.textContent = `${data.document_count} 篇 / ${data.chunk_count} 块${
-      data.index_mode ? " · " + data.index_mode : ""
+      data.retrieval_config && data.retrieval_config.mode
+        ? " · " + data.retrieval_config.mode
+        : data.index_mode
+          ? " · " + data.index_mode
+          : ""
     }${docs ? " · " + docs : ""}`;
   }
 

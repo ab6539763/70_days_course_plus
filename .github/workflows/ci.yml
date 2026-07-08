@@ -274,6 +274,16 @@ jobs:
           python src/day30/phase3_incremental_review.py
           PYTHONPATH=src pytest tests/day30/ -q
 
+      - name: Day 31 Hybrid retrieval
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day31/hybrid_demo.py
+          python src/day31/hybrid_api_demo.py
+          python src/day31/phase3_hybrid_review.py
+          PYTHONPATH=src pytest tests/day31/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

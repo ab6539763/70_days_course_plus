@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from api.schemas import (
     KnowledgeUploadResponse,
     RebuildRequest,
     RebuildResponse,
+    RetrievalConfigRequest,
+    RetrievalConfigResponse,
 )
 from api.sessions import session_manager
 from core.exceptions import NexusError, StorageError
@@ -26,6 +28,7 @@ from rag.chunk_config import PRESET_CONFIGS, ChunkConfig
 from rag.ingestion import ingest_upload
 from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
+from rag.retrieval_config import RetrievalConfig
 from rag.retrieval_eval import EvalQuery, pick_best_config, run_ab_experiment
 from tools.doc_parser import parse_bytes
 
@@ -35,6 +38,27 @@ MAX_UPLOAD_BYTES = 512_000  # 500 KB 教学上限
 _EVAL_SAMPLE = (
     Path(__file__).resolve().parent.parent / "day26" / "sample_docs" / "product_notice.md"
 )
+
+
+@router.get("/retrieval-config", response_model=RetrievalConfigResponse)
+def get_retrieval_config() -> RetrievalConfigResponse:
+    """返回当前检索模式（vector / keyword / hybrid）与融合参数"""
+    cfg = get_knowledge_store().get_retrieval_config()
+    return RetrievalConfigResponse(**cfg.to_dict())
+
+
+@router.put("/retrieval-config", response_model=RetrievalConfigResponse)
+def update_retrieval_config(body: RetrievalConfigRequest) -> RetrievalConfigResponse:
+    """更新检索策略；变更后清除 RAG 缓存"""
+    store = get_knowledge_store()
+    try:
+        cfg = RetrievalConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_retrieval_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RetrievalConfigResponse(**cfg.to_dict())
 
 
 @router.get("/chunk-config", response_model=ChunkConfigResponse)

@@ -73,6 +73,25 @@ class KnowledgeStatusResponse(BaseModel):
     vector_backend: str = "chroma"
     chroma_path: str | None = None
     chroma_count: int = 0
+    retrieval_config: dict = Field(default_factory=dict)
+
+
+class RetrievalConfigRequest(BaseModel):
+    """PUT /api/knowledge/retrieval-config"""
+
+    mode: str = Field("hybrid", pattern="^(vector|keyword|hybrid)$")
+    keyword_weight: float = Field(0.35, ge=0.0, le=1.0)
+    vector_weight: float = Field(0.65, ge=0.0, le=1.0)
+    fusion: str = Field("weighted", pattern="^(weighted|rrf)$")
+    rrf_k: int = Field(60, ge=1, le=500)
+
+
+class RetrievalConfigResponse(BaseModel):
+    mode: str
+    keyword_weight: float
+    vector_weight: float
+    fusion: str
+    rrf_k: int
 
 
 class RebuildRequest(BaseModel):

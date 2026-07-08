@@ -61,7 +61,7 @@ Day 58-70  → 毕业设计、平台全功能上线
 
 ## 当前进度
 
-课件 Day 24–30 由 `scripts/course_days/dayXX.py` 生成，质量标准对齐 Day 23（每篇独立内容、≥10 万字/期）。一键重生成：
+课件 Day 24–31 由 `scripts/course_days/dayXX.py` 生成，质量标准对齐 Day 23（每篇独立内容、≥10 万字/期）。一键重生成：
 
 ```bash
 python3 scripts/regenerate_courses_day24_30.py
@@ -93,4 +93,5 @@ python3 scripts/regenerate_courses_day24_30.py
 - [x] Day 28：知识库全量重建（rebuild）
 - [x] Day 29：Chroma 向量库持久化（替换 JSON 向量索引）
 - [x] Day 30：增量索引（upload 增量 upsert Chroma）
-- [ ] Day 31-70：持续更新中
+- [x] Day 31：混合检索（关键词 + 向量融合）
+- [ ] Day 32-70：持续更新中

@@ -71,7 +71,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.30.0"
+    assert data["platform_version"] == "0.31.0"
     assert isinstance(data["documents"], list)
 
 
@@ -103,4 +103,4 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.30.0"
+    assert raw["platform_version"] == "0.31.0"

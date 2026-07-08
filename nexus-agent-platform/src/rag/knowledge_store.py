@@ -21,13 +21,15 @@ from rag.chunk_strategies import chunk_from_parsed
 from rag.context import DocumentIndex, RAGContextService
 from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
+from rag.hybrid_retriever import HybridRetriever
+from rag.retrieval_config import RetrievalConfig
 from tools.doc_reader import DocumentRecord, read_text_file
 from tools.parsers.base import ParsedDocument
 from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.30.0"
+PLATFORM_VERSION = "0.31.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -81,6 +83,7 @@ class KnowledgeStore:
     last_rebuilt_at: str | None = None
     last_incremental_at: str | None = None
     index_mode: str = INDEX_MODE_FULL
+    retrieval_config: RetrievalConfig = field(default_factory=RetrievalConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -109,6 +112,15 @@ class KnowledgeStore:
         config.validate()
         self.chunk_config = ChunkConfig.from_dict(config.to_dict())
         return self.chunk_config
+
+    def get_retrieval_config(self) -> RetrievalConfig:
+        return RetrievalConfig.from_dict(self.retrieval_config.to_dict())
+
+    def set_retrieval_config(self, config: RetrievalConfig) -> RetrievalConfig:
+        config.validate()
+        self.retrieval_config = RetrievalConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.retrieval_config
 
     def ingest_text(
         self,
@@ -267,6 +279,7 @@ class KnowledgeStore:
             "last_rebuilt_at": self.last_rebuilt_at,
             "last_incremental_at": self.last_incremental_at,
             "index_mode": self.index_mode,
+            "retrieval_config": self.retrieval_config.to_dict(),
         }
         save_json(target, payload)
         return target
@@ -290,6 +303,8 @@ class KnowledgeStore:
         store.last_rebuilt_at = raw.get("last_rebuilt_at")
         store.last_incremental_at = raw.get("last_incremental_at")
         store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
+        if raw.get("retrieval_config"):
+            store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -347,6 +362,7 @@ class KnowledgeStore:
             "last_rebuilt_at": self.last_rebuilt_at,
             "last_incremental_at": self.last_incremental_at,
             "index_mode": self.index_mode,
+            "retrieval_config": self.retrieval_config.to_dict(),
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,
@@ -496,12 +512,16 @@ class KnowledgeStore:
             return RAGContextService()
 
         from rag.embedding import EmbeddingClient
+        from rag.retriever import KeywordRetriever
 
         client = EmbeddingClient()
         client.model.load_state(self.embedding_state)
         self._sync_chroma_from_json()
         chroma = self._chroma_index()
-        retriever = ChromaEmbeddingRetriever(self.chunks, chroma, client=client)
+        vector = ChromaEmbeddingRetriever(self.chunks, chroma, client=client)
+        keyword = KeywordRetriever(self.chunks)
+        cfg = self.get_retrieval_config()
+        retriever = HybridRetriever(self.chunks, keyword, vector, config=cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 
