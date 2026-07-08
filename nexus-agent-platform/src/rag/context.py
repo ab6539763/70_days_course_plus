@@ -17,6 +17,7 @@ from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.embedding_retriever import EmbeddingRetriever
 from rag.hybrid_retriever import HybridRetriever
 from rag.reranking_retriever import RerankingRetriever
+from rag.rewriting_retriever import RewritingRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
 from tools.doc_reader import DocumentRecord, read_documents
 
@@ -27,6 +28,7 @@ Retriever = (
     | ChromaEmbeddingRetriever
     | HybridRetriever
     | RerankingRetriever
+    | RewritingRetriever
 )
 
 

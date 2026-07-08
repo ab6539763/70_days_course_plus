@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033
 """
 
 from __future__ import annotations
@@ -21,6 +21,10 @@ from api.schemas import (
     RebuildResponse,
     RerankConfigRequest,
     RerankConfigResponse,
+    RewriteConfigRequest,
+    RewriteConfigResponse,
+    RewritePreviewRequest,
+    RewritePreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -30,7 +34,9 @@ from rag.chunk_config import PRESET_CONFIGS, ChunkConfig
 from rag.ingestion import ingest_upload
 from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
+from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.rerank_config import RerankConfig
+from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
 from rag.retrieval_eval import EvalQuery, pick_best_config, run_ab_experiment
 from tools.doc_parser import parse_bytes
@@ -83,6 +89,37 @@ def update_rerank_config(body: RerankConfigRequest) -> RerankConfigResponse:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return RerankConfigResponse(**cfg.to_dict())
+
+
+@router.get("/rewrite-config", response_model=RewriteConfigResponse)
+def get_rewrite_config() -> RewriteConfigResponse:
+    """返回查询改写开关与规则模式"""
+    cfg = get_knowledge_store().get_rewrite_config()
+    return RewriteConfigResponse(**cfg.to_dict())
+
+
+@router.put("/rewrite-config", response_model=RewriteConfigResponse)
+def update_rewrite_config(body: RewriteConfigRequest) -> RewriteConfigResponse:
+    """更新查询改写策略；变更后清除 RAG 缓存"""
+    store = get_knowledge_store()
+    try:
+        cfg = RewriteConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_rewrite_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RewriteConfigResponse(**cfg.to_dict())
+
+
+@router.post("/rewrite-preview", response_model=RewritePreviewResponse)
+def rewrite_preview(body: RewritePreviewRequest) -> RewritePreviewResponse:
+    """预览单条 query 的规则改写结果（不触发检索）"""
+    store = get_knowledge_store()
+    cfg = store.get_rewrite_config()
+    rewriter = RuleBasedQueryRewriter(config=cfg)
+    result = rewriter.rewrite(body.query)
+    return RewritePreviewResponse(**result.to_dict())
 
 
 @router.get("/chunk-config", response_model=ChunkConfigResponse)

@@ -28,7 +28,7 @@ jobs:
           pip install -r nexus-agent-platform/requirements-day01.txt
           pip install -r nexus-agent-platform/requirements-api.txt
 
-      - name: Course material quality (day24-32)
+      - name: Course material quality (day24-33)
         run: python3 scripts/regenerate_courses_day24_30.py
 
       - name: Run hello.py
@@ -293,6 +293,16 @@ jobs:
           python src/day32/rerank_api_demo.py
           python src/day32/phase3_rerank_review.py
           PYTHONPATH=src pytest tests/day32/ -q
+
+      - name: Day 33 Query rewrite
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day33/rewrite_demo.py
+          python src/day33/rewrite_api_demo.py
+          python src/day33/phase3_rewrite_review.py
+          PYTHONPATH=src pytest tests/day33/ -q
 
       - name: Run tests
         working-directory: nexus-agent-platform

@@ -28,7 +28,7 @@ def client(tmp_path):
 
 
 def test_health_version_027(client):
-    assert client.get("/api/health").json()["version"] == "0.32.0"
+    assert client.get("/api/health").json()["version"] == "0.33.0"
 
 
 def test_get_chunk_config(client):
@@ -65,5 +65,5 @@ def test_evaluate_presets(client):
 
 def test_status_has_chunk_config(client):
     data = client.get("/api/knowledge/status").json()
-    assert data["platform_version"] == "0.32.0"
+    assert data["platform_version"] == "0.33.0"
     assert "chunk_config" in data

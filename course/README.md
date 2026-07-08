@@ -95,4 +95,5 @@ python3 scripts/regenerate_courses_day24_30.py
 - [x] Day 30：增量索引（upload 增量 upsert Chroma）
 - [x] Day 31：混合检索（关键词 + 向量融合）
 - [x] Day 32：交叉编码器重排（Rerank — hybrid top-20 → 精排 top-3）
-- [ ] Day 33-70：持续更新中
+- [x] Day 33：查询改写（Query Rewrite — 口语问句规范化）
+- [ ] Day 34-70：持续更新中

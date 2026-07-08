@@ -75,6 +75,7 @@ class KnowledgeStatusResponse(BaseModel):
     chroma_count: int = 0
     retrieval_config: dict = Field(default_factory=dict)
     rerank_config: dict = Field(default_factory=dict)
+    rewrite_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -107,6 +108,35 @@ class RerankConfigResponse(BaseModel):
     enabled: bool
     candidate_pool: int
     model: str
+
+
+class RewriteConfigRequest(BaseModel):
+    """PUT /api/knowledge/rewrite-config"""
+
+    enabled: bool = True
+    mode: str = Field("rules", pattern="^rules$")
+    fallback_to_original: bool = True
+    max_rewrite_len: int = Field(200, ge=10, le=500)
+
+
+class RewriteConfigResponse(BaseModel):
+    enabled: bool
+    mode: str
+    fallback_to_original: bool
+    max_rewrite_len: int
+
+
+class RewritePreviewRequest(BaseModel):
+    """POST /api/knowledge/rewrite-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+
+
+class RewritePreviewResponse(BaseModel):
+    original: str
+    rewritten: str
+    changed: bool
+    rule_id: str | None = None
 
 
 class RebuildRequest(BaseModel):
