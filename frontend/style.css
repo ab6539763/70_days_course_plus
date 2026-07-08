@@ -366,6 +366,13 @@ body {
   font-style: italic;
 }
 
+.msg__expansion {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: #475569;
+  line-height: 1.35;
+}
+
 .chat__loading {
   display: flex;
   align-items: center;

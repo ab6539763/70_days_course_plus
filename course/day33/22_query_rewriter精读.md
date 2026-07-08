@@ -429,7 +429,9 @@ def _build_rag_service(self) -> RAGContextService:
             config=rerank_cfg,
         )
         rewrite_cfg = self.get_rewrite_config()
-        retriever = RewritingRetriever(reranking, config=rewrite_cfg)
+        rewriting = RewritingRetriever(reranking, config=rewrite_cfg)
+        expansion_cfg = self.get_expansion_config()
+        retriever = ExpandingRetriever(rewriting, config=expansion_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 ```
@@ -455,6 +457,7 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from rag.expanding_retriever import ExpandingRetriever
 from rag.hybrid_retriever import HybridRetriever
 from rag.knowledge_store import KnowledgeStore
 from rag.query_rewriter import RuleBasedQueryRewriter
@@ -474,6 +477,8 @@ def _store(tmp_path: Path) -> KnowledgeStore:
 def _get_rewriting(store: KnowledgeStore) -> RewritingRetriever:
     rag = store.as_rag_service()
     retriever = rag.index.retriever
+    if isinstance(retriever, ExpandingRetriever):
+        retriever = retriever.inner
     assert isinstance(retriever, RewritingRetriever)
     return retriever
 
@@ -621,7 +626,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.34.0"
+    assert client.get("/api/health").json()["version"] == "0.35.0"
 
 
 def test_get_rewrite_config_default(client):
@@ -657,7 +662,7 @@ def test_rewrite_preview_colloquial(client):
 
 def test_status_includes_rewrite_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.34.0"
+    assert status["platform_version"] == "0.35.0"
     assert status["rewrite_config"]["enabled"] is True
 
 
@@ -747,11 +752,25 @@ def get_rewrite_config(self) -> RewriteConfig:
         self.citation_config = CitationConfig.from_dict(config.to_dict())
         return self.citation_config
 
+    def get_expansion_config(self) -> ExpansionConfig:
+        return ExpansionConfig.from_dict(self.expansion_config.to_dict())
+
+    def set_expansion_config(self, config: ExpansionConfig) -> ExpansionConfig:
+        config.validate()
+        self.expansion_config = ExpansionConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.expansion_config
+
     def fetch_citations(self, query: str) -> dict[str, Any]:
         """按当前 citation_config 检索并返回引用包 dict"""
         cfg = self.get_citation_config()
         if not cfg.enabled:
-            return {"query": query.strip(), "citations": [], "rewrite": None}
+            return {
+                "query": query.strip(),
+                "citations": [],
+                "rewrite": None,
+                "expansion": None,
+            }
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
         return bundle.to_dict()
@@ -1023,7 +1042,7 @@ function RERANKING_SEARCH(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035
 """
 
 from __future__ import annotations
@@ -1039,6 +1058,10 @@ from api.schemas import (
     CitationConfigResponse,
     CitationPreviewRequest,
     CitationPreviewResponse,
+    ExpansionConfigRequest,
+    ExpansionConfigResponse,
+    ExpansionPreviewRequest,
+    ExpansionPreviewResponse,
     EvaluateRequest,
     EvaluateResponse,
     KnowledgeStatusResponse,
@@ -1061,6 +1084,8 @@ from rag.ingestion import ingest_upload
 from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
 from rag.citation_config import CitationConfig
+from rag.expansion_config import ExpansionConfig
+from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
@@ -1172,22 +1197,15 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 
 @router.post("/citation-preview", response_model=CitationPreviewResponse)
 def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
-    """预览单条 query 的检索引用（含 rewrite 审计）"""
+    """预览单条 query 的检索引用（含 rewrite / expansion 审计）"""
     store = get_knowledge_store()
     data = store.fetch_citations(body.query)
     return CitationPreviewResponse(**data)
 
 
-@router.get("/chunk-config", response_model=ChunkConfigResponse)
-def get_chunk_config() -> ChunkConfigResponse:
-    """返回当前知识库默认分块参数"""
-    cfg = get_knowledge_store().get_chunk_config()
-    return ChunkConfigResponse(**cfg.to_dict())
-
-
-@router.put("/chunk-config", response_model=ChunkConfigResponse)
-def update_chunk_config(body: ChunkConfigRequest) -> ChunkConfigResponse:
-    """更新默认分块参数（影
+@router.get("/expansion-config", response_model=ExpansionConfigResponse)
+def get_expansion_config() -> ExpansionConfigResponse:
+    """返回多 query 扩展开关与参数""
 ```
 
 
@@ -1275,7 +1293,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.34.0"
+    assert client.get("/api/health").json()["version"] == "0.35.0"
 
 
 def test_get_rewrite_config_default(client):
@@ -1311,7 +1329,7 @@ def test_rewrite_preview_colloquial(client):
 
 def test_status_includes_rewrite_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.34.0"
+    assert status["platform_version"] == "0.35.0"
     assert status["rewrite_config"]["enabled"] is True
 
 

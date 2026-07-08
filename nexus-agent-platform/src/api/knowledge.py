@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035
 """
 
 from __future__ import annotations
@@ -17,6 +17,10 @@ from api.schemas import (
     CitationConfigResponse,
     CitationPreviewRequest,
     CitationPreviewResponse,
+    ExpansionConfigRequest,
+    ExpansionConfigResponse,
+    ExpansionPreviewRequest,
+    ExpansionPreviewResponse,
     EvaluateRequest,
     EvaluateResponse,
     KnowledgeStatusResponse,
@@ -39,6 +43,8 @@ from rag.ingestion import ingest_upload
 from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
 from rag.citation_config import CitationConfig
+from rag.expansion_config import ExpansionConfig
+from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
@@ -150,10 +156,41 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 
 @router.post("/citation-preview", response_model=CitationPreviewResponse)
 def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
-    """预览单条 query 的检索引用（含 rewrite 审计）"""
+    """预览单条 query 的检索引用（含 rewrite / expansion 审计）"""
     store = get_knowledge_store()
     data = store.fetch_citations(body.query)
     return CitationPreviewResponse(**data)
+
+
+@router.get("/expansion-config", response_model=ExpansionConfigResponse)
+def get_expansion_config() -> ExpansionConfigResponse:
+    """返回多 query 扩展开关与参数"""
+    cfg = get_knowledge_store().get_expansion_config()
+    return ExpansionConfigResponse(**cfg.to_dict())
+
+
+@router.put("/expansion-config", response_model=ExpansionConfigResponse)
+def update_expansion_config(body: ExpansionConfigRequest) -> ExpansionConfigResponse:
+    """更新多 query 扩展策略并持久化"""
+    store = get_knowledge_store()
+    try:
+        cfg = ExpansionConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_expansion_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ExpansionConfigResponse(**cfg.to_dict())
+
+
+@router.post("/expansion-preview", response_model=ExpansionPreviewResponse)
+def expansion_preview(body: ExpansionPreviewRequest) -> ExpansionPreviewResponse:
+    """预览单条 query 的多路扩展结果"""
+    store = get_knowledge_store()
+    cfg = store.get_expansion_config()
+    expander = build_expander(cfg)
+    result = expander.expand(body.query)
+    return ExpansionPreviewResponse(**result.to_dict())
 
 
 @router.get("/chunk-config", response_model=ChunkConfigResponse)

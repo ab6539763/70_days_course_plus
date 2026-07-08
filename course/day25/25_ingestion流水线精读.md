@@ -103,7 +103,13 @@ __all__ = ["ingest_directory", "ingest_upload", "supported_formats"]
 ## 与 api/knowledge.py 衔接
 
 ```python
-"""返回引用溯源开关与展示参数"""
+result = rewriter.rewrite(body.query)
+    return RewritePreviewResponse(**result.to_dict())
+
+
+@router.get("/citation-config", response_model=CitationConfigResponse)
+def get_citation_config() -> CitationConfigResponse:
+    """返回引用溯源开关与展示参数"""
     cfg = get_knowledge_store().get_citation_config()
     return CitationConfigResponse(**cfg.to_dict())
 
@@ -124,29 +130,23 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 
 @router.post("/citation-preview", response_model=CitationPreviewResponse)
 def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
-    """预览单条 query 的检索引用（含 rewrite 审计）"""
+    """预览单条 query 的检索引用（含 rewrite / expansion 审计）"""
     store = get_knowledge_store()
     data = store.fetch_citations(body.query)
     return CitationPreviewResponse(**data)
 
 
-@router.get("/chunk-config", response_model=ChunkConfigResponse)
-def get_chunk_config() -> ChunkConfigResponse:
-    """返回当前知识库默认分块参数"""
-    cfg = get_knowledge_store().get_chunk_config()
-    return ChunkConfigResponse(**cfg.to_dict())
+@router.get("/expansion-config", response_model=ExpansionConfigResponse)
+def get_expansion_config() -> ExpansionConfigResponse:
+    """返回多 query 扩展开关与参数"""
+    cfg = get_knowledge_store().get_expansion_config()
+    return ExpansionConfigResponse(**cfg.to_dict())
 
 
-@router.put("/chunk-config", response_model=ChunkConfigResponse)
-def update_chunk_config(body: ChunkConfigRequest) -> ChunkConfigResponse:
-    """更新默认分块参数（影响后续上传）"""
+@router.put("/expansion-config", response_model=ExpansionConfigResponse)
+def update_expansion_config(body: ExpansionConfigRequest) -> ExpansionConfigResponse:
+    """更新多 query 扩展策略并持久化"""
     store = get_knowledge_store()
-    try:
-        cfg = ChunkConfig.from_dict(body.model_dump())
-        cfg.validate()
-        store.set_chunk_config(cfg)
-        store.save()
-    except ValueError as exc:
 ```
 
 

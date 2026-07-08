@@ -130,6 +130,7 @@
       session_id: data.session_id,
       citations: data.citations || [],
       rewrite: data.rewrite || null,
+      expansion: data.expansion || null,
     };
   }
 

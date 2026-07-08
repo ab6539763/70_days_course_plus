@@ -445,7 +445,9 @@ def _build_rag_service(self) -> RAGContextService:
             config=rerank_cfg,
         )
         rewrite_cfg = self.get_rewrite_config()
-        retriever = RewritingRetriever(reranking, config=rewrite_cfg)
+        rewriting = RewritingRetriever(reranking, config=rewrite_cfg)
+        expansion_cfg = self.get_expansion_config()
+        retriever = ExpandingRetriever(rewriting, config=expansion_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 ```
@@ -475,6 +477,7 @@ from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.chroma_store import ChromaVectorIndex
 from rag.embedding import EmbeddingClient
 from rag.hybrid_retriever import HybridRetriever, _rrf_merge, _weighted_merge
+from rag.expanding_retriever import ExpandingRetriever
 from rag.reranking_retriever import RerankingRetriever
 from rag.rewriting_retriever import RewritingRetriever
 from rag.knowledge_store import KnowledgeStore
@@ -500,6 +503,8 @@ def _hybrid_store(tmp_path: Path) -> KnowledgeStore:
 def _build_hybrid(store: KnowledgeStore) -> HybridRetriever:
     rag = store.as_rag_service()
     retriever = rag.index.retriever
+    if isinstance(retriever, ExpandingRetriever):
+        retriever = retriever.inner
     if isinstance(retriever, RewritingRetriever):
         retriever = retriever.inner
     if isinstance(retriever, RerankingRetriever):
@@ -652,7 +657,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.34.0"
+    assert client.get("/api/health").json()["version"] == "0.35.0"
 
 
 def test_get_retrieval_config_default_hybrid(client):
@@ -678,7 +683,7 @@ def test_put_retrieval_config_rrf(client):
 
 def test_status_includes_retrieval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.34.0"
+    assert status["platform_version"] == "0.35.0"
     assert status["retrieval_config"]["mode"] == "hybrid"
 
 
@@ -781,11 +786,25 @@ def get_retrieval_config(self) -> RetrievalConfig:
         self.citation_config = CitationConfig.from_dict(config.to_dict())
         return self.citation_config
 
+    def get_expansion_config(self) -> ExpansionConfig:
+        return ExpansionConfig.from_dict(self.expansion_config.to_dict())
+
+    def set_expansion_config(self, config: ExpansionConfig) -> ExpansionConfig:
+        config.validate()
+        self.expansion_config = ExpansionConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.expansion_config
+
     def fetch_citations(self, query: str) -> dict[str, Any]:
         """按当前 citation_config 检索并返回引用包 dict"""
         cfg = self.get_citation_config()
         if not cfg.enabled:
-            return {"query": query.strip(), "citations": [], "rewrite": None}
+            return {
+                "query": query.strip(),
+                "citations": [],
+                "rewrite": None,
+                "expansion": None,
+            }
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
         return bundle.to_dict()
@@ -1117,7 +1136,7 @@ function HYBRID_SEARCH(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035
 """
 
 from __future__ import annotations
@@ -1133,6 +1152,10 @@ from api.schemas import (
     CitationConfigResponse,
     CitationPreviewRequest,
     CitationPreviewResponse,
+    ExpansionConfigRequest,
+    ExpansionConfigResponse,
+    ExpansionPreviewRequest,
+    ExpansionPreviewResponse,
     EvaluateRequest,
     EvaluateResponse,
     KnowledgeStatusResponse,
@@ -1155,6 +1178,8 @@ from rag.ingestion import ingest_upload
 from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
 from rag.citation_config import CitationConfig
+from rag.expansion_config import ExpansionConfig
+from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
@@ -1266,10 +1291,41 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 
 @router.post("/citation-preview", response_model=CitationPreviewResponse)
 def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
-    """预览单条 query 的检索引用（含 rewrite 审计）"""
+    """预览单条 query 的检索引用（含 rewrite / expansion 审计）"""
     store = get_knowledge_store()
     data = store.fetch_citations(body.query)
     return CitationPreviewResponse(**data)
+
+
+@router.get("/expansion-config", response_model=ExpansionConfigResponse)
+def get_expansion_config() -> ExpansionConfigResponse:
+    """返回多 query 扩展开关与参数"""
+    cfg = get_knowledge_store().get_expansion_config()
+    return ExpansionConfigResponse(**cfg.to_dict())
+
+
+@router.put("/expansion-config", response_model=ExpansionConfigResponse)
+def update_expansion_config(body: ExpansionConfigRequest) -> ExpansionConfigResponse:
+    """更新多 query 扩展策略并持久化"""
+    store = get_knowledge_store()
+    try:
+        cfg = ExpansionConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_expansion_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ExpansionConfigResponse(**cfg.to_dict())
+
+
+@router.post("/expansion-preview", response_model=ExpansionPreviewResponse)
+def expansion_preview(body: ExpansionPreviewRequest) -> ExpansionPreviewResponse:
+    """预览单条 query 的多路扩展结果"""
+    store = get_knowledge_store()
+    cfg = store.get_expansion_config()
+    expander = build_expander(cfg)
+    result = expander.expand(body.query)
+    return ExpansionPreviewResponse(**result.to_dict())
 
 
 @router.get("/chunk-config", response_model=ChunkConfigResponse)
@@ -1299,50 +1355,6 @@ def evaluate_chunk_configs(body: EvaluateRequest | None = None) -> EvaluateRespo
     对内置样例文档运行 A/B 分块评估，返回 hit@1 与推荐配置。
 
     默认使用 PRESET_CONFIGS 四套预设与 day27 评估问句集。
-    """
-    body = body or EvaluateRequest()
-    if not _EVAL_SAMPLE.is_file():
-        raise HTTPException(status_code=500, detail="评估样例文档缺失")
-
-    doc = parse_bytes(_EVAL_SAMPLE.read_bytes(), _EVAL_SAMPLE.name)
-    from day27.constants import EVAL_QUERIES
-
-    queries = [EvalQuery.from_dict(q) for q in EVAL_QUERIES]
-
-    if body.use_presets and not body.configs:
-        configs = list(PRESET_CONFIGS)
-    else:
-        configs = [ChunkConfig.from_dict(c.model_dump()) for c in body.configs]
-        for c in configs:
-            c.validate()
-
-    results = run_ab_experiment(doc, configs, queries)
-    best = pick_best_config(results)
-    if not best:
-        raise HTTPException(status_code=500, detail="评估未产生结果")
-
-    return EvaluateResponse(
-        best_config=best.to_dict()["config"],
-        results=[r.to_dict() for r in results],
-        eval_query_count=len(queries),
-    )
-
-
-@router.post("/rebuild", response_model=RebuildResponse)
-def rebuild_knowledge_base(body: RebuildRequest | None = None) -> RebuildResponse:
-    """
-    按当前 chunk_config（或 evaluate 最优配置）全量重建知识库。
-
-    重扫 sample_docs + knowledge_uploads，清空后重新分块与索引。
-    """
-    body = body or RebuildRequest()
-    store = get_knowledge_store()
-
-    if body.apply_best_config:
-        if not _EVAL_SAMPLE.is_file():
-            raise HTTPException(status_code=500, detail="评估样例文档缺失")
-        report = rebuild_with_best_config(
-            store,
 ```
 
 
@@ -1430,7 +1442,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.34.0"
+    assert client.get("/api/health").json()["version"] == "0.35.0"
 
 
 def test_get_retrieval_config_default_hybrid(client):
@@ -1456,7 +1468,7 @@ def test_put_retrieval_config_rrf(client):
 
 def test_status_includes_retrieval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.34.0"
+    assert status["platform_version"] == "0.35.0"
     assert status["retrieval_config"]["mode"] == "hybrid"
 
 

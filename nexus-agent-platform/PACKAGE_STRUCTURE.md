@@ -1,7 +1,38 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.34.0（Day 34 引用溯源）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-034
+**版本**：v0.35.0（Day 35 多查询扩展）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-035
+
+## Day 35 新增
+
+```
+src/rag/query_expander.py
+  TemplateQueryExpander / HyDEMockExpander — 单问句 → 多 query
+src/rag/expanding_retriever.py
+  ExpandingRetriever — 多路 search + merge
+src/rag/expansion_config.py
+  ExpansionConfig — enabled / mode / max_queries
+src/rag/result_merger.py
+  merge_retrieval_results — chunk_id 去重
+src/day35/
+  expansion_demo.py
+  expansion_api_demo.py
+  phase3_expansion_review.py
+```
+
+## API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/knowledge/expansion-config` | 多 query 扩展开关与参数 |
+| PUT | `/api/knowledge/expansion-config` | 更新扩展策略 |
+| POST | `/api/knowledge/expansion-preview` | 单条 query 扩展预览 |
+
+`store.json` 新增 `expansion_config` 字段；默认 `enabled=true`，`max_queries=4`。
+
+`POST /api/chat` 响应扩展 `expansion` 审计元数据（queries 列表）。
+
+检索管线（外→内）：`ExpandingRetriever` → `RewritingRetriever` → `RerankingRetriever` → `HybridRetriever`。
 
 ## Day 34 新增
 

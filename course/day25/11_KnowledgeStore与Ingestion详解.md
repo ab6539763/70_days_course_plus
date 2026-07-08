@@ -137,57 +137,58 @@ ingest_text ValueError → API 422；StorageError → 500；UnicodeDecodeError �
 ## 附录：_append_chunks 与 _rebuild_index（详解专节）
 
 ```python
-store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
+if not raw:
+            return cls.bootstrap_from_sample_docs(store_path=path)
+
+        store = cls(store_path=path)
+        store.documents = [
+            KnowledgeDocument.from_dict(d) for d in raw.get("documents", [])
+        ]
+        store.chunks = [_chunk_from_dict(c) for c in raw.get("chunks", [])]
+        store.embedding_state = dict(raw.get("embedding") or {})
+        store.vector_backend = str(raw.get("vector_backend") or VECTOR_BACKEND)
+        if raw.get("chunk_config"):
+            store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
+        store.last_rebuilt_at = raw.get("last_rebuilt_at")
+        store.last_incremental_at = raw.get("last_incremental_at")
+        store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
+        if raw.get("retrieval_config"):
+            store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
+        if raw.get("rerank_config"):
+            store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
         if raw.get("rewrite_config"):
             store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
         if raw.get("citation_config"):
             store.citation_config = CitationConfig.from_dict(raw["citation_config"])
+        if raw.get("expansion_config"):
+            store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
 
     @classmethod
-    def load_or_bootstrap(cls, path: Path | None = None) -> KnowledgeStore:
-        """加载已有库，不存在则从 sample_docs 引导"""
-        target = path or _default_store_path()
-        if target.is_file():
-            return cls.load(target)
-        store = cls.bootstrap_from_sample_docs(store_path=target)
-        store.save(target)
-        return store
-
-    @classmethod
-    def bootstrap_from_sample_docs(cls, *, store_path: Path | None = None) -> KnowledgeStore:
-        """用内置 sample_docs 初始化知识库"""
-        rag = RAGContextService.from_sample_docs(use_embedding=True)
-        store = cls(store_path=store_path)
-        now = _utc_now()
-
-        by_source: dict[str, list[TextChunk]] = {}
-        for chunk in rag.index.chunks:
-            by_source.setdefault(chunk.source, []).append(chunk)
 ```
 
 
 **`_append_chunks`**：新块 `index` 从 `len(self.chunks)` 递增，避免与旧块冲突。每 append 同步追加 `KnowledgeDocument` 元数据行。
 
 ```python
-) -> None:
-        base_index = len(self.chunks)
-        reindexed: list[TextChunk] = []
-        for i, chunk in enumerate(new_chunks):
-            reindexed.append(
-                TextChunk(
-                    chunk_id=chunk.chunk_id,
-                    text=chunk.text,
-                    source=filename,
-                    index=base_index + i,
-                    start_char=chunk.start_char,
-                    end_char=chunk.end_char,
-                )
-            )
-        self.chunks.extend(reindexed)
-        self.documents.append(
+"chunk_config": self.chunk_config.to_dict(),
+            "last_rebuilt_at": self.last_rebuilt_at,
+            "last_incremental_at": self.last_incremental_at,
+            "index_mode": self.index_mode,
+            "retrieval_config": self.retrieval_config.to_dict(),
+            "rerank_config": self.rerank_config.to_dict(),
+            "rewrite_config": self.rewrite_config.to_dict(),
+            "citation_config": self.citation_config.to_dict(),
+            "expansion_config": self.expansion_config.to_dict(),
+            "vector_backend": self.vector_backend,
+            "chroma_path": str(self._resolve_chroma_path()),
+            "chroma_count": self._chroma_index().count() if self.chunks else 0,
+        }
+
+    def _append_chunks(
+        self,
 ```
 
 

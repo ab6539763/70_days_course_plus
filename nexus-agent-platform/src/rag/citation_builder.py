@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from rag.citation_config import CitationConfig
+from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
 from rag.retriever import RetrievalResult
 
@@ -41,10 +42,11 @@ class Citation:
 
 @dataclass(frozen=True)
 class CitationBundle:
-    """检索引用包 — citations + 可选 rewrite 审计"""
+    """检索引用包 — citations + 可选 rewrite / expansion 审计"""
 
     citations: list[Citation]
     rewrite: RewriteResult | None = None
+    expansion: ExpansionResult | None = None
     query: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -54,6 +56,8 @@ class CitationBundle:
         }
         if self.rewrite is not None:
             data["rewrite"] = self.rewrite.to_dict()
+        if self.expansion is not None:
+            data["expansion"] = self.expansion.to_dict()
         return data
 
 
@@ -88,6 +92,7 @@ def build_citation_bundle(
     *,
     config: CitationConfig | None = None,
     rewrite: RewriteResult | None = None,
+    expansion: ExpansionResult | None = None,
 ) -> CitationBundle:
     """组装完整引用包"""
     cfg = config or CitationConfig()
@@ -97,8 +102,10 @@ def build_citation_bundle(
         max_items=cfg.max_citations,
     )
     rewrite_meta = rewrite if cfg.include_rewrite_meta else None
+    expansion_meta = expansion if cfg.include_expansion_meta else None
     return CitationBundle(
         citations=citations,
         rewrite=rewrite_meta,
+        expansion=expansion_meta,
         query=query.strip(),
     )

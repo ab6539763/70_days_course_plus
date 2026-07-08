@@ -30,7 +30,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.34.0"
+    assert client.get("/api/health").json()["version"] == "0.35.0"
 
 
 def test_get_retrieval_config_default_hybrid(client):
@@ -56,7 +56,7 @@ def test_put_retrieval_config_rrf(client):
 
 def test_status_includes_retrieval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.34.0"
+    assert status["platform_version"] == "0.35.0"
     assert status["retrieval_config"]["mode"] == "hybrid"
 
 

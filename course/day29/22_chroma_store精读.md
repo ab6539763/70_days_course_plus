@@ -422,6 +422,8 @@ from rag.context import DocumentIndex, RAGContextService
 from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
 from rag.citation_config import CitationConfig
+from rag.expanding_retriever import ExpandingRetriever
+from rag.expansion_config import ExpansionConfig
 from rag.hybrid_retriever import HybridRetriever
 from rag.rerank_config import RerankConfig
 from rag.reranker import MockCrossEncoderReranker
@@ -431,8 +433,6 @@ from rag.rewrite_config import RewriteConfig
 from rag.rewriting_retriever import RewritingRetriever
 from tools.doc_reader import DocumentRecord, read_text_file
 from tools.parsers.base import ParsedDocument
-from utils.json_utils import load_json, save_json
-from utils.text_utils import clean_text
 ```
 
 
@@ -522,6 +522,8 @@ def load(cls, path: Path) -> KnowledgeStore:
             store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
         if raw.get("citation_config"):
             store.citation_config = CitationConfig.from_dict(raw["citation_config"])
+        if raw.get("expansion_config"):
+            store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -555,7 +557,9 @@ def _build_rag_service(self) -> RAGContextService:
             config=rerank_cfg,
         )
         rewrite_cfg = self.get_rewrite_config()
-        retriever = RewritingRetriever(reranking, config=rewrite_cfg)
+        rewriting = RewritingRetriever(reranking, config=rewrite_cfg)
+        expansion_cfg = self.get_expansion_config()
+        retriever = ExpandingRetriever(rewriting, config=expansion_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 ```

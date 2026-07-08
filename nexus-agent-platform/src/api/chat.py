@@ -15,7 +15,7 @@ from chat.orchestrator import ChatOrchestrator
 from rag.knowledge_store import get_knowledge_store
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.34.0"
+API_VERSION = "0.35.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -60,6 +60,7 @@ def chat(
     cite_data = get_knowledge_store().fetch_citations(message)
     citations = cite_data.get("citations") or []
     rewrite = cite_data.get("rewrite")
+    expansion = cite_data.get("expansion")
 
     return ChatResponse(
         reply=reply,
@@ -68,6 +69,7 @@ def chat(
         session_id=session_id,
         citations=citations,
         rewrite=rewrite,
+        expansion=expansion,
     )
 
 

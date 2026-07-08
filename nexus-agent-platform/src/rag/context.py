@@ -19,6 +19,8 @@ from rag.hybrid_retriever import HybridRetriever
 from rag.reranking_retriever import RerankingRetriever
 from rag.citation_builder import CitationBundle, build_citation_bundle
 from rag.citation_config import CitationConfig
+from rag.expanding_retriever import ExpandingRetriever
+from rag.query_expander import ExpansionResult
 from rag.query_rewriter import RewriteResult
 from rag.rewriting_retriever import RewritingRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
@@ -32,6 +34,7 @@ Retriever = (
     | HybridRetriever
     | RerankingRetriever
     | RewritingRetriever
+    | ExpandingRetriever
 )
 
 
@@ -182,14 +185,29 @@ class RAGContextService:
             return CitationBundle(citations=[], query="")
 
         results = self.index.search(query, top_k=k)
-        rewrite: RewriteResult | None = None
-        retriever = self.index.retriever
-        if isinstance(retriever, RewritingRetriever):
-            rewrite = retriever.last_rewrite
+        rewrite = _find_last_rewrite(self.index.retriever)
+        expansion = _find_last_expansion(self.index.retriever)
 
         return build_citation_bundle(
             query,
             results,
             config=cfg,
             rewrite=rewrite,
+            expansion=expansion,
         )
+
+
+def _find_last_rewrite(retriever: Retriever) -> RewriteResult | None:
+    if isinstance(retriever, ExpandingRetriever):
+        if retriever.last_inner_rewrite is not None:
+            return retriever.last_inner_rewrite
+        return _find_last_rewrite(retriever.inner)
+    if isinstance(retriever, RewritingRetriever):
+        return retriever.last_rewrite
+    return None
+
+
+def _find_last_expansion(retriever: Retriever) -> ExpansionResult | None:
+    if isinstance(retriever, ExpandingRetriever):
+        return retriever.last_expansion
+    return None

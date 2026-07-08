@@ -16,6 +16,7 @@ from rag.hybrid_retriever import HybridRetriever
 from rag.knowledge_store import KnowledgeStore
 from rag.rerank_config import RerankConfig
 from rag.reranker import MockCrossEncoderReranker, score_pair
+from rag.expanding_retriever import ExpandingRetriever
 from rag.reranking_retriever import RerankingRetriever
 from rag.rewriting_retriever import RewritingRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
@@ -32,6 +33,8 @@ def _rerank_store(tmp_path: Path) -> KnowledgeStore:
 def _get_reranking(store: KnowledgeStore) -> RerankingRetriever:
     rag = store.as_rag_service()
     retriever = rag.index.retriever
+    if isinstance(retriever, ExpandingRetriever):
+        retriever = retriever.inner
     if isinstance(retriever, RewritingRetriever):
         retriever = retriever.inner
     assert isinstance(retriever, RerankingRetriever)

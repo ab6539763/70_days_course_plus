@@ -11,6 +11,7 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from rag.expanding_retriever import ExpandingRetriever
 from rag.hybrid_retriever import HybridRetriever
 from rag.knowledge_store import KnowledgeStore
 from rag.query_rewriter import RuleBasedQueryRewriter
@@ -30,6 +31,8 @@ def _store(tmp_path: Path) -> KnowledgeStore:
 def _get_rewriting(store: KnowledgeStore) -> RewritingRetriever:
     rag = store.as_rag_service()
     retriever = rag.index.retriever
+    if isinstance(retriever, ExpandingRetriever):
+        retriever = retriever.inner
     assert isinstance(retriever, RewritingRetriever)
     return retriever
 

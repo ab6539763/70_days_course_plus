@@ -22,6 +22,8 @@ from rag.context import DocumentIndex, RAGContextService
 from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
 from rag.citation_config import CitationConfig
+from rag.expanding_retriever import ExpandingRetriever
+from rag.expansion_config import ExpansionConfig
 from rag.hybrid_retriever import HybridRetriever
 from rag.rerank_config import RerankConfig
 from rag.reranker import MockCrossEncoderReranker
@@ -35,7 +37,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.34.0"
+PLATFORM_VERSION = "0.35.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -93,6 +95,7 @@ class KnowledgeStore:
     rerank_config: RerankConfig = field(default_factory=RerankConfig)
     rewrite_config: RewriteConfig = field(default_factory=RewriteConfig)
     citation_config: CitationConfig = field(default_factory=CitationConfig)
+    expansion_config: ExpansionConfig = field(default_factory=ExpansionConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -157,11 +160,25 @@ class KnowledgeStore:
         self.citation_config = CitationConfig.from_dict(config.to_dict())
         return self.citation_config
 
+    def get_expansion_config(self) -> ExpansionConfig:
+        return ExpansionConfig.from_dict(self.expansion_config.to_dict())
+
+    def set_expansion_config(self, config: ExpansionConfig) -> ExpansionConfig:
+        config.validate()
+        self.expansion_config = ExpansionConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.expansion_config
+
     def fetch_citations(self, query: str) -> dict[str, Any]:
         """按当前 citation_config 检索并返回引用包 dict"""
         cfg = self.get_citation_config()
         if not cfg.enabled:
-            return {"query": query.strip(), "citations": [], "rewrite": None}
+            return {
+                "query": query.strip(),
+                "citations": [],
+                "rewrite": None,
+                "expansion": None,
+            }
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
         return bundle.to_dict()
@@ -327,6 +344,7 @@ class KnowledgeStore:
             "rerank_config": self.rerank_config.to_dict(),
             "rewrite_config": self.rewrite_config.to_dict(),
             "citation_config": self.citation_config.to_dict(),
+            "expansion_config": self.expansion_config.to_dict(),
         }
         save_json(target, payload)
         return target
@@ -358,6 +376,8 @@ class KnowledgeStore:
             store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
         if raw.get("citation_config"):
             store.citation_config = CitationConfig.from_dict(raw["citation_config"])
+        if raw.get("expansion_config"):
+            store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -419,6 +439,7 @@ class KnowledgeStore:
             "rerank_config": self.rerank_config.to_dict(),
             "rewrite_config": self.rewrite_config.to_dict(),
             "citation_config": self.citation_config.to_dict(),
+            "expansion_config": self.expansion_config.to_dict(),
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,
@@ -585,7 +606,9 @@ class KnowledgeStore:
             config=rerank_cfg,
         )
         rewrite_cfg = self.get_rewrite_config()
-        retriever = RewritingRetriever(reranking, config=rewrite_cfg)
+        rewriting = RewritingRetriever(reranking, config=rewrite_cfg)
+        expansion_cfg = self.get_expansion_config()
+        retriever = ExpandingRetriever(rewriting, config=expansion_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 

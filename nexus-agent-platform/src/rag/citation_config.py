@@ -18,6 +18,7 @@ class CitationConfig:
     max_citations: int = 3
     preview_max_chars: int = 120
     include_rewrite_meta: bool = True
+    include_expansion_meta: bool = True
 
     def validate(self) -> None:
         if self.max_citations < 1:
@@ -35,6 +36,7 @@ class CitationConfig:
             "max_citations": self.max_citations,
             "preview_max_chars": self.preview_max_chars,
             "include_rewrite_meta": self.include_rewrite_meta,
+            "include_expansion_meta": self.include_expansion_meta,
         }
 
     @classmethod
@@ -46,4 +48,5 @@ class CitationConfig:
             max_citations=int(data.get("max_citations", 3)),
             preview_max_chars=int(data.get("preview_max_chars", 120)),
             include_rewrite_meta=bool(data.get("include_rewrite_meta", True)),
+            include_expansion_meta=bool(data.get("include_expansion_meta", True)),
         )

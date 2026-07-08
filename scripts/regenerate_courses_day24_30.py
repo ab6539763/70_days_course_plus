@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate course/day24–day34 from gold-standard modules."""
+"""Regenerate course/day24–day35 from gold-standard modules."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from course_builder import write_course  # noqa: E402
 
-DAYS = range(24, 35)
+DAYS = range(24, 36)
 
 
 def _load(day: int):

@@ -29,6 +29,7 @@ class ChatResponse(BaseModel):
     session_id: str
     citations: list[dict] = Field(default_factory=list)
     rewrite: dict | None = None
+    expansion: dict | None = None
 
 
 class HealthResponse(BaseModel):
@@ -79,6 +80,7 @@ class KnowledgeStatusResponse(BaseModel):
     rerank_config: dict = Field(default_factory=dict)
     rewrite_config: dict = Field(default_factory=dict)
     citation_config: dict = Field(default_factory=dict)
+    expansion_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -149,6 +151,7 @@ class CitationConfigRequest(BaseModel):
     max_citations: int = Field(3, ge=1, le=10)
     preview_max_chars: int = Field(120, ge=20, le=500)
     include_rewrite_meta: bool = True
+    include_expansion_meta: bool = True
 
 
 class CitationConfigResponse(BaseModel):
@@ -156,6 +159,7 @@ class CitationConfigResponse(BaseModel):
     max_citations: int
     preview_max_chars: int
     include_rewrite_meta: bool
+    include_expansion_meta: bool
 
 
 class CitationPreviewRequest(BaseModel):
@@ -168,6 +172,39 @@ class CitationPreviewResponse(BaseModel):
     query: str
     citations: list[dict]
     rewrite: dict | None = None
+    expansion: dict | None = None
+
+
+class ExpansionConfigRequest(BaseModel):
+    """PUT /api/knowledge/expansion-config"""
+
+    enabled: bool = True
+    mode: str = Field("templates", pattern="^(templates|hyde_mock)$")
+    max_queries: int = Field(4, ge=1, le=8)
+    include_original: bool = True
+    per_query_top_k: int = Field(5, ge=1, le=20)
+
+
+class ExpansionConfigResponse(BaseModel):
+    enabled: bool
+    mode: str
+    max_queries: int
+    include_original: bool
+    per_query_top_k: int
+
+
+class ExpansionPreviewRequest(BaseModel):
+    """POST /api/knowledge/expansion-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+
+
+class ExpansionPreviewResponse(BaseModel):
+    original: str
+    queries: list[str]
+    changed: bool
+    mode: str
+    rule_id: str | None = None
 
 
 class RebuildRequest(BaseModel):

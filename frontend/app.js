@@ -95,6 +95,14 @@
       bubble.appendChild(rw);
     }
 
+    if (extras && extras.expansion && extras.expansion.changed) {
+      const ex = document.createElement("div");
+      ex.className = "msg__expansion";
+      const qs = (extras.expansion.queries || []).join(" | ");
+      ex.textContent = `扩展 query (${extras.expansion.mode}): ${qs}`;
+      bubble.appendChild(ex);
+    }
+
     if (meta) {
       const metaEl = document.createElement("span");
       metaEl.className = "msg__meta";
@@ -144,6 +152,7 @@
       appendMessage("bot", parsed, result.meta, {
         citations: result.citations,
         rewrite: result.rewrite,
+        expansion: result.expansion,
       });
     } catch (err) {
       appendMessage("bot", `错误：${err.message}`, "请求失败");
