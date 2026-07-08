@@ -94,9 +94,8 @@ if str(_SRC) not in sys.path:
 
 from day31.constants import HYBRID_QUERIES
 from rag.hybrid_retriever import HybridRetriever
-from rag.reranking_retriever import RerankingRetriever
-from rag.rewriting_retriever import RewritingRetriever
 from rag.knowledge_store import KnowledgeStore
+from rag.retriever_stack import find_hybrid
 from rag.retrieval_config import (
     MODE_HYBRID,
     MODE_KEYWORD,
@@ -109,13 +108,7 @@ def _top_source(store: KnowledgeStore, query: str, mode: str) -> str:
     cfg = RetrievalConfig(mode=mode)
     store.set_retrieval_config(cfg)
     rag = store.as_rag_service()
-    retriever = rag.index.retriever
-    if isinstance(retriever, RewritingRetriever):
-        retriever = retriever.inner
-    if isinstance(retriever, RerankingRetriever):
-        retriever = retriever.inner
-    if not isinstance(retriever, HybridRetriever):
-        raise RuntimeError("expected HybridRetriever")
+    retriever = find_hybrid(rag.index.retriever)
     hits = retriever.search(query, top_k=1)
     if not hits:
         return "—"

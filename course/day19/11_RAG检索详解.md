@@ -68,10 +68,10 @@ elif len(buffer) + 1 + len(para) <= chunk_size:
 
 ```mermaid
 flowchart LR
-    A[block > chunk_size] --> B[start=0]
+    A[block > chunk_size] --> B["start=0"]
     B --> C[piece = block start:start+size]
-    C --> D[start += step]
-    D --> E{start < len?}
+    C --> D["start += step"]
+    D --> E{"start < len?"}
     E -->|是| C
     E -->|否| F[完成]
 ```

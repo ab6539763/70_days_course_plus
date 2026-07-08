@@ -23,7 +23,7 @@
 flowchart TB
     FE[frontend] --> API[FastAPI]
     API --> ORCH[Orchestrator]
-    ORCH --> RAG[RAG/FAQ/LLM]
+    ORCH --> RAG["RAG/FAQ/LLM"]
 ```
 
 ## Day 24 在收官中的位置

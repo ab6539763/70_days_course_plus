@@ -16,15 +16,13 @@ if str(_SRC) not in sys.path:
 from day33.constants import REWRITE_QUERIES
 from rag.knowledge_store import KnowledgeStore
 from rag.rewrite_config import RewriteConfig
-from rag.rewriting_retriever import RewritingRetriever
+from rag.retriever_stack import find_rewriting
 
 
 def _preview(store: KnowledgeStore, query: str, *, enabled: bool) -> str:
     store.set_rewrite_config(RewriteConfig(enabled=enabled))
     rag = store.as_rag_service()
-    retriever = rag.index.retriever
-    if not isinstance(retriever, RewritingRetriever):
-        raise RuntimeError("expected RewritingRetriever")
+    retriever = find_rewriting(rag.index.retriever)
     retriever.search(query, top_k=1)
     rw = retriever.last_rewrite
     if not rw:

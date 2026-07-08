@@ -61,7 +61,7 @@ return cls(
 graph LR
     HTTP[HTTP JSON] --> Parse[Day5 parse_chat_completion]
     Parse --> CCR[ChatCompletionResult]
-    CCR --> Complete[Day12/14 complete]
+    CCR --> Complete["Day12/14 complete"]
     Complete --> From[Day15 TokenUsage.from_result]
     From --> Cost[estimate_cost]
 ```

@@ -94,17 +94,13 @@ from day32.constants import RERANK_QUERIES
 from rag.knowledge_store import KnowledgeStore
 from rag.rerank_config import RerankConfig
 from rag.reranking_retriever import RerankingRetriever
-from rag.rewriting_retriever import RewritingRetriever
+from rag.retriever_stack import find_reranking
 
 
 def _top_hit(store: KnowledgeStore, query: str, *, enabled: bool) -> str:
     store.set_rerank_config(RerankConfig(enabled=enabled, candidate_pool=20))
     rag = store.as_rag_service()
-    retriever = rag.index.retriever
-    if not isinstance(retriever, RewritingRetriever):
-        raise RuntimeError("expected RewritingRetriever")
-    if not isinstance(retriever.inner, RerankingRetriever):
-        raise RuntimeError("expected RerankingRetriever inner")
+    retriever = find_reranking(rag.index.retriever)
     hits = retriever.search(query, top_k=1)
     if not hits:
         return "—"

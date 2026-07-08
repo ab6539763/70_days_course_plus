@@ -43,10 +43,10 @@ gantt
 
 ```mermaid
 flowchart TB
-    T[Token/流式] --> P[Prompt/意图]
+    T["Token/流式"] --> P["Prompt/意图"]
     P --> R[RAG 关键词]
-    R --> E[Embedding/FAQ]
-    E --> O[工具/编排 周测]
+    R --> E["Embedding/FAQ"]
+    E --> O["工具/编排 周测"]
     O --> W[Day22-24 Web]
 ```
 

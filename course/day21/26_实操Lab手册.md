@@ -155,7 +155,7 @@ python3 -m pytest tests/day21/test_sprint3.py -v -k "orchestrator"
 flowchart LR
     L0[自检] --> L1[周测]
     L1 --> L2[工具]
-    L2 --> L3[/tool]
+    L2 --> L3["/tool"]
     L3 --> L4[编排器]
     L4 --> L5[测试]
 ```

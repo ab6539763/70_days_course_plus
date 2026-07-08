@@ -92,7 +92,7 @@ Chat Completions 本质是 **消息列表**：
 ```mermaid
 flowchart TD
     Dev[研发: library.py 核心模板]
-    Ops[运营: templates/*.txt]
+    Ops["运营: templates/*.txt"]
     Dev --> Reg[PromptRegistry]
     Ops --> Reg
     Reg --> Review[Code Review]

@@ -103,7 +103,7 @@ graph TB
         APP[NexusAgent]
     end
     subgraph 配置
-        ENV[.env / K8s Secret]
+        ENV[".env / K8s Secret"]
     end
     subgraph 传输
         MOCK[Mock JSON]

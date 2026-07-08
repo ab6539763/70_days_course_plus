@@ -207,9 +207,9 @@ pytest tests/day20/test_embedding.py -v --tb=short
 
 ```mermaid
 flowchart TD
-    Fail[Lab 失败] --> Q1{import rag?}
-    Q1 -->|否| PY[export PYTHONPATH=src]
-    Q1 -->|是| Q2{fit 错误?}
+    Fail[Lab 失败] --> Q1{"import rag?"}
+    Q1 -->|否| PY["export PYTHONPATH=src"]
+    Q1 -->|是| Q2{"fit 错误?"}
     Q2 -->|是| Fit[先 fit_corpus 或 index]
     Q2 -->|否| Doc[查 10_FAQ]
 ```

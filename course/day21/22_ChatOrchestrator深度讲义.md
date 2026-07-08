@@ -143,7 +143,7 @@ sequenceDiagram
     participant API as FastAPI
     participant O as ChatOrchestrator
 
-    FE->>API: POST /chat
+    FE->> "API: POST /chat"
     API->>O: handle_message
     O-->>API: str
     API-->>FE: JSON message

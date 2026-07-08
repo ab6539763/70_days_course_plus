@@ -79,7 +79,7 @@
 ```mermaid
 flowchart LR
     U[用户问] --> M[SimilarQuestionMatcher]
-    M --> C{category=compliance?}
+    M --> C{"category=compliance?"}
     C -->|是| A[标准合规答案]
     C -->|否| R[可走 RAG 或 LLM]
 ```
@@ -119,7 +119,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Q[用户问题] --> FAQ{FAQ sim >= 0.5?}
+    Q[用户问题] --> FAQ{"FAQ sim >= 0.5?"}
     FAQ -->|是| Direct[直接答案]
     FAQ -->|否| RAG[RAG + LLM]
     RAG --> Tool[Day21 工具调用可选]

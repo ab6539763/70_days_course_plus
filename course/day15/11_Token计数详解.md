@@ -90,7 +90,7 @@ class TokenUsage:
 
 ```mermaid
 flowchart LR
-    T[文本/消息] --> E[estimate_*]
+    T["文本/消息"] --> E["estimate_*"]
     R[ChatCompletionResult] --> U[TokenUsage.from_result]
     E --> U
     U --> C[estimate_cost]

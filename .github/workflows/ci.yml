@@ -28,8 +28,11 @@ jobs:
           pip install -r nexus-agent-platform/requirements-day01.txt
           pip install -r nexus-agent-platform/requirements-api.txt
 
-      - name: Course material quality (day24-36)
+      - name: Course material quality (day24-37)
         run: python3 scripts/regenerate_courses_day24_30.py
+
+      - name: Course audit (day01-37)
+        run: python3 scripts/audit_all_courses.py
 
       - name: Run hello.py
         working-directory: nexus-agent-platform

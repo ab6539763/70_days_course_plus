@@ -102,9 +102,9 @@ sequenceDiagram
     participant M as ChatMessage
     participant L as LLMClient
 
-    T->>M: to_system_message(company=...)
+    T->> "M: to_system_message(company=...)"
     Note over M: role=system
-    M->>L: messages[0]
+    M->> "L: messages[0]"
     L->>L: + user message
 ```
 

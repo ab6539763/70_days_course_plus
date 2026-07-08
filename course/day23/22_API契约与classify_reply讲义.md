@@ -10,7 +10,7 @@
 ```mermaid
 graph TB
     L1[字符串 reply — orchestrator 输出]
-    L2[结构化 kind/meta — API 衍生]
+    L2["结构化 kind/meta — API 衍生"]
     L3[DOM 标签 — app.js 渲染]
     L1 --> L2
     L2 --> L3

@@ -173,7 +173,7 @@ flowchart TD
     L0[Lab0 pytest] --> L1[Lab1 prompt_demos]
     L1 --> L2[Lab2 registry]
     L2 --> L3[Lab3 rag+doc_reader]
-    L3 --> L4[Lab4 /template]
+    L3 --> L4["Lab4 /template"]
     L4 --> L5[Lab5 Day2 对照]
     L5 --> L6[Lab6 错题]
 ```

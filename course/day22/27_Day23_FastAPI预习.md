@@ -13,7 +13,7 @@ Day 22 静态页用 `mock.js` 本地模拟。真实产品必须调用 Python 编
 
 ```mermaid
 flowchart LR
-    Browser[frontend app.js] -->|POST /api/chat| API[src/api/chat.py]
+    Browser[frontend app.js] -->|POST /api/chat| API["src/api/chat.py"]
     API --> Orch[ChatOrchestrator]
     Orch --> FAQ[FAQ直答]
     Orch --> LLM[chat_turn]
@@ -155,10 +155,10 @@ sequenceDiagram
     participant O as ChatOrchestrator
 
     U->>F: 输入消息
-    F->>A: POST {message}
+    F->> "A: POST {message}"
     A->>O: handle_message
     O-->>A: reply string
-    A-->>F: JSON {reply, meta, kind}
+    A-->> "F: JSON {reply, meta, kind}"
     F-->>U: 渲染气泡
 ```
 

@@ -19,7 +19,7 @@ flowchart TB
         CA[ChatAssistant]
     end
     subgraph rag_svc[RAG 服务 进程内]
-        RCS[RAGContextService use_embedding=True]
+        RCS["RAGContextService use_embedding=True"]
         ER[EmbeddingRetriever]
     end
     subgraph faq_svc[FAQ 服务 进程内]

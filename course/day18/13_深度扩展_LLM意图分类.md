@@ -76,7 +76,7 @@ rag_qa, doc_summary, compliance_review, product_faq, general
 ```mermaid
 flowchart TD
     Q[用户输入] --> R[RuleBasedIntentClassifier]
-    R --> C{confidence >= 0.8?}
+    R --> C{"confidence >= 0.8?"}
     C -->|是| OK[采用规则结果]
     C -->|否| L[LLMIntentClassifier]
     L --> OK2[采用 LLM 结果]

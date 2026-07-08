@@ -105,7 +105,7 @@ graph TB
     end
     subgraph core_utils
         CORE[core]
-        UT[utils/text_utils]
+        UT["utils/text_utils"]
     end
 
     DEMO11 --> DR

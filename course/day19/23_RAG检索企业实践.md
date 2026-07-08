@@ -80,7 +80,7 @@ flowchart TD
     U[用户输入] --> R[IntentRouter]
     R -->|rag_qa| G[RAG retrieve_context]
     R -->|compliance_review| H[无 RAG 注入 text]
-    R -->|doc_summary| I[document=user_text]
+    R -->|doc_summary| I["document=user_text"]
     G --> P[apply_template]
     H --> P
     I --> P

@@ -5,7 +5,7 @@ Day 25 可写 txt → Day 26 多格式解析 + 章节分块。
 
 ```mermaid
 graph LR
-    D25[txt store] --> D26[md/pdf parse]
+    D25[txt store] --> D26["md/pdf parse"]
     D26 --> D27[evaluate]
 ```
 

@@ -78,8 +78,8 @@ service = RAGContextService.from_directory(
 
 ```mermaid
 flowchart LR
-    A[/retrieve 抽测 10 query/] --> B[检查 score 与 source]
-    B --> C[/route 确认 rag_qa/]
+    A["/retrieve 抽测 10 query/"] --> B[检查 score 与 source]
+    B --> C["/route 确认 rag_qa/"]
     C --> D[staging chat_turn 5 轮]
 ```
 
