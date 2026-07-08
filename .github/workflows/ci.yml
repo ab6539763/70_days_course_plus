@@ -1,0 +1,299 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'cursor/**']
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          pip install -r nexus-agent-platform/requirements-day01.txt
+          pip install -r nexus-agent-platform/requirements-api.txt
+
+      - name: Course material quality (day24-32)
+        run: python3 scripts/regenerate_courses_day24_30.py
+
+      - name: Run hello.py
+        working-directory: nexus-agent-platform
+        run: python src/day01/hello.py
+
+      - name: Run text_cleaner sample
+        working-directory: nexus-agent-platform
+        run: python src/day02/text_cleaner.py --input src/day02/sample_docs/raw_notice.txt --report
+
+      - name: Run batch clean via platform_cli
+        working-directory: nexus-agent-platform
+        run: |
+          python -c "
+          import importlib.util
+          from pathlib import Path
+          p = Path('src/day03/platform_cli.py')
+          spec = importlib.util.spec_from_file_location('pc', p)
+          m = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(m)
+          m.handle_batch_clean()
+          "
+
+      - name: Run list demos
+        working-directory: nexus-agent-platform
+        run: python src/day04/list_demos.py
+
+      - name: Run API response parser
+        working-directory: nexus-agent-platform
+        run: python src/day05/api_response_parser.py --input src/day05/sample_data/chat_completion.json
+
+      - name: Run function demos
+        working-directory: nexus-agent-platform
+        run: python src/day06/function_demos.py
+
+      - name: Run week1 quiz structure check
+        working-directory: nexus-agent-platform
+        run: python -c "import importlib.util; from pathlib import Path; p=Path('src/day07/week1_quiz.py'); s=importlib.util.spec_from_file_location('q',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); assert len(m.QUESTIONS)==10"
+
+      - name: Run OOP demos
+        working-directory: nexus-agent-platform
+        run: python src/day08/oop_demos.py
+
+      - name: Run inheritance demos
+        working-directory: nexus-agent-platform
+        run: python src/day09/inheritance_demos.py
+
+      - name: Run structure audit
+        working-directory: nexus-agent-platform
+        run: python src/day10/structure_audit.py
+
+      - name: Run doc reader batch clean
+        working-directory: nexus-agent-platform
+        run: python src/day11/doc_reader_demo.py
+
+      - name: Run LLM client demo (mock)
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day12/llm_client_demo.py
+
+      - name: Run resilient LLM client demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day13/resilient_client_demo.py
+
+      - name: Run CLI assistant demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day14/cli_assistant_demo.py
+
+      - name: Run token counter demo
+        working-directory: nexus-agent-platform
+        run: python src/day15/token_counter_demo.py
+
+      - name: Run assistant token demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day15/assistant_token_demo.py
+
+      - name: Run streaming demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day16/streaming_demo.py
+
+      - name: Run prompt demos
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day17/prompt_demos.py
+          python src/day17/registry_demos.py
+
+      - name: Run RAG prompt demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day17/rag_prompt_demo.py
+
+      - name: Run intent classification demos
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day18/intent_demos.py
+          python src/day18/router_demos.py
+
+      - name: Run routed assistant demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day18/routed_assistant_demo.py
+
+      - name: Run RAG chunk and retriever demos
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day19/chunk_demos.py
+          python src/day19/retriever_demos.py
+          python src/day19/rag_context_demo.py
+
+      - name: Run routed RAG demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day19/routed_rag_demo.py
+
+      - name: Run embedding and vector search demos
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day20/embedding_demos.py
+          python src/day20/vector_search_demos.py
+          python src/day20/faq_matcher_demo.py
+
+      - name: Run routed embedding demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day20/routed_embedding_demo.py
+
+      - name: Run Sprint 3 quiz scripted
+        working-directory: nexus-agent-platform
+        run: python src/day21/sprint3_quiz.py --scripted
+
+      - name: Run Sprint 3 review and tool demos
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day21/sprint3_review.py
+          python src/day21/tool_demos.py
+
+      - name: Run integrated assistant demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day21/integrated_assistant_demo.py
+
+      - name: Run frontend structure audit
+        working-directory: nexus-agent-platform
+        run: |
+          python src/day22/frontend_audit.py
+          python src/day22/html_demos.py
+
+      - name: Run mock bridge demo
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: python src/day22/mock_bridge_demo.py
+
+      - name: Run API health and chat demos
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day23/api_health_demo.py
+          python src/day23/api_chat_demo.py
+
+      - name: Day 24 Sprint 3 integration
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day24/sprint3_launch.py
+          python src/day24/e2e_smoke.py
+          python src/day24/sprint3_demo.py
+          python src/day24/sprint3_review.py
+
+      - name: Day 25 Knowledge base
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day25/ingestion_demo.py
+          python src/day25/knowledge_api_demo.py
+          python src/day25/phase3_review.py
+          PYTHONPATH=src pytest tests/day25/ -q
+
+      - name: Day 26 Document parsing
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day26/parse_demo.py
+          python src/day26/chunk_compare_demo.py
+          python src/day26/parse_api_demo.py
+          PYTHONPATH=src pytest tests/day26/ -q
+
+      - name: Day 27 Chunk tuning
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day27/ab_experiment_demo.py
+          python src/day27/chunk_tune_api_demo.py
+          python src/day27/phase3_tune_review.py
+          PYTHONPATH=src pytest tests/day27/ -q
+
+      - name: Day 28 Knowledge rebuild
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day28/rebuild_demo.py
+          python src/day28/rebuild_api_demo.py
+          python src/day28/phase3_rebuild_review.py
+          PYTHONPATH=src pytest tests/day28/ -q
+
+      - name: Day 29 Chroma vector store
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day29/chroma_demo.py
+          python src/day29/chroma_api_demo.py
+          python src/day29/phase3_chroma_review.py
+          PYTHONPATH=src pytest tests/day29/ -q
+
+      - name: Day 30 Incremental indexing
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day30/incremental_demo.py
+          python src/day30/incremental_api_demo.py
+          python src/day30/phase3_incremental_review.py
+          PYTHONPATH=src pytest tests/day30/ -q
+
+      - name: Day 31 Hybrid retrieval
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day31/hybrid_demo.py
+          python src/day31/hybrid_api_demo.py
+          python src/day31/phase3_hybrid_review.py
+          PYTHONPATH=src pytest tests/day31/ -q
+
+      - name: Day 32 Rerank
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day32/rerank_demo.py
+          python src/day32/rerank_api_demo.py
+          python src/day32/phase3_rerank_review.py
+          PYTHONPATH=src pytest tests/day32/ -q
+
+      - name: Run tests
+        working-directory: nexus-agent-platform
+        run: pytest tests/ -v
