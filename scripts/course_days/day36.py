@@ -282,7 +282,7 @@ journey
 
 
 def _file01() -> str:
-    return """# Day 37 企业背景与今日任务
+    return """# Day 36 企业背景与今日任务
 
 **需求**：ZL-NA-REQ-035 | **版本**：v0.36.0
 
@@ -646,7 +646,7 @@ ES `rescore` window_size + learning_to_rank；本实现用 Python 层 `RAGContex
 
 
 def _architecture() -> str:
-    return f"""# Day 37 架构设计 — 自适应路由层
+    return f"""# Day 36 架构设计 — 自适应路由层
 
 ## 1. 自适应路由分层
 
@@ -751,72 +751,13 @@ Day33 rewrite 作用于检索；Day34 在检索后格式化引用并可选展示
 
 
 def _file04() -> str:
-    return f"""# Day 37 流程图与示意图
+    from course_diagrams import file04
 
-## rewrite search 时序
-
-```mermaid
-sequenceDiagram
-    participant U as Client
-    participant R as RAGContextService
-    participant H as HybridRetriever
-    participant C as MockCrossEncoder
-    U->>R: search(q, top_k=3)
-    R->>R: pool = max(20, 3)
-    R->>H: search(q, top_k=pool)
-    H-->>R: 20 candidates
-    R->>C: rewrite(q, candidates, top_k=3)
-    loop each candidate
-        C->>C: rewrite(q, chunk.text)
-    end
-    C-->>R: sorted top 3
-    R-->>U: RetrievalResult list
-```
-
-## rewrite 数据流
-
-```mermaid
-sequenceDiagram
-    participant S as rewrite
-    S->>S: q in t ? return 1.0
-    S->>S: token coverage
-    S->>S: bigram_overlap bonus
-    S->>S: length_penalty
-    S-->>S: clamp 0..1
-```
-
-## ASCII：三阶段漏斗
-
-```
-query ──► HybridRetriever ──► top-20 ──► CrossEncoder ──► top-3 ──► LLM
-              (宽召回)                      (尖改写)
-```
-
----
-
-## API 配置流（ASCII）
-
-```
-GET  /route-config  ◄── store.get_citation_config()
-PUT  /route-config  ──► validate ──► set ──► save()
-POST /api/chat       ──► as_rag_service() ──► RAGContextService
-```
-
----
-
-## 错误路径
-
-| 操作 | 预期 |
-|------|------|
-| PUT pool=0 | 422 |
-| PUT model=bert | 422 |
-| search("") | [] |
-| enabled=false | 等同 hybrid top_k |
-"""
+    return file04(36)
 
 
 def _file05() -> str:
-    return f"""# Day 37 课堂笔记（上午）
+    return f"""# Day 36 课堂笔记（上午）
 
 **09:00–09:40** 第一节：口语命中 瓶颈与自适应路由  
 **09:40–10:30** 第二节：RouteConfig  
@@ -879,7 +820,7 @@ def _file05() -> str:
 
 
 def _file06() -> str:
-    return f"""# Day 37 课堂笔记（下午）
+    return f"""# Day 36 课堂笔记（下午）
 
 **14:00–14:30** 第五节：route_demo 现场  
 **14:30–15:20** 第六节：MockCrossEncoder.rewrite 源码  
@@ -938,7 +879,7 @@ pytest tests/day36/ -v
 
 
 def _file07() -> str:
-    return f"""# Day 37 晚自习
+    return f"""# Day 36 晚自习
 
 ## 讨论（19:00–19:45）
 
@@ -994,7 +935,7 @@ return sort(scored)[:top_k]
 
 
 def _file08() -> str:
-    return f"""# Day 37 作业
+    return f"""# Day 36 作业
 
 ## A（35 分）：开关改写对比脚本
 
@@ -1086,7 +1027,7 @@ for item in ROUTE_QUERIES:
 
 
 def _file09() -> str:
-    return f"""# Day 37 作业答案
+    return f"""# Day 36 作业答案
 
 ## A 参考答案要点
 
@@ -1163,7 +1104,7 @@ curl.exe -s http://127.0.0.1:8000/api/knowledge/route-config
 
 
 def _file10() -> str:
-    return """# Day 37 Expansion 验收清单
+    return """# Day 36 Route 验收清单
 
 - [ ] `Citation` + `RuleBasedQueryRouter.route`  
 - [ ] `RoutingRetriever.search` + rewrite 元数据  
@@ -1332,7 +1273,7 @@ flowchart LR
 
 
 def _file12() -> str:
-    return f"""# Day 37 课堂练习册
+    return f"""# Day 36 课堂练习册
 
 ## 练习 1：概念匹配（10 min）
 
@@ -1524,7 +1465,7 @@ for q in eval_queries:
 
 
 def _file15() -> str:
-    return f"""# Day 37 授课实录
+    return f"""# Day 36 授课实录
 
 **09:05** 林晓展示 口语命中 仅 54% 的质检报表，对比 top-3 78%。  
 **09:22** 陈默画漏斗：hybrid top-20 → cross top-3。  
@@ -1581,7 +1522,7 @@ def _file15() -> str:
 
 
 def _file16() -> str:
-    return f"""# Day 37 复习卡片（20 张）
+    return f"""# Day 36 复习卡片（20 张）
 
 **Q1** 默认 rewrite 开关？ → enabled=True  
 **Q2** 默认 max_citations？ → 20  
@@ -1678,7 +1619,7 @@ store.save()
 
 
 def _file18() -> str:
-    return """# Day 37 与 Day 33 能力对照表
+    return """# Day 36 与 Day 33 能力对照表
 
 | 维度 | Day 33 查询改写 | Day 37 自适应路由 |
 |------|-----------------|-----------------|
@@ -1778,7 +1719,7 @@ Reimers & Gurevych 指出 bi-encoder 适合召回，cross-encoder 适合 rewrite
 
 
 def _file20() -> str:
-    return f"""# Day 37 完整代码走查
+    return f"""# Day 36 完整代码走查
 
 按**调用顺序**阅读，预计 90 分钟。精读全文见 `22_citation_builder精读.md`。
 
@@ -1901,7 +1842,7 @@ POST /api/chat
 
 
 def _file21() -> str:
-    return f"""# Day 37 课堂知识竞赛（15 题）
+    return f"""# Day 36 课堂知识竞赛（15 题）
 
 1. 改写器类名？ → `RuleBasedQueryRouter.route`  
 2. 管线类名？ → `RAGContextService`  
@@ -1960,7 +1901,7 @@ def _file21() -> str:
 
 
 def _file22() -> str:
-    return f"""# Day 37 精读：citation_builder 与自适应路由管线
+    return f"""# Day 36 精读：query_router 与自适应路由管线
 
 **需求**：{REQ} | **学时**：120 min
 
@@ -2486,7 +2427,7 @@ def _file24() -> str:
 | 33 | Query Rewrite | 0.33.x |
 | **34** | **Citation** | **{VER}** |
 
-## Day 37 交付物
+## Day 36 交付物
 
 - QueryRouter + RouteConfig  
 - route-config / citation-preview API  
@@ -2607,7 +2548,7 @@ pytest tests/day36/test_route_api.py -v
 
 
 def _file26() -> str:
-    return f"""# Day 37 实操 Lab 手册（Lab 0–7）
+    return f"""# Day 36 实操 Lab 手册（Lab 0–7）
 
 ## 前置
 

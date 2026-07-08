@@ -662,7 +662,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.36.0"
+    assert client.get("/api/health").json()["version"] == "0.37.0"
 
 
 def test_get_retrieval_config_default_hybrid(client):
@@ -688,7 +688,7 @@ def test_put_retrieval_config_rrf(client):
 
 def test_status_includes_retrieval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.36.0"
+    assert status["platform_version"] == "0.37.0"
     assert status["retrieval_config"]["mode"] == "hybrid"
 
 
@@ -808,6 +808,27 @@ def get_retrieval_config(self) -> RetrievalConfig:
         self.route_config = RouteConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.route_config
+
+    def get_validation_config(self) -> ValidationConfig:
+        return ValidationConfig.from_dict(self.validation_config.to_dict())
+
+    def set_validation_config(self, config: ValidationConfig) -> ValidationConfig:
+        config.validate()
+        self.validation_config = ValidationConfig.from_dict(config.to_dict())
+        return self.validation_config
+
+    def validate_answer(
+        self,
+        query: str,
+        reply: str,
+        citations: list[dict[str, Any]],
+    ) -> ValidationResult | None:
+        """按当前 validation_config 校验 reply 与 citations 一致性"""
+        cfg = self.get_validation_config()
+        if not cfg.enabled:
+            return None
+        validator = RuleBasedAnswerValidator(config=cfg)
+        return validator.validate(query, reply, citations)
 
     def fetch_citations(self, query: str) -> dict[str, Any]:
         """按当前 citation_config 检索并返回引用包 dict"""
@@ -1151,7 +1172,7 @@ function HYBRID_SEARCH(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037
 """
 
 from __future__ import annotations
@@ -1187,6 +1208,10 @@ from api.schemas import (
     RouteConfigResponse,
     RoutePreviewRequest,
     RoutePreviewResponse,
+    ValidationConfigRequest,
+    ValidationConfigResponse,
+    ValidationPreviewRequest,
+    ValidationPreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -1202,6 +1227,7 @@ from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.query_router import RuleBasedQueryRouter
 from rag.route_config import RouteConfig
+from rag.validation_config import ValidationConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
@@ -1364,13 +1390,7 @@ def update_route_config(body: RouteConfigRequest) -> RouteConfigResponse:
         cfg = RouteConfig.from_dict(body.model_dump())
         cfg.validate()
         store.set_route_config(cfg)
-        store.save()
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return RouteConfigResponse(**cfg.to_dict())
-
-
-@router.post("/route-previe
+        stor
 ```
 
 
@@ -1458,7 +1478,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.36.0"
+    assert client.get("/api/health").json()["version"] == "0.37.0"
 
 
 def test_get_retrieval_config_default_hybrid(client):
@@ -1484,7 +1504,7 @@ def test_put_retrieval_config_rrf(client):
 
 def test_status_includes_retrieval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.36.0"
+    assert status["platform_version"] == "0.37.0"
     assert status["retrieval_config"]["mode"] == "hybrid"
 
 

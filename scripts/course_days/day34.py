@@ -747,68 +747,9 @@ Day33 rewrite 作用于检索；Day34 在检索后格式化引用并可选展示
 
 
 def _file04() -> str:
-    return f"""# Day 34 流程图与示意图
+    from course_diagrams import file04
 
-## rewrite search 时序
-
-```mermaid
-sequenceDiagram
-    participant U as Client
-    participant R as RAGContextService
-    participant H as HybridRetriever
-    participant C as MockCrossEncoder
-    U->>R: search(q, top_k=3)
-    R->>R: pool = max(20, 3)
-    R->>H: search(q, top_k=pool)
-    H-->>R: 20 candidates
-    R->>C: rewrite(q, candidates, top_k=3)
-    loop each candidate
-        C->>C: rewrite(q, chunk.text)
-    end
-    C-->>R: sorted top 3
-    R-->>U: RetrievalResult list
-```
-
-## rewrite 数据流
-
-```mermaid
-sequenceDiagram
-    participant S as rewrite
-    S->>S: q in t ? return 1.0
-    S->>S: token coverage
-    S->>S: bigram_overlap bonus
-    S->>S: length_penalty
-    S-->>S: clamp 0..1
-```
-
-## ASCII：三阶段漏斗
-
-```
-query ──► HybridRetriever ──► top-20 ──► CrossEncoder ──► top-3 ──► LLM
-              (宽召回)                      (尖改写)
-```
-
----
-
-## API 配置流（ASCII）
-
-```
-GET  /citation-config  ◄── store.get_citation_config()
-PUT  /citation-config  ──► validate ──► set ──► save()
-POST /api/chat       ──► as_rag_service() ──► RAGContextService
-```
-
----
-
-## 错误路径
-
-| 操作 | 预期 |
-|------|------|
-| PUT pool=0 | 422 |
-| PUT model=bert | 422 |
-| search("") | [] |
-| enabled=false | 等同 hybrid top_k |
-"""
+    return file04(34)
 
 
 def _file05() -> str:

@@ -13,9 +13,9 @@
 
 ## Day 37 交付物
 
-- QueryRouter + RouteConfig  
-- route-config / citation-preview API  
-- chat 响应 expansion.queries + merged citations + rewrite  
+- AnswerValidator + RouteConfig  
+- validation-config / citation-preview API  
+- chat 响应 validation passed score reason + rewrite  
 - 前端引用展示  
 - 20 tests  
 - 30 篇课件  
@@ -39,7 +39,7 @@
 
 ## 下周预告
 
-Day 37：HyDE / 自适应路由 — 一条问句变多条检索 query。
+Day 37：Self-RAG 答案校验 — 一条问句变多条检索 query。
 
 ---
 
@@ -74,4 +74,4 @@ Day 37：HyDE / 自适应路由 — 一条问句变多条检索 query。
 
 ## 项目经理一页纸
 
-ZL-NA-REQ-037 已交付：QueryRouter、citation API、chat citations、前端展示、20 测试。下一步：Day36 多 query 扩展。
+ZL-NA-REQ-037 已交付：AnswerValidator、citation API、chat citations、前端展示、20 测试。下一步：Day36 多 query 扩展。

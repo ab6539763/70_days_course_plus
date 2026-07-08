@@ -11,7 +11,7 @@
 | 33 | Query Rewrite | 0.33.x |
 | **34** | **Citation** | **v0.36.0** |
 
-## Day 37 交付物
+## Day 36 交付物
 
 - QueryRouter + RouteConfig  
 - route-config / citation-preview API  

@@ -91,17 +91,17 @@ def build() -> dict[str, str]:
         "10_Validation验收清单.md": _file10(),
         "11_答案校验详解.md": _file11(),
         "12_课堂练习册.md": _file12(),
-        "13_深度扩展_意图路由与延迟方法论.md": _file13(),
-        "14_企业案例集_快慢路径场景.md": _file14(),
+        "13_深度扩展_Self-RAG与幻觉率方法论.md": _file13(),
+        "14_企业案例集_答非所问场景.md": _file14(),
         "15_授课实录.md": _file15(),
         "16_复习卡片.md": _file16(),
-        "17_Route_API速查手册.md": _file17(),
+        "17_Validation_API速查手册.md": _file17(),
         "18_与Day36能力对照表.md": _file18(),
         "19_讲师补充阅读.md": _file19(),
         "20_完整代码走查.md": _file20(),
         "21_课堂知识竞赛.md": _file21(),
         "22_answer_validator精读.md": _file22(),
-        "23_路由决策与SLA实践.md": _file23(),
+        "23_校验阈值与拒答实践.md": _file23(),
         "24_Phase3第十二日总结.md": _file24(),
         "25_validation_api脚本精读.md": _file25(),
         "26_实操Lab手册.md": _file26(),
@@ -542,7 +542,7 @@ ES `rescore` window_size + learning_to_rank；本实现用 Python 层 `RAGContex
 
 
 def _architecture() -> str:
-    return f"""# Day 37 架构设计 — 自适应路由层
+    return f"""# Day 37 架构设计 — Self-RAG 答案校验层
 
 ## 1. 自适应路由分层
 
@@ -647,68 +647,9 @@ Day33 rewrite 作用于检索；Day34 在检索后格式化引用并可选展示
 
 
 def _file04() -> str:
-    return f"""# Day 37 流程图与示意图
+    from course_diagrams import file04
 
-## rewrite search 时序
-
-```mermaid
-sequenceDiagram
-    participant U as Client
-    participant R as RAGContextService
-    participant H as HybridRetriever
-    participant C as MockCrossEncoder
-    U->>R: search(q, top_k=3)
-    R->>R: pool = max(20, 3)
-    R->>H: search(q, top_k=pool)
-    H-->>R: 20 candidates
-    R->>C: rewrite(q, candidates, top_k=3)
-    loop each candidate
-        C->>C: rewrite(q, chunk.text)
-    end
-    C-->>R: sorted top 3
-    R-->>U: RetrievalResult list
-```
-
-## rewrite 数据流
-
-```mermaid
-sequenceDiagram
-    participant S as rewrite
-    S->>S: q in t ? return 1.0
-    S->>S: token coverage
-    S->>S: bigram_overlap bonus
-    S->>S: length_penalty
-    S-->>S: clamp 0..1
-```
-
-## ASCII：三阶段漏斗
-
-```
-query ──► HybridRetriever ──► top-20 ──► CrossEncoder ──► top-3 ──► LLM
-              (宽召回)                      (尖改写)
-```
-
----
-
-## API 配置流（ASCII）
-
-```
-GET  /route-config  ◄── store.get_citation_config()
-PUT  /route-config  ──► validate ──► set ──► save()
-POST /api/chat       ──► as_rag_service() ──► RAGContextService
-```
-
----
-
-## 错误路径
-
-| 操作 | 预期 |
-|------|------|
-| PUT pool=0 | 422 |
-| PUT model=bert | 422 |
-| search("") | [] |
-| enabled=false | 等同 hybrid top_k |
-"""
+    return file04(37)
 
 
 def _file05() -> str:
@@ -1059,7 +1000,7 @@ curl.exe -s http://127.0.0.1:8000/api/knowledge/route-config
 
 
 def _file10() -> str:
-    return """# Day 37 Expansion 验收清单
+    return """# Day 37 Validation 验收清单
 
 - [ ] `Citation` + `RuleBasedQueryRouter.route`  
 - [ ] `RoutingRetriever.search` + rewrite 元数据  
@@ -1574,7 +1515,7 @@ store.save()
 
 
 def _file18() -> str:
-    return """# Day 37 与 Day 33 能力对照表
+    return """# Day 37 与 Day 36 能力对照表
 
 | 维度 | Day 33 查询改写 | Day 37 自适应路由 |
 |------|-----------------|-----------------|
@@ -1856,7 +1797,7 @@ def _file21() -> str:
 
 
 def _file22() -> str:
-    return f"""# Day 37 精读：citation_builder 与自适应路由管线
+    return f"""# Day 37 精读：answer_validator 与 Self-RAG 校验管线
 
 **需求**：{REQ} | **学时**：120 min
 

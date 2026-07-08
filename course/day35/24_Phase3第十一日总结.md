@@ -11,7 +11,7 @@
 | 33 | Query Rewrite | 0.33.x |
 | **34** | **Citation** | **v0.35.0** |
 
-## Day 36 交付物
+## Day 35 交付物
 
 - QueryExpander + ExpansionConfig  
 - expansion-config / citation-preview API  

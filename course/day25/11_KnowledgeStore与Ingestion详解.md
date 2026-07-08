@@ -137,57 +137,58 @@ ingest_text ValueError → API 422；StorageError → 500；UnicodeDecodeError �
 ## 附录：_append_chunks 与 _rebuild_index（详解专节）
 
 ```python
-"retrieval_config": self.retrieval_config.to_dict(),
+self._append_chunks(
+                parsed.filename,
+                new_chunks,
+                size_bytes=size_bytes,
+                doc_format=parsed.format,
+            )
+            self._rebuild_index()
+        return self.documents[-1]
+
+    def save(self, path: Path | None = None) -> Path:
+        """持久化到 JSON"""
+        target = path or self.store_path or _default_store_path()
+        self.store_path = target
+        payload = {
+            "version": STORE_VERSION,
+            "platform_version": PLATFORM_VERSION,
+            "documents": [d.to_dict() for d in self.documents],
+            "chunks": [_chunk_to_dict(c) for c in self.chunks],
+            "embedding": self.embedding_state,
+            "vector_backend": self.vector_backend,
+            "chunk_config": self.chunk_config.to_dict(),
+            "last_rebuilt_at": self.last_rebuilt_at,
+            "last_incremental_at": self.last_incremental_at,
+            "index_mode": self.index_mode,
+            "retrieval_config": self.retrieval_config.to_dict(),
             "rerank_config": self.rerank_config.to_dict(),
             "rewrite_config": self.rewrite_config.to_dict(),
             "citation_config": self.citation_config.to_dict(),
             "expansion_config": self.expansion_config.to_dict(),
             "route_config": self.route_config.to_dict(),
-        }
-        save_json(target, payload)
-        return target
-
-    @classmethod
-    def load(cls, path: Path) -> KnowledgeStore:
-        """从 JSON 加载知识库"""
-        raw = load_json(path, default=None)
-        if not raw:
-            return cls.bootstrap_from_sample_docs(store_path=path)
-
-        store = cls(store_path=path)
-        store.documents = [
-            KnowledgeDocument.from_dict(d) for d in raw.get("documents", [])
-        ]
-        store.chunks = [_chunk_from_dict(c) for c in raw.get("chunks", [])]
-        store.embedding_state = dict(raw.get("embedding") or {})
-        store.vector_backend = str(raw.get("vector_backend") or VECTOR_BACKEND)
-        if raw.get("chunk_config"):
-            store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
-        store.last_rebuilt_at = raw.get("last_rebuilt_at")
-        store.last_incremental_at = raw.get("last_incremental_at")
-        store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
-        if raw.get("retrieval_config"):
 ```
 
 
 **`_append_chunks`**：新块 `index` 从 `len(self.chunks)` 递增，避免与旧块冲突。每 append 同步追加 `KnowledgeDocument` 元数据行。
 
 ```python
-if isinstance(retriever, EmbeddingRetriever):
-            store.embedding_state = retriever._client.model.export_state()
-        store._rebuild_index()
+store = cls.bootstrap_from_sample_docs(store_path=target)
+        store.save(target)
         return store
 
-    def status_dict(self) -> dict[str, Any]:
-        from tools.doc_parser import supported_formats
+    @classmethod
+    def bootstrap_from_sample_docs(cls, *, store_path: Path | None = None) -> KnowledgeStore:
+        """用内置 sample_docs 初始化知识库"""
+        rag = RAGContextService.from_sample_docs(use_embedding=True)
+        store = cls(store_path=store_path)
+        now = _utc_now()
 
-        return {
-            "document_count": self.document_count,
-            "chunk_count": self.chunk_count,
-            "documents": [d.to_dict() for d in self.documents],
-            "store_path": str(self.store_path) if self.store_path else None,
-            "platform_version": PLATFORM_VERSION,
-            "supported_formats": supported_formats(),
+        by_source: dict[str, list[TextChunk]] = {}
+        for chunk in rag.index.chunks:
+            by_source.setdefault(chunk.source, []).append(chunk)
+
+        for source, chunks in sorted(by_source.items()):
 ```
 
 

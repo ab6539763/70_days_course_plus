@@ -37,7 +37,7 @@ print(s.get_citation_config().to_dict())
 ## Lab 2：route_demo（25 min）
 
 ```bash
-python3 src/day37/route_demo.py | tee /tmp/day37_demo.txt
+python3 src/day37/validation_demo.py | tee /tmp/day37_demo.txt
 ```
 
 **通过标准**：三条 Q；每条有 citations 列表；末尾 `✅`。
@@ -70,7 +70,7 @@ curl -s -X POST http://127.0.0.1:8000/api/knowledge/citation-preview \
 ## Lab 5：API demo（20 min）
 
 ```bash
-python3 src/day37/route_api_demo.py
+python3 src/day37/validation_api_demo.py
 ```
 
 **通过标准**：citation-preview 200；chat citations ≥1；version v0.37.0。
@@ -80,9 +80,9 @@ python3 src/day37/route_api_demo.py
 ## Lab 6：关闭 citations（25 min）
 
 ```bash
-curl -s -X PUT http://127.0.0.1:8000/api/knowledge/route-config \
+curl -s -X PUT http://127.0.0.1:8000/api/knowledge/validation-config \
   -H 'Content-Type: application/json' \
-  -d '{"enabled":false,"max_citations":3,"preview_max_chars":120,"include_route_meta":true}'
+  -d '{"enabled":false,"max_citations":3,"preview_max_chars":120,"refuse_on_fail":true}'
 ```
 
 再调 citation-preview，**通过标准**：`citations` 为空数组。
@@ -174,4 +174,4 @@ for q in ("年化收益率", "那个理财能赚多少", "投资有风险"):
 |----|-------|-------|
 | 核心 | rewrite query | 展示 citations |
 | API | rewrite-preview | citation-preview |
-| chat 字段 | 无 | expansion.queries + merged citations |
+| chat 字段 | 无 | validation passed score reason |

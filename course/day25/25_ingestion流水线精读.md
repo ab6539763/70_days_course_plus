@@ -103,6 +103,11 @@ __all__ = ["ingest_directory", "ingest_upload", "supported_formats"]
 ## 与 api/knowledge.py 衔接
 
 ```python
+except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RewriteConfigResponse(**cfg.to_dict())
+
+
 @router.post("/rewrite-preview", response_model=RewritePreviewResponse)
 def rewrite_preview(body: RewritePreviewRequest) -> RewritePreviewResponse:
     """预览单条 query 的规则改写结果（不触发检索）"""
@@ -140,13 +145,6 @@ def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
     store = get_knowledge_store()
     data = store.fetch_citations(body.query)
     return CitationPreviewResponse(**data)
-
-
-@router.get("/expansion-config", response_model=ExpansionConfigResponse)
-def get_expansion_config() -> ExpansionConfigResponse:
-    """返回多 query 扩展开关与参数"""
-    cfg = get_knowledge_store().get_expansion_config()
-    return ExpansionConfigResponse(**cfg.to_dict())
 ```
 
 

@@ -424,15 +424,15 @@ from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
 from rag.citation_config import CitationConfig
 from rag.expanding_retriever import ExpandingRetriever
 from rag.expansion_config import ExpansionConfig
+from rag.answer_validator import RuleBasedAnswerValidator, ValidationResult
 from rag.route_config import RouteConfig
 from rag.routing_retriever import RoutingRetriever
+from rag.validation_config import ValidationConfig
 from rag.hybrid_retriever import HybridRetriever
 from rag.rerank_config import RerankConfig
 from rag.reranker import MockCrossEncoderReranker
 from rag.reranking_retriever import RerankingRetriever
 from rag.retrieval_config import RetrievalConfig
-from rag.rewrite_config import RewriteConfig
-from rag.rewriting_retriever import RewritingRetriever
 ```
 
 
@@ -526,6 +526,8 @@ def load(cls, path: Path) -> KnowledgeStore:
             store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
         if raw.get("route_config"):
             store.route_config = RouteConfig.from_dict(raw["route_config"])
+        if raw.get("validation_config"):
+            store.validation_config = ValidationConfig.from_dict(raw["validation_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store

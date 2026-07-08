@@ -1,4 +1,4 @@
-# Day 37 精读：citation_builder 与自适应路由管线
+# Day 36 精读：query_router 与自适应路由管线
 
 **需求**：ZL-NA-REQ-036 | **学时**：120 min
 
@@ -717,7 +717,7 @@ def test_knowledge_store_persists_route_config(tmp_path):
 def test_status_includes_route_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.36.0"
+    assert status["platform_version"] == "0.37.0"
     assert status["route_config"]["enabled"] is True
 
 
@@ -782,7 +782,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.36.0"
+    assert client.get("/api/health").json()["version"] == "0.37.0"
 
 
 def test_get_route_config_default(client):
@@ -828,7 +828,7 @@ def test_citation_preview_with_route(client):
 
 def test_status_includes_route_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.36.0"
+    assert status["platform_version"] == "0.37.0"
     assert status["route_config"]["enabled"] is True
 
 
@@ -910,6 +910,27 @@ def get_route_config(self) -> RouteConfig:
         self.route_config = RouteConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.route_config
+
+    def get_validation_config(self) -> ValidationConfig:
+        return ValidationConfig.from_dict(self.validation_config.to_dict())
+
+    def set_validation_config(self, config: ValidationConfig) -> ValidationConfig:
+        config.validate()
+        self.validation_config = ValidationConfig.from_dict(config.to_dict())
+        return self.validation_config
+
+    def validate_answer(
+        self,
+        query: str,
+        reply: str,
+        citations: list[dict[str, Any]],
+    ) -> ValidationResult | None:
+        """按当前 validation_config 校验 reply 与 citations 一致性"""
+        cfg = self.get_validation_config()
+        if not cfg.enabled:
+            return None
+        validator = RuleBasedAnswerValidator(config=cfg)
+        return validator.validate(query, reply, citations)
 ```
 
 
@@ -1152,7 +1173,7 @@ function FETCH_CITATIONS(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037
 """
 
 from __future__ import annotations
@@ -1188,6 +1209,10 @@ from api.schemas import (
     RouteConfigResponse,
     RoutePreviewRequest,
     RoutePreviewResponse,
+    ValidationConfigRequest,
+    ValidationConfigResponse,
+    ValidationPreviewRequest,
+    ValidationPreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -1203,6 +1228,7 @@ from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.query_router import RuleBasedQueryRouter
 from rag.route_config import RouteConfig
+from rag.validation_config import ValidationConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
@@ -1312,10 +1338,7 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 
 
 @router.post("/citation-preview", response_model=CitationPreviewResponse)
-def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
-    """预览单条 query 的检索引用（含 rewrite / expansion 审计）"""
-    store = get_knowledge_store()
-    data = store.fetch_citations(body
+def citation_pre
 ```
 
 
@@ -1403,7 +1426,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.36.0"
+    assert client.get("/api/health").json()["version"] == "0.37.0"
 
 
 def test_get_route_config_default(client):
@@ -1449,7 +1472,7 @@ def test_citation_preview_with_route(client):
 
 def test_status_includes_route_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.36.0"
+    assert status["platform_version"] == "0.37.0"
     assert status["route_config"]["enabled"] is True
 
 
@@ -2002,6 +2025,15 @@ cite_data = get_knowledge_store().fetch_citations(message)
     rewrite = cite_data.get("rewrite")
     expansion = cite_data.get("expansion")
     route = cite_data.get("route")
+
+    store = get_knowledge_store()
+    validation = None
+    val_result = store.validate_answer(message, reply, citations)
+    if val_result is not None:
+        validation = val_result.to_dict()
+        if not val_result.passed and store.get_validation_config().refuse_on_fail:
+            reply = f"[校验未通过] {REFUSAL_MESSAGE}"
+            validation = {**validation, "refused": True}
 ```
 
 
@@ -2161,7 +2193,7 @@ def test_knowledge_store_persists_route_config(tmp_path):
 def test_status_includes_route_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.36.0"
+    assert status["platform_version"] == "0.37.0"
     assert status["route_config"]["enabled"] is True
 
 
@@ -2217,7 +2249,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.36.0"
+    assert client.get("/api/health").json()["version"] == "0.37.0"
 
 
 def test_get_route_config_default(client):
@@ -2263,7 +2295,7 @@ def test_citation_preview_with_route(client):
 
 def test_status_includes_route_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.36.0"
+    assert status["platform_version"] == "0.37.0"
     assert status["route_config"]["enabled"] is True
 
 
@@ -2307,4 +2339,4 @@ def test_route_preview_wide(client):
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 37 · Citation · ZL-NA-REQ-036 · citation_builder 精读完**
+**NexusAgent 课程 · Phase 3 · Day 36 · Citation · ZL-NA-REQ-036 · citation_builder 精读完**

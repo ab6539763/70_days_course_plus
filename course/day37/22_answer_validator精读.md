@@ -1,10 +1,10 @@
-# Day 37 精读：citation_builder 与自适应路由管线
+# Day 37 精读：answer_validator 与 Self-RAG 校验管线
 
 **需求**：ZL-NA-REQ-037 | **学时**：120 min
 
 ---
 
-## 一、citation_builder.py 全文
+## 一、answer_validator.py 全文
 
 ```python
 """
@@ -217,7 +217,7 @@ class RuleBasedAnswerValidator(AnswerValidator):
 
 ---
 
-## 二、行级注释：QueryRouter 抽象（L18–L30）
+## 二、行级注释：AnswerValidator 抽象（L18–L30）
 
 | 行 | 讲解 |
 |----|------|
@@ -226,7 +226,7 @@ class RuleBasedAnswerValidator(AnswerValidator):
 
 ---
 
-## 三、RuleBasedQueryRouter.route（L33–L68）
+## 三、RuleBasedAnswerValidator.route（L33–L68）
 
 ```python
 """
@@ -978,7 +978,7 @@ def test_validator_empty_citations_fails():
 
 | 测试 | 要点 |
 |------|------|
-| test_RuleBasedQueryRouter.route_from_results_candidates | **翻牌金测** |
+| test_RuleBasedAnswerValidator.route_from_results_candidates | **翻牌金测** |
 | test_rewrite_exact_substring | 子串=1.0 |
 | test_citation_preview_with_rewrite | 业务号码 |
 | test_context_disabled | 降级路径 |
@@ -1238,11 +1238,11 @@ def get_validation_config(self) -> ValidationConfig:
 
 ## 二十、结课陈述
 
-读罢 22 精读，你应能**逐行**解释 `RuleBasedQueryRouter.route` 与 `RoutingRetriever.search`，并映射到 ZL-NA-REQ-037 的 FR-001–FR-003。
+读罢 22 精读，你应能**逐行**解释 `RuleBasedAnswerValidator.route` 与 `validate_answer`，并映射到 ZL-NA-REQ-037 的 FR-001–FR-003。
 
 ---
 
-## 二十一、citation_builder 完整源码（重复嵌入便于打印）
+## 二十一、answer_validator 完整源码（重复嵌入便于打印）
 
 ```python
 """
@@ -1482,7 +1482,7 @@ function FETCH_CITATIONS(q, top_k):
 | 测试 | FR/NFR |
 |------|--------|
 | test_citation_config_validate | FR-004 |
-| test_RuleBasedQueryRouter.route_from_results_candidates | FR-002 |
+| test_RuleBasedAnswerValidator.route_from_results_candidates | FR-002 |
 | test_context_enabled | FR-003 |
 | test_citation_preview_with_rewrite | AC-03 |
 | test_knowledge_store_persists_citation_config | FR-005 |
@@ -1498,7 +1498,7 @@ function FETCH_CITATIONS(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-037 / ZL-NA-REQ-036 / ZL-NA-REQ-037
 """
 
 from __future__ import annotations
@@ -1551,7 +1551,7 @@ from rag.citation_config import CitationConfig
 from rag.expansion_config import ExpansionConfig
 from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
-from rag.query_router import RuleBasedQueryRouter
+from rag.query_router import RuleBasedAnswerValidator
 from rag.route_config import RouteConfig
 from rag.validation_config import ValidationConfig
 from rag.rerank_config import RerankConfig
@@ -1691,7 +1691,7 @@ def citation_pre
 2. 能写 rewrite 四项  
 3. 能解释 enabled 分支  
 4. 能定位 _build_rag_service  
-5. 能 curl GET route-config  
+5. 能 curl GET validation-config  
 6. 能 curl PUT 关 rewrite  
 7. 能跑 route_demo  
 8. 能跑 rewrite_api_demo  
@@ -1700,7 +1700,7 @@ def citation_pre
 11. 能对比 Day33  
 12. 能预告 Day36 HyDE  
 13. 能读 validate 源码  
-14. 能解释 include_route_meta  
+14. 能解释 refuse_on_fail  
 15. 能解释 matched_tokens 保留  
 16. 能解释 chunk.index tie-break  
 17. 能解释 MODEL_MOCK  
@@ -1712,7 +1712,7 @@ def citation_pre
 
 ## 二十九、延伸阅读：Retriever 组合模式
 
-`fetch_citations` 是 **Facade**：对外返回 dict，对内调用 RoutingRetriever.search。与 Day33 Facade 叠加。
+`fetch_citations` 是 **Facade**：对外返回 dict，对内调用 validate_answer。与 Day33 Facade 叠加。
 
 ---
 
@@ -1889,7 +1889,7 @@ def test_validation_preview_with_explicit_citations(client):
 feat(rag): cross-encoder rewrite pipeline (ZL-NA-REQ-032)
 
 - RAGContextService + RouteConfig
-- GET/PUT /api/knowledge/route-config
+- GET/PUT /api/knowledge/validation-config
 - tests/day37 (20 cases)
 ```
 
@@ -2227,7 +2227,7 @@ ColBERT late interaction 介于 bi 与 cross；本课不展开。
 
 ---
 
-## 四十、citation_builder 全文嵌入
+## 四十、answer_validator 全文嵌入
 
 ```python
 """
@@ -2492,7 +2492,7 @@ def fetch_citations(self, query: str) -> dict[str, Any]:
 
 | 测试 | FR |
 |------|-----|
-| test_RuleBasedQueryRouter.route_from_results | FR-002 |
+| test_RuleBasedAnswerValidator.route_from_results | FR-002 |
 | test_fetch_citations_with_hits | FR-003 |
 | test_chat_includes_citations | FR-006 |
 | test_citation_preview_with_rewrite | FR-005 |
@@ -2861,10 +2861,10 @@ def test_validation_preview_with_explicit_citations(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 citation_builder，Citation 有 rank chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 answer_validator，ValidationResult 有 passed chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-037。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 37 · Citation · ZL-NA-REQ-037 · citation_builder 精读完**
+**NexusAgent 课程 · Phase 3 · Day 37 · Validation · ZL-NA-REQ-037 · answer_validator 精读完**

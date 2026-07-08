@@ -1,6 +1,6 @@
 # route_api 脚本精读
 
-## route_api_demo.py 全文
+## validation_api_demo.py 全文
 
 ```python
 """
@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
 ---
 
-## route_demo.py 全文
+## validation_demo.py 全文
 
 ```python
 """
@@ -153,7 +153,7 @@ ROUTE_QUERIES = (
 ## 运行矩阵
 
 ```bash
-PYTHONPATH=src python3 src/day37/route_demo.py
-PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day37/route_api_demo.py
+PYTHONPATH=src python3 src/day37/validation_demo.py
+PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day37/validation_api_demo.py
 pytest tests/day37/test_route_api.py -v
 ```

@@ -61,7 +61,7 @@ curl 见正文；Python 用 parse_bytes+chunk_from_parsed 两行；错误码见 
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037
 """
 
 from __future__ import annotations
@@ -97,6 +97,10 @@ from api.schemas import (
     RouteConfigResponse,
     RoutePreviewRequest,
     RoutePreviewResponse,
+    ValidationConfigRequest,
+    ValidationConfigResponse,
+    ValidationPreviewRequest,
+    ValidationPreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -112,6 +116,7 @@ from rag.query_expander import build_expander
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.query_router import RuleBasedQueryRouter
 from rag.route_config import RouteConfig
+from rag.validation_config import ValidationConfig
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
@@ -229,10 +234,6 @@ def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
 
 
 @router.get("/expansion-config", response_model=ExpansionConfigResponse)
-def get_expansion_config() -> ExpansionConfigResponse:
-    """返回多 query 扩展开关与参数"""
-    cfg = get_knowledge_store().get_expansion_config()
-    return ExpansionConfigResponse(**cfg.to_dict())
 ```
 
 
