@@ -338,6 +338,34 @@ body {
   color: var(--route-accent);
 }
 
+.msg__citations {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+}
+
+.msg__citations-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+}
+
+.msg__citation-item {
+  margin: 2px 0;
+  color: #334155;
+  line-height: 1.4;
+}
+
+.msg__rewrite {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .chat__loading {
   display: flex;
   align-items: center;

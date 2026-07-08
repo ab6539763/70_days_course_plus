@@ -611,13 +611,21 @@ from rag.chunk_strategies import chunk_from_parsed
 from rag.context import DocumentIndex, RAGContextService
 from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
+from rag.citation_config import CitationConfig
+from rag.hybrid_retriever import HybridRetriever
+from rag.rerank_config import RerankConfig
+from rag.reranker import MockCrossEncoderReranker
+from rag.reranking_retriever import RerankingRetriever
+from rag.retrieval_config import RetrievalConfig
+from rag.rewrite_config import RewriteConfig
+from rag.rewriting_retriever import RewritingRetriever
 from tools.doc_reader import DocumentRecord, read_text_file
 from tools.parsers.base import ParsedDocument
 from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.30.0"
+PLATFORM_VERSION = "0.34.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -671,6 +679,10 @@ class KnowledgeStore:
     last_rebuilt_at: str | None = None
     last_incremental_at: str | None = None
     index_mode: str = INDEX_MODE_FULL
+    retrieval_config: RetrievalConfig = field(default_factory=RetrievalConfig)
+    rerank_config: RerankConfig = field(default_factory=RerankConfig)
+    rewrite_config: RewriteConfig = field(default_factory=RewriteConfig)
+    citation_config: CitationConfig = field(default_factory=CitationConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -699,6 +711,50 @@ class KnowledgeStore:
         config.validate()
         self.chunk_config = ChunkConfig.from_dict(config.to_dict())
         return self.chunk_config
+
+    def get_retrieval_config(self) -> RetrievalConfig:
+        return RetrievalConfig.from_dict(self.retrieval_config.to_dict())
+
+    def set_retrieval_config(self, config: RetrievalConfig) -> RetrievalConfig:
+        config.validate()
+        self.retrieval_config = RetrievalConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.retrieval_config
+
+    def get_rerank_config(self) -> RerankConfig:
+        return RerankConfig.from_dict(self.rerank_config.to_dict())
+
+    def set_rerank_config(self, config: RerankConfig) -> RerankConfig:
+        config.validate()
+        self.rerank_config = RerankConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.rerank_config
+
+    def get_rewrite_config(self) -> RewriteConfig:
+        return RewriteConfig.from_dict(self.rewrite_config.to_dict())
+
+    def set_rewrite_config(self, config: RewriteConfig) -> RewriteConfig:
+        config.validate()
+        self.rewrite_config = RewriteConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.rewrite_config
+
+    def get_citation_config(self) -> CitationConfig:
+        return CitationConfig.from_dict(self.citation_config.to_dict())
+
+    def set_citation_config(self, config: CitationConfig) -> CitationConfig:
+        config.validate()
+        self.citation_config = CitationConfig.from_dict(config.to_dict())
+        return self.citation_config
+
+    def fetch_citations(self, query: str) -> dict[str, Any]:
+        """按当前 citation_config 检索并返回引用包 dict"""
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return {"query": query.strip(), "citations": [], "rewrite": None}
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(query, config=cfg)
+        return bundle.to_dict()
 
     def ingest_text(
         self,
@@ -857,6 +913,10 @@ class KnowledgeStore:
             "last_rebuilt_at": self.last_rebuilt_at,
             "last_incremental_at": self.last_incremental_at,
             "index_mode": self.index_mode,
+            "retrieval_config": self.retrieval_config.to_dict(),
+            "rerank_config": self.rerank_config.to_dict(),
+            "rewrite_config": self.rewrite_config.to_dict(),
+            "citation_config": self.citation_config.to_dict(),
         }
         save_json(target, payload)
         return target
@@ -880,6 +940,14 @@ class KnowledgeStore:
         store.last_rebuilt_at = raw.get("last_rebuilt_at")
         store.last_incremental_at = raw.get("last_incremental_at")
         store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
+        if raw.get("retrieval_config"):
+            store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
+        if raw.get("rerank_config"):
+            store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
+        if raw.get("rewrite_config"):
+            store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
+        if raw.get("citation_config"):
+            store.citation_config = CitationConfig.from_dict(raw["citation_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -937,101 +1005,6 @@ class KnowledgeStore:
             "last_rebuilt_at": self.last_rebuilt_at,
             "last_incremental_at": self.last_incremental_at,
             "index_mode": self.index_mode,
-            "vector_backend": self.vector_backend,
-            "chroma_path": str(self._resolve_chroma_path()),
-            "chroma_count": self._chroma_index().count() if self.chunks else 0,
-        }
-
-    def _append_chunks(
-        self,
-        filename: str,
-        new_chunks: list[TextChunk],
-        *,
-        size_bytes: int,
-        doc_format: str = "txt",
-    ) -> None:
-        base_index = len(self.chunks)
-        reindexed: list[TextChunk] = []
-        for i, chunk in enumerate(new_chunks):
-            reindexed.append(
-                TextChunk(
-                    chunk_id=chunk.chunk_id,
-                    text=chunk.text,
-                    source=filename,
-                    index=base_index + i,
-                    start_char=chunk.start_char,
-                    end_char=chunk.end_char,
-                )
-            )
-        self.chunks.extend(reindexed)
-        self.documents.append(
-            KnowledgeDocument(
-                name=filename,
-                ingested_at=_utc_now(),
-                size_bytes=size_bytes,
-                chunk_count=len(reindexed),
-                format=doc_format,
-            )
-        )
-
-    def _remove_document_by_source(self, filename: str) -> list[str]:
-        """移除同名文档及其 chunks，并从 Chroma 删除旧向量"""
-        removed_ids = [c.chunk_id for c in self.chunks if c.source == filename]
-        if not removed_ids:
-            return []
-
-        self._chroma_index().delete_by_ids(removed_ids)
-        self.documents = [d for d in self.documents if d.name != filename]
-        self.chunks = [c for c in self.chunks if c.source != filename]
-        self.chunks = [
-            TextChunk(
-                chunk_id=c.chunk_id,
-                text=c.text,
-                source=c.source,
-                index=i,
-                start_char=c.start_char,
-                end_char=c.end_char,
-            )
-            for i, c in enumerate(self.chunks)
-        ]
-        return removed_ids
-
-    def _resolve_chroma_path(self) -> Path:
-        if self.chroma_path is not None:
-            return self.chroma_path
-        if self.store_path is not None:
-            return self.store_path.parent / "chroma"
-        return get_path("knowledge_chroma")
-
-    def _chroma_index(self) -> ChromaVectorIndex:
-        return ChromaVectorIndex(self._resolve_chroma_path())
-
-    def _sync_chroma_from_json(self) -> None:
-        """从 JSON 元数据恢复 Chroma（迁移或冷启动）"""
-        if not self.chunks or not self.embedding_state:
-            return
-        chroma = self._chroma_index()
-        if chroma.count() > 0:
-            return
-        from rag.embedding import EmbeddingClient
-
-        client = EmbeddingClient()
-        client.model.load_state(self.embedding_state)
-        vectors = client.embed_batch([c.text for c in self.chunks])
-        chroma.upsert_chunks(self.chunks, vectors)
-
-    def _rebuild_index(self) -> None:
-        from rag.embedding_retriever import EmbeddingRetriever
-
-        if not self.chunks:
-            self.embedding_state = {}
-            self._chroma_index().reset()
-            self.invalidate_cache()
-            return
-
-        retriever = EmbeddingRetriever(self.chunks)
-        self.embedding_state = retriever._client.model.export_state()
-        vectors = retri
 ```
 
 
@@ -1133,7 +1106,105 @@ self.index_mode = INDEX_MODE_INCREMENTAL
 ## 二十三、延伸阅读：knowledge_store 余下部分
 
 ```python
-ever._client.embed_batch([c.text for c in self.chunks])
+"retrieval_config": self.retrieval_config.to_dict(),
+            "rerank_config": self.rerank_config.to_dict(),
+            "rewrite_config": self.rewrite_config.to_dict(),
+            "citation_config": self.citation_config.to_dict(),
+            "vector_backend": self.vector_backend,
+            "chroma_path": str(self._resolve_chroma_path()),
+            "chroma_count": self._chroma_index().count() if self.chunks else 0,
+        }
+
+    def _append_chunks(
+        self,
+        filename: str,
+        new_chunks: list[TextChunk],
+        *,
+        size_bytes: int,
+        doc_format: str = "txt",
+    ) -> None:
+        base_index = len(self.chunks)
+        reindexed: list[TextChunk] = []
+        for i, chunk in enumerate(new_chunks):
+            reindexed.append(
+                TextChunk(
+                    chunk_id=chunk.chunk_id,
+                    text=chunk.text,
+                    source=filename,
+                    index=base_index + i,
+                    start_char=chunk.start_char,
+                    end_char=chunk.end_char,
+                )
+            )
+        self.chunks.extend(reindexed)
+        self.documents.append(
+            KnowledgeDocument(
+                name=filename,
+                ingested_at=_utc_now(),
+                size_bytes=size_bytes,
+                chunk_count=len(reindexed),
+                format=doc_format,
+            )
+        )
+
+    def _remove_document_by_source(self, filename: str) -> list[str]:
+        """移除同名文档及其 chunks，并从 Chroma 删除旧向量"""
+        removed_ids = [c.chunk_id for c in self.chunks if c.source == filename]
+        if not removed_ids:
+            return []
+
+        self._chroma_index().delete_by_ids(removed_ids)
+        self.documents = [d for d in self.documents if d.name != filename]
+        self.chunks = [c for c in self.chunks if c.source != filename]
+        self.chunks = [
+            TextChunk(
+                chunk_id=c.chunk_id,
+                text=c.text,
+                source=c.source,
+                index=i,
+                start_char=c.start_char,
+                end_char=c.end_char,
+            )
+            for i, c in enumerate(self.chunks)
+        ]
+        return removed_ids
+
+    def _resolve_chroma_path(self) -> Path:
+        if self.chroma_path is not None:
+            return self.chroma_path
+        if self.store_path is not None:
+            return self.store_path.parent / "chroma"
+        return get_path("knowledge_chroma")
+
+    def _chroma_index(self) -> ChromaVectorIndex:
+        return ChromaVectorIndex(self._resolve_chroma_path())
+
+    def _sync_chroma_from_json(self) -> None:
+        """从 JSON 元数据恢复 Chroma（迁移或冷启动）"""
+        if not self.chunks or not self.embedding_state:
+            return
+        chroma = self._chroma_index()
+        if chroma.count() > 0:
+            return
+        from rag.embedding import EmbeddingClient
+
+        client = EmbeddingClient()
+        client.model.load_state(self.embedding_state)
+        vectors = client.embed_batch([c.text for c in self.chunks])
+        chroma.upsert_chunks(self.chunks, vectors)
+
+    def _rebuild_index(self) -> None:
+        from rag.embedding_retriever import EmbeddingRetriever
+
+        if not self.chunks:
+            self.embedding_state = {}
+            self._chroma_index().reset()
+            self.invalidate_cache()
+            return
+
+        retriever = EmbeddingRetriever(self.chunks)
+        self.embedding_state = retriever._client.model.export_state()
+        vectors = retriever._client.embed_batch([c.text for c in self.chunks])
         chroma = self._chroma_index()
         chroma.reset()
         chroma.upsert_chunks(self.chunks, vectors)
@@ -1188,12 +1259,24 @@ ever._client.embed_batch([c.text for c in self.chunks])
             return RAGContextService()
 
         from rag.embedding import EmbeddingClient
+        from rag.retriever import KeywordRetriever
 
         client = EmbeddingClient()
         client.model.load_state(self.embedding_state)
         self._sync_chroma_from_json()
         chroma = self._chroma_index()
-        retriever = ChromaEmbeddingRetriever(self.chunks, chroma, client=client)
+        vector = ChromaEmbeddingRetriever(self.chunks, chroma, client=client)
+        keyword = KeywordRetriever(self.chunks)
+        cfg = self.get_retrieval_config()
+        hybrid = HybridRetriever(self.chunks, keyword, vector, config=cfg)
+        rerank_cfg = self.get_rerank_config()
+        reranking = RerankingRetriever(
+            hybrid,
+            reranker=MockCrossEncoderReranker(),
+            config=rerank_cfg,
+        )
+        rewrite_cfg = self.get_rewrite_config()
+        retriever = RewritingRetriever(reranking, config=rewrite_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 
@@ -1879,7 +1962,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.30.0"
+    assert client.get("/api/health").json()["version"] == "0.34.0"
 
 
 def test_upload_returns_incremental_mode(client):
@@ -1913,7 +1996,7 @@ def test_status_shows_incremental_fields(client):
             files={"file": ("notice.md", fh, "text/markdown")},
         )
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.30.0"
+    assert status["platform_version"] == "0.34.0"
     assert status["index_mode"] == INDEX_MODE_INCREMENTAL
     assert status["last_incremental_at"]
     assert status["chroma_count"] == status["chunk_count"]

@@ -30,7 +30,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.33.0"
+    assert client.get("/api/health").json()["version"] == "0.34.0"
 
 
 def test_get_rewrite_config_default(client):
@@ -66,7 +66,7 @@ def test_rewrite_preview_colloquial(client):
 
 def test_status_includes_rewrite_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.33.0"
+    assert status["platform_version"] == "0.34.0"
     assert status["rewrite_config"]["enabled"] is True
 
 

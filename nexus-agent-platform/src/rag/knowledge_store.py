@@ -21,6 +21,7 @@ from rag.chunk_strategies import chunk_from_parsed
 from rag.context import DocumentIndex, RAGContextService
 from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
+from rag.citation_config import CitationConfig
 from rag.hybrid_retriever import HybridRetriever
 from rag.rerank_config import RerankConfig
 from rag.reranker import MockCrossEncoderReranker
@@ -34,7 +35,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.33.0"
+PLATFORM_VERSION = "0.34.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -91,6 +92,7 @@ class KnowledgeStore:
     retrieval_config: RetrievalConfig = field(default_factory=RetrievalConfig)
     rerank_config: RerankConfig = field(default_factory=RerankConfig)
     rewrite_config: RewriteConfig = field(default_factory=RewriteConfig)
+    citation_config: CitationConfig = field(default_factory=CitationConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -146,6 +148,23 @@ class KnowledgeStore:
         self.rewrite_config = RewriteConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.rewrite_config
+
+    def get_citation_config(self) -> CitationConfig:
+        return CitationConfig.from_dict(self.citation_config.to_dict())
+
+    def set_citation_config(self, config: CitationConfig) -> CitationConfig:
+        config.validate()
+        self.citation_config = CitationConfig.from_dict(config.to_dict())
+        return self.citation_config
+
+    def fetch_citations(self, query: str) -> dict[str, Any]:
+        """按当前 citation_config 检索并返回引用包 dict"""
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return {"query": query.strip(), "citations": [], "rewrite": None}
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(query, config=cfg)
+        return bundle.to_dict()
 
     def ingest_text(
         self,
@@ -307,6 +326,7 @@ class KnowledgeStore:
             "retrieval_config": self.retrieval_config.to_dict(),
             "rerank_config": self.rerank_config.to_dict(),
             "rewrite_config": self.rewrite_config.to_dict(),
+            "citation_config": self.citation_config.to_dict(),
         }
         save_json(target, payload)
         return target
@@ -336,6 +356,8 @@ class KnowledgeStore:
             store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
         if raw.get("rewrite_config"):
             store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
+        if raw.get("citation_config"):
+            store.citation_config = CitationConfig.from_dict(raw["citation_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -396,6 +418,7 @@ class KnowledgeStore:
             "retrieval_config": self.retrieval_config.to_dict(),
             "rerank_config": self.rerank_config.to_dict(),
             "rewrite_config": self.rewrite_config.to_dict(),
+            "citation_config": self.citation_config.to_dict(),
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,

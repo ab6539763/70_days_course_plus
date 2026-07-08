@@ -30,10 +30,10 @@ from rag.chunk_strategies import chunk_from_parsed
 from rag.context import DocumentIndex, RAGContextService
 from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
-from tools.doc_reader import DocumentRecord, read_text_file
-from tools.parsers.base import ParsedDocument
-from utils.json_utils import load_json, save_json
-from utils.text_utils import clean_text
+from rag.citation_config import CitationConfig
+from rag.hybrid_retriever import HybridRetriever
+from rag.rerank_config import RerankConfig
+from rag.reranker import MockCrossEncoderReranker
 ```
 
 
@@ -44,6 +44,13 @@ from utils.text_utils import clean_text
 ## KnowledgeDocument 元数据类
 
 ```python
+STORE_VERSION = "1.1"
+PLATFORM_VERSION = "0.34.0"
+INDEX_MODE_INCREMENTAL = "incremental"
+INDEX_MODE_FULL = "full"
+
+
+@dataclass
 class KnowledgeDocument:
     """已入库文档元数据"""
 
@@ -63,14 +70,6 @@ class KnowledgeDocument:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> KnowledgeDocument:
-        return cls(
-            name=str(data.get("name", "")),
-            ingested_at=str(data.get("ingested_at", "")),
-            size_bytes=int(data.get("size_bytes", 0)),
-            chunk_count=int(data.get("chunk_count", 0)),
-            format=str(data.get("format", "txt")),
-        )
 ```
 
 
@@ -85,6 +84,14 @@ class KnowledgeDocument:
 ## KnowledgeStore 字段
 
 ```python
+ingested_at=str(data.get("ingested_at", "")),
+            size_bytes=int(data.get("size_bytes", 0)),
+            chunk_count=int(data.get("chunk_count", 0)),
+            format=str(data.get("format", "txt")),
+        )
+
+
+@dataclass
 class KnowledgeStore:
     """
     企业知识库 — 分块 + Chroma 向量索引 + JSON 元数据持久化
@@ -98,14 +105,6 @@ class KnowledgeStore:
     documents: list[KnowledgeDocument] = field(default_factory=list)
     chunks: list[TextChunk] = field(default_factory=list)
     embedding_state: dict[str, Any] = field(default_factory=dict)
-    vector_backend: str = VECTOR_BACKEND
-    chunk_config: ChunkConfig = field(default_factory=ChunkConfig)
-    last_rebuilt_at: str | None = None
-    last_incremental_at: str | None = None
-    index_mode: str = INDEX_MODE_FULL
-    store_path: Path | None = None
-    chroma_path: Path | None = None
-    _rag_service: RAGContextService | None = field(default=None, repr=False)
 ```
 
 
@@ -119,7 +118,214 @@ class KnowledgeStore:
 ## ingest_text 核心写入
 
 ```python
-def ingest_text(
+def invalidate_cache(self) -> None:
+        self._rag_service = None
+
+    def get_chunk_config(self) -> ChunkConfig:
+        return ChunkConfig.from_dict(self.chunk_config.to_dict())
+
+    def set_chunk_config(self, config: ChunkConfig) -> ChunkConfig:
+        config.validate()
+        self.chunk_config = ChunkConfig.from_dict(config.to_dict())
+        return self.chunk_config
+
+    def get_retrieval_config(self) -> RetrievalConfig:
+        return RetrievalConfig.from_dict(self.retrieval_config.to_dict())
+
+    def set_retrieval_config(self, config: RetrievalConfig) -> RetrievalConfig:
+        config.validate()
+        self.retrieval_config = RetrievalConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.retrieval_config
+
+    def get_rerank_config(self) -> RerankConfig:
+        return RerankConfig.from_dict(self.rerank_config.to_dict())
+
+    def set_rerank_config(self, config: RerankConfig) -> RerankConfig:
+        config.validate()
+        self.rerank_config = RerankConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.rerank_config
+
+    def get_rewrite_config(self) -> RewriteConfig:
+        return RewriteConfig.from_dict(self.rewrite_config.to_dict())
+
+    def set_rewrite_config(self, config: RewriteConfig) -> RewriteConfig:
+        config.validate()
+        self.rewrite_config = RewriteConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.rewrite_config
+```
+
+
+**逐行要点**：
+1. L126-130：空内容与空文件名防御性校验  
+2. L133-134：`clean_text` 去噪，FAQ 场景建议开启  
+3. L135-141：构造 `DocumentRecord` 保留原始与 cleaned  
+4. L142-147：`chunk_documents` 复用 Day 19 算法  
+5. L148-149：`_append_chunks` + `_rebuild_index` 原子更新内存索引  
+
+---
+
+## save 持久化 envelope
+
+```python
+incremental=incremental,
+        )
+
+    def ingest_parsed(
+        self,
+        parsed: ParsedDocument,
+        *,
+        clean: bool = True,
+        chunk_strategy: str | None = None,
+        chunk_size: int | None = None,
+        overlap: int | None = None,
+        incremental: bool = False,
+    ) -> KnowledgeDocument:
+        """将 ParsedDocument 写入知识库"""
+        cfg = self.get_chunk_config()
+        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
+        cs = chunk_size if chunk_size is not None else cfg.chunk_size
+```
+
+
+**解读**：`STORE_VERSION` 是 schema 版本；`platform_version` 标记平台里程碑；`chunks` 全量序列化教学透明但体积大。
+
+---
+
+## load / load_or_bootstrap
+
+```python
+if not text:
+            raise ValueError("解析结果为空")
+
+        if clean:
+            text, _ = clean_text(text)
+            parsed.plain_text = text
+            for section in parsed.sections:
+                section.body, _ = clean_text(section.body)
+
+        new_chunks = chunk_from_parsed(
+            parsed,
+            strategy=strategy,
+            chunk_size=cs,
+            overlap=ov,
+        )
+        size_bytes = len(parsed.plain_text.encode("utf-8"))
+
+        if incremental:
+            removed = self._remove_document_by_source(parsed.filename)
+            self._append_chunks(
+                parsed.filename,
+                new_chunks,
+                size_bytes=size_bytes,
+                doc_format=parsed.format,
+            )
+            self._incremental_index(new_chunks, replaced_count=len(removed))
+        else:
+            self._append_chunks(
+                parsed.filename,
+                new_chunks,
+                size_bytes=size_bytes,
+```
+
+
+**解读**：`load_or_bootstrap` 是 API 冷启动唯一入口；不存在文件时 bootstrap 并立即 save，避免每次请求重复引导。
+
+---
+
+## bootstrap_from_sample_docs
+
+```python
+self._rebuild_index()
+        return self.documents[-1]
+
+    def save(self, path: Path | None = None) -> Path:
+        """持久化到 JSON"""
+        target = path or self.store_path or _default_store_path()
+        self.store_path = target
+        payload = {
+            "version": STORE_VERSION,
+            "platform_version": PLATFORM_VERSION,
+            "documents": [d.to_dict() for d in self.documents],
+            "chunks": [_chunk_to_dict(c) for c in self.chunks],
+            "embedding": self.embedding_state,
+            "vector_backend": self.vector_backend,
+            "chunk_config": self.chunk_config.to_dict(),
+            "last_rebuilt_at": self.last_rebuilt_at,
+            "last_incremental_at": self.last_incremental_at,
+            "index_mode": self.index_mode,
+            "retrieval_config": self.retrieval_config.to_dict(),
+            "rerank_config": self.rerank_config.to_dict(),
+            "rewrite_config": self.rewrite_config.to_dict(),
+            "citation_config": self.citation_config.to_dict(),
+        }
+        save_json(target, payload)
+        return target
+
+    @classmethod
+```
+
+
+**解读**：从既有 `RAGContextService.from_sample_docs` 迁移数据，保证 Day 24 行为回归；按 source 分组生成 `KnowledgeDocument` 列表。
+
+---
+
+## 单例 get_knowledge_store
+
+```python
+self.embedding_state = {}
+            self._chroma_index().reset()
+            self.invalidate_cache()
+            return
+
+        retriever = EmbeddingRetriever(self.chunks)
+        self.embedding_state = retriever._client.model.export_state()
+        vectors = retriever._client.embed_batch([c.text for c in self.chunks])
+        chroma = self._chroma_index()
+        chroma.reset()
+        chroma.upsert_chunks(self.chunks, vectors)
+```
+
+
+**解读**：`threading.Lock` + 全局 `_store`；`reload=True` 强制重载（运维场景）；测试用 `set_knowledge_store` 注入假实例。
+
+---
+
+## 与测试对照
+
+| 测试 | 覆盖代码 |
+|------|----------|
+| test_save_and_load_roundtrip | save/load + retrieve |
+| test_ingest_text_appends_chunks | ingest_text |
+| test_bootstrap_has_chunks | bootstrap |
+
+精读完。结合 [25_ingestion流水线精读.md](25_ingestion流水线精读.md)。
+
+---
+
+## 扩展精读：ingest_file 与 ingest_bytes
+
+```python
+def get_citation_config(self) -> CitationConfig:
+        return CitationConfig.from_dict(self.citation_config.to_dict())
+
+    def set_citation_config(self, config: CitationConfig) -> CitationConfig:
+        config.validate()
+        self.citation_config = CitationConfig.from_dict(config.to_dict())
+        return self.citation_config
+
+    def fetch_citations(self, query: str) -> dict[str, Any]:
+        """按当前 citation_config 检索并返回引用包 dict"""
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return {"query": query.strip(), "citations": [], "rewrite": None}
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(query, config=cfg)
+        return bundle.to_dict()
+
+    def ingest_text(
         self,
         content: str,
         *,
@@ -152,214 +358,6 @@ def ingest_text(
             [doc],
             chunk_size=cs,
             overlap=ov,
-            use_cleaned=clean,
-        )
-        self._append_chunks(filename, new_chunks, size_bytes=doc.size_bytes)
-        self._rebuild_index()
-        return self.documents[-1]
-```
-
-
-**逐行要点**：
-1. L126-130：空内容与空文件名防御性校验  
-2. L133-134：`clean_text` 去噪，FAQ 场景建议开启  
-3. L135-141：构造 `DocumentRecord` 保留原始与 cleaned  
-4. L142-147：`chunk_documents` 复用 Day 19 算法  
-5. L148-149：`_append_chunks` + `_rebuild_index` 原子更新内存索引  
-
----
-
-## save 持久化 envelope
-
-```python
-"""持久化到 JSON"""
-        target = path or self.store_path or _default_store_path()
-        self.store_path = target
-        payload = {
-            "version": STORE_VERSION,
-            "platform_version": PLATFORM_VERSION,
-            "documents": [d.to_dict() for d in self.documents],
-            "chunks": [_chunk_to_dict(c) for c in self.chunks],
-            "embedding": self.embedding_state,
-            "vector_backend": self.vector_backend,
-            "chunk_config": self.chunk_config.to_dict(),
-            "last_rebuilt_at": self.last_rebuilt_at,
-            "last_incremental_at": self.last_incremental_at,
-            "index_mode": self.index_mode,
-        }
-        save_json(target, payload)
-        return target
-```
-
-
-**解读**：`STORE_VERSION` 是 schema 版本；`platform_version` 标记平台里程碑；`chunks` 全量序列化教学透明但体积大。
-
----
-
-## load / load_or_bootstrap
-
-```python
-def load(cls, path: Path) -> KnowledgeStore:
-        """从 JSON 加载知识库"""
-        raw = load_json(path, default=None)
-        if not raw:
-            return cls.bootstrap_from_sample_docs(store_path=path)
-
-        store = cls(store_path=path)
-        store.documents = [
-            KnowledgeDocument.from_dict(d) for d in raw.get("documents", [])
-        ]
-        store.chunks = [_chunk_from_dict(c) for c in raw.get("chunks", [])]
-        store.embedding_state = dict(raw.get("embedding") or {})
-        store.vector_backend = str(raw.get("vector_backend") or VECTOR_BACKEND)
-        if raw.get("chunk_config"):
-            store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
-        store.last_rebuilt_at = raw.get("last_rebuilt_at")
-        store.last_incremental_at = raw.get("last_incremental_at")
-        store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
-        store._sync_chroma_from_json()
-        store._rag_service = store._build_rag_service()
-        return store
-
-    @classmethod
-    def load_or_bootstrap(cls, path: Path | None = None) -> KnowledgeStore:
-        """加载已有库，不存在则从 sample_docs 引导"""
-        target = path or _default_store_path()
-        if target.is_file():
-            return cls.load(target)
-        store = cls.bootstrap_from_sample_docs(store_path=target)
-        store.save(target)
-        return store
-```
-
-
-**解读**：`load_or_bootstrap` 是 API 冷启动唯一入口；不存在文件时 bootstrap 并立即 save，避免每次请求重复引导。
-
----
-
-## bootstrap_from_sample_docs
-
-```python
-def bootstrap_from_sample_docs(cls, *, store_path: Path | None = None) -> KnowledgeStore:
-        """用内置 sample_docs 初始化知识库"""
-        rag = RAGContextService.from_sample_docs(use_embedding=True)
-        store = cls(store_path=store_path)
-        now = _utc_now()
-
-        by_source: dict[str, list[TextChunk]] = {}
-        for chunk in rag.index.chunks:
-            by_source.setdefault(chunk.source, []).append(chunk)
-
-        for source, chunks in sorted(by_source.items()):
-            store.documents.append(
-                KnowledgeDocument(
-                    name=source,
-                    ingested_at=now,
-                    size_bytes=sum(len(c.text) for c in chunks),
-                    chunk_count=len(chunks),
-                )
-            )
-        store.chunks = list(rag.index.chunks)
-        retriever = rag.index.retriever
-        from rag.embedding_retriever import EmbeddingRetriever
-
-        if isinstance(retriever, EmbeddingRetriever):
-            store.embedding_state = retriever._client.model.export_state()
-        store._rebuild_index()
-        return store
-```
-
-
-**解读**：从既有 `RAGContextService.from_sample_docs` 迁移数据，保证 Day 24 行为回归；按 source 分组生成 `KnowledgeDocument` 列表。
-
----
-
-## 单例 get_knowledge_store
-
-```python
-_store: KnowledgeStore | None = None
-_store_lock = threading.Lock()
-
-
-def get_knowledge_store(*, reload: bool = False) -> KnowledgeStore:
-    """全局知识库单例（API 与 factory 共享）"""
-    global _store
-    with _store_lock:
-        if _store is None or reload:
-            _store = KnowledgeStore.load_or_bootstrap()
-        return _store
-```
-
-
-**解读**：`threading.Lock` + 全局 `_store`；`reload=True` 强制重载（运维场景）；测试用 `set_knowledge_store` 注入假实例。
-
----
-
-## 与测试对照
-
-| 测试 | 覆盖代码 |
-|------|----------|
-| test_save_and_load_roundtrip | save/load + retrieve |
-| test_ingest_text_appends_chunks | ingest_text |
-| test_bootstrap_has_chunks | bootstrap |
-
-精读完。结合 [25_ingestion流水线精读.md](25_ingestion流水线精读.md)。
-
----
-
-## 扩展精读：ingest_file 与 ingest_bytes
-
-```python
-def ingest_file(
-        self,
-        path: Path,
-        *,
-        clean: bool = True,
-        chunk_size: int = 200,
-        overlap: int = 40,
-    ) -> KnowledgeDocument:
-        """从磁盘文件 ingestion"""
-        content, encoding = read_text_file(path)
-        cleaned = content
-        if clean:
-            cleaned, _ = clean_text(content)
-        doc = DocumentRecord(
-            path=path,
-            content=content,
-            encoding=encoding,
-            size_bytes=path.stat().st_size,
-            cleaned=cleaned,
-        )
-        new_chunks = chunk_documents(
-            [doc],
-            chunk_size=chunk_size,
-            overlap=overlap,
-            use_cleaned=clean,
-        )
-        self._append_chunks(path.name, new_chunks, size_bytes=doc.size_bytes)
-        self._rebuild_index()
-        return self.documents[-1]
-
-    def ingest_bytes(
-        self,
-        data: bytes,
-        *,
-        filename: str,
-        clean: bool = True,
-        chunk_strategy: str = "auto",
-        incremental: bool = True,
-    ) -> KnowledgeDocument:
-        """处理上传二进制 — Day 26 起委托 doc_parser"""
-        from tools.doc_parser import parse_bytes
-
-        parsed = parse_bytes(data, filename)
-        cfg = self.get_chunk_config()
-        return self.ingest_parsed(
-            parsed,
-            clean=clean,
-            chunk_strategy=chunk_strategy if chunk_strategy != "auto" else cfg.strategy,
-            incremental=incremental,
-        )
 ```
 
 
@@ -371,16 +369,16 @@ def ingest_file(
 ## 扩展精读：as_rag_service 与 _build_rag_service
 
 ```python
-"""构建或返回缓存的 RAGContextService"""
-        if self._rag_service is None:
-            self._rag_service = self._build_rag_service()
-        return self._rag_service
+chroma_path: Path | None = None
+    _rag_service: RAGContextService | None = field(default=None, repr=False)
 
-    def invalidate_cache(self) -> None:
-        self._rag_service = None
+    @property
+    def chunk_count(self) -> int:
+        return len(self.chunks)
 
-    def get_chunk_config(self) -> ChunkConfig:
-        return ChunkConfig.from_dict(self.chunk_config.to_dict())
+    @property
+    def document_count(self) -> int:
+        return len(self.documents)
 ```
 
 
@@ -464,7 +462,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.30.0"
+    assert data["platform_version"] == "0.34.0"
     assert isinstance(data["documents"], list)
 
 
@@ -496,7 +494,7 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.30.0"
+    assert raw["platform_version"] == "0.34.0"
 ```
 
 
@@ -513,56 +511,56 @@ def test_store_json_has_version(tmp_store, tmp_path):
 ## 扩展精读：ingest_parsed（Day 26 衔接）
 
 ```python
-self,
-        parsed: ParsedDocument,
+self._append_chunks(filename, new_chunks, size_bytes=doc.size_bytes)
+        self._rebuild_index()
+        return self.documents[-1]
+
+    def ingest_file(
+        self,
+        path: Path,
         *,
         clean: bool = True,
-        chunk_strategy: str | None = None,
-        chunk_size: int | None = None,
-        overlap: int | None = None,
-        incremental: bool = False,
+        chunk_size: int = 200,
+        overlap: int = 40,
     ) -> KnowledgeDocument:
-        """将 ParsedDocument 写入知识库"""
-        cfg = self.get_chunk_config()
-        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
-        cs = chunk_size if chunk_size is not None else cfg.chunk_size
-        ov = overlap if overlap is not None else cfg.overlap
-        text = (parsed.plain_text or "").strip()
-        if not text:
-            raise ValueError("解析结果为空")
-
+        """从磁盘文件 ingestion"""
+        content, encoding = read_text_file(path)
+        cleaned = content
         if clean:
-            text, _ = clean_text(text)
-            parsed.plain_text = text
-            for section in parsed.sections:
-                section.body, _ = clean_text(section.body)
-
-        new_chunks = chunk_from_parsed(
-            parsed,
-            strategy=strategy,
-            chunk_size=cs,
-            overlap=ov,
+            cleaned, _ = clean_text(content)
+        doc = DocumentRecord(
+            path=path,
+            content=content,
+            encoding=encoding,
+            size_bytes=path.stat().st_size,
+            cleaned=cleaned,
         )
-        size_bytes = len(parsed.plain_text.encode("utf-8"))
-
-        if incremental:
-            removed = self._remove_document_by_source(parsed.filename)
-            self._append_chunks(
-                parsed.filename,
-                new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
-            )
-            self._incremental_index(new_chunks, replaced_count=len(removed))
-        else:
-            self._append_chunks(
-                parsed.filename,
-                new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
-            )
-            self._rebuild_index()
+        new_chunks = chunk_documents(
+            [doc],
+            chunk_size=chunk_size,
+            overlap=overlap,
+            use_cleaned=clean,
+        )
+        self._append_chunks(path.name, new_chunks, size_bytes=doc.size_bytes)
+        self._rebuild_index()
         return self.documents[-1]
+
+    def ingest_bytes(
+        self,
+        data: bytes,
+        *,
+        filename: str,
+        clean: bool = True,
+        chunk_strategy: str = "auto",
+        incremental: bool = True,
+    ) -> KnowledgeDocument:
+        """处理上传二进制 — Day 26 起委托 doc_parser"""
+        from tools.doc_parser import parse_bytes
+
+        parsed = parse_bytes(data, filename)
+        cfg = self.get_chunk_config()
+        return self.ingest_parsed(
+            parsed,
 ```
 
 
@@ -615,7 +613,21 @@ self,
       .slice(-5)
       .join("、");
     el.textContent = `${data.document_count} 篇 / ${data.chunk_count} 块${
-      data.index_mode ? " · " + data.index_mode : ""
+      data.citation_config && data.citation_config.enabled
+        ? " · cite"
+        : data.rewrite_config && data.rewrite_config.enabled === false
+          ? " · no-rewrite"
+          : data.rewrite_config && data.rewrite_config.enabled
+            ? " · rewrite"
+            : data.rerank_config && data.rerank_config.enabled === false
+              ? " · recall-only"
+              : data.rerank_config && data.rerank_config.enabled
+                ? " · rerank"
+                : data.retrieval_config && data.retrieval_config.mode
+                  ? " · " + data.retrieval_config.mode
+                  : data.index_mode
+                    ? " · " + data.index_mode
+                    : ""
     }${docs ? " · " + docs : ""}`;
   }
 
@@ -758,23 +770,23 @@ self,
 ## 附录：status_dict 与测试对照（精读专节）
 
 ```python
-from tools.doc_parser import supported_formats
+raw = load_json(path, default=None)
+        if not raw:
+            return cls.bootstrap_from_sample_docs(store_path=path)
 
-        return {
-            "document_count": self.document_count,
-            "chunk_count": self.chunk_count,
-            "documents": [d.to_dict() for d in self.documents],
-            "store_path": str(self.store_path) if self.store_path else None,
-            "platform_version": PLATFORM_VERSION,
-            "supported_formats": supported_formats(),
-            "chunk_config": self.chunk_config.to_dict(),
-            "last_rebuilt_at": self.last_rebuilt_at,
-            "last_incremental_at": self.last_incremental_at,
-            "index_mode": self.index_mode,
-            "vector_backend": self.vector_backend,
-            "chroma_path": str(self._resolve_chroma_path()),
-            "chroma_count": self._chroma_index().count() if self.chunks else 0,
-        }
+        store = cls(store_path=path)
+        store.documents = [
+            KnowledgeDocument.from_dict(d) for d in raw.get("documents", [])
+        ]
+        store.chunks = [_chunk_from_dict(c) for c in raw.get("chunks", [])]
+        store.embedding_state = dict(raw.get("embedding") or {})
+        store.vector_backend = str(raw.get("vector_backend") or VECTOR_BACKEND)
+        if raw.get("chunk_config"):
+            store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
+        store.last_rebuilt_at = raw.get("last_rebuilt_at")
+        store.last_incremental_at = raw.get("last_incremental_at")
+        store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
+        if raw.get("retrieval_config"):
 ```
 
 
@@ -844,7 +856,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.30.0"
+    assert data["platform_version"] == "0.34.0"
     assert isinstance(data["documents"], list)
 
 
@@ -876,7 +888,7 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.30.0"
+    assert raw["platform_version"] == "0.34.0"
 ```
 
 
@@ -899,15 +911,16 @@ def test_store_json_has_version(tmp_store, tmp_path):
 ## 节选：_chunk_to_dict
 
 ```python
-def _chunk_to_dict(chunk: TextChunk) -> dict[str, Any]:
-    return {
-        "chunk_id": chunk.chunk_id,
-        "text": chunk.text,
-        "source": chunk.source,
-        "index": chunk.index,
-        "start_char": chunk.start_char,
-        "end_char": chunk.end_char,
-    }
+if not self.chunks:
+            self.embedding_state = {}
+            self._chroma_index().reset()
+            self.last_incremental_at = _utc_now()
+            self.index_mode = INDEX_MODE_INCREMENTAL
+            self.invalidate_cache()
+            return False
+
+        old_vocab = dict(self.embedding_state.get("vocab") or {})
+        retriever = EmbeddingRetriever(self.chunks)
 ```
 
 
@@ -934,25 +947,25 @@ JSON 序列化丢弃 runtime 对象，只留可恢复字段。
 Day 25 `ingest_bytes` 在 Day 26 仓库中首行调用 `parse_bytes`：
 
 ```python
-self,
-        data: bytes,
-        *,
-        filename: str,
-        clean: bool = True,
-        chunk_strategy: str = "auto",
-        incremental: bool = True,
-    ) -> KnowledgeDocument:
-        """处理上传二进制 — Day 26 起委托 doc_parser"""
-        from tools.doc_parser import parse_bytes
+if not text:
+            raise ValueError("文档内容不能为空")
+        if not filename.strip():
+            raise ValueError("filename 不能为空")
 
-        parsed = parse_bytes(data, filename)
-        cfg = self.get_chunk_config()
-        return self.ingest_parsed(
-            parsed,
-            clean=clean,
-            chunk_strategy=chunk_strategy if chunk_strategy != "auto" else cfg.strategy,
-            incremental=incremental,
+        cleaned = text
+        if clean:
+            cleaned, _ = clean_text(text)
+        doc = DocumentRecord(
+            path=Path(filename),
+            content=text,
+            encoding="utf-8",
+            size_bytes=len(text.encode("utf-8")),
+            cleaned=cleaned,
         )
+        new_chunks = chunk_documents(
+            [doc],
+            chunk_size=cs,
+            overlap=ov,
 ```
 
 

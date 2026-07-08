@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034
 """
 
 from __future__ import annotations
@@ -13,6 +13,10 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from api.schemas import (
     ChunkConfigRequest,
     ChunkConfigResponse,
+    CitationConfigRequest,
+    CitationConfigResponse,
+    CitationPreviewRequest,
+    CitationPreviewResponse,
     EvaluateRequest,
     EvaluateResponse,
     KnowledgeStatusResponse,
@@ -34,6 +38,7 @@ from rag.chunk_config import PRESET_CONFIGS, ChunkConfig
 from rag.ingestion import ingest_upload
 from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
+from rag.citation_config import CitationConfig
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
@@ -120,6 +125,35 @@ def rewrite_preview(body: RewritePreviewRequest) -> RewritePreviewResponse:
     rewriter = RuleBasedQueryRewriter(config=cfg)
     result = rewriter.rewrite(body.query)
     return RewritePreviewResponse(**result.to_dict())
+
+
+@router.get("/citation-config", response_model=CitationConfigResponse)
+def get_citation_config() -> CitationConfigResponse:
+    """返回引用溯源开关与展示参数"""
+    cfg = get_knowledge_store().get_citation_config()
+    return CitationConfigResponse(**cfg.to_dict())
+
+
+@router.put("/citation-config", response_model=CitationConfigResponse)
+def update_citation_config(body: CitationConfigRequest) -> CitationConfigResponse:
+    """更新引用溯源策略并持久化"""
+    store = get_knowledge_store()
+    try:
+        cfg = CitationConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_citation_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return CitationConfigResponse(**cfg.to_dict())
+
+
+@router.post("/citation-preview", response_model=CitationPreviewResponse)
+def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
+    """预览单条 query 的检索引用（含 rewrite 审计）"""
+    store = get_knowledge_store()
+    data = store.fetch_citations(body.query)
+    return CitationPreviewResponse(**data)
 
 
 @router.get("/chunk-config", response_model=ChunkConfigResponse)

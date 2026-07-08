@@ -621,7 +621,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.33.0"
+    assert client.get("/api/health").json()["version"] == "0.34.0"
 
 
 def test_get_rewrite_config_default(client):
@@ -657,7 +657,7 @@ def test_rewrite_preview_colloquial(client):
 
 def test_status_includes_rewrite_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.33.0"
+    assert status["platform_version"] == "0.34.0"
     assert status["rewrite_config"]["enabled"] is True
 
 
@@ -738,6 +738,23 @@ def get_rewrite_config(self) -> RewriteConfig:
         self.rewrite_config = RewriteConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.rewrite_config
+
+    def get_citation_config(self) -> CitationConfig:
+        return CitationConfig.from_dict(self.citation_config.to_dict())
+
+    def set_citation_config(self, config: CitationConfig) -> CitationConfig:
+        config.validate()
+        self.citation_config = CitationConfig.from_dict(config.to_dict())
+        return self.citation_config
+
+    def fetch_citations(self, query: str) -> dict[str, Any]:
+        """按当前 citation_config 检索并返回引用包 dict"""
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return {"query": query.strip(), "citations": [], "rewrite": None}
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(query, config=cfg)
+        return bundle.to_dict()
 
     def ingest_text(
         self,
@@ -1006,7 +1023,7 @@ function RERANKING_SEARCH(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034
 """
 
 from __future__ import annotations
@@ -1018,6 +1035,10 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from api.schemas import (
     ChunkConfigRequest,
     ChunkConfigResponse,
+    CitationConfigRequest,
+    CitationConfigResponse,
+    CitationPreviewRequest,
+    CitationPreviewResponse,
     EvaluateRequest,
     EvaluateResponse,
     KnowledgeStatusResponse,
@@ -1039,6 +1060,7 @@ from rag.chunk_config import PRESET_CONFIGS, ChunkConfig
 from rag.ingestion import ingest_upload
 from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
+from rag.citation_config import CitationConfig
 from rag.query_rewriter import RuleBasedQueryRewriter
 from rag.rerank_config import RerankConfig
 from rag.rewrite_config import RewriteConfig
@@ -1127,6 +1149,35 @@ def rewrite_preview(body: RewritePreviewRequest) -> RewritePreviewResponse:
     return RewritePreviewResponse(**result.to_dict())
 
 
+@router.get("/citation-config", response_model=CitationConfigResponse)
+def get_citation_config() -> CitationConfigResponse:
+    """返回引用溯源开关与展示参数"""
+    cfg = get_knowledge_store().get_citation_config()
+    return CitationConfigResponse(**cfg.to_dict())
+
+
+@router.put("/citation-config", response_model=CitationConfigResponse)
+def update_citation_config(body: CitationConfigRequest) -> CitationConfigResponse:
+    """更新引用溯源策略并持久化"""
+    store = get_knowledge_store()
+    try:
+        cfg = CitationConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_citation_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return CitationConfigResponse(**cfg.to_dict())
+
+
+@router.post("/citation-preview", response_model=CitationPreviewResponse)
+def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
+    """预览单条 query 的检索引用（含 rewrite 审计）"""
+    store = get_knowledge_store()
+    data = store.fetch_citations(body.query)
+    return CitationPreviewResponse(**data)
+
+
 @router.get("/chunk-config", response_model=ChunkConfigResponse)
 def get_chunk_config() -> ChunkConfigResponse:
     """返回当前知识库默认分块参数"""
@@ -1136,45 +1187,7 @@ def get_chunk_config() -> ChunkConfigResponse:
 
 @router.put("/chunk-config", response_model=ChunkConfigResponse)
 def update_chunk_config(body: ChunkConfigRequest) -> ChunkConfigResponse:
-    """更新默认分块参数（影响后续上传）"""
-    store = get_knowledge_store()
-    try:
-        cfg = ChunkConfig.from_dict(body.model_dump())
-        cfg.validate()
-        store.set_chunk_config(cfg)
-        store.save()
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return ChunkConfigResponse(**cfg.to_dict())
-
-
-@router.post("/evaluate", response_model=EvaluateResponse)
-def evaluate_chunk_configs(body: EvaluateRequest | None = None) -> EvaluateResponse:
-    """
-    对内置样例文档运行 A/B 分块评估，返回 hit@1 与推荐配置。
-
-    默认使用 PRESET_CONFIGS 四套预设与 day27 评估问句集。
-    """
-    body = body or EvaluateRequest()
-    if not _EVAL_SAMPLE.is_file():
-        raise HTTPException(status_code=500, detail="评估样例文档缺失")
-
-    doc = parse_bytes(_EVAL_SAMPLE.read_bytes(), _EVAL_SAMPLE.name)
-    from day27.constants import EVAL_QUERIES
-
-    queries = [EvalQuery.from_dict(q) for q in EVAL_QUERIES]
-
-    if body.use_presets and not body.configs:
-        configs = list(PRESET_CONFIGS)
-    else:
-        configs = [ChunkConfig.from_dict(c.model_dump()) for c in body.configs]
-        for c in configs:
-            c.validate()
-
-    results = run_ab_experiment(doc, configs, queries)
-    best = pick_best_config(results)
-    if not best:
-        raise HTTPException(stat
+    """更新默认分块参数（影
 ```
 
 
@@ -1262,7 +1275,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.33.0"
+    assert client.get("/api/health").json()["version"] == "0.34.0"
 
 
 def test_get_rewrite_config_default(client):
@@ -1298,7 +1311,7 @@ def test_rewrite_preview_colloquial(client):
 
 def test_status_includes_rewrite_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.33.0"
+    assert status["platform_version"] == "0.34.0"
     assert status["rewrite_config"]["enabled"] is True
 
 

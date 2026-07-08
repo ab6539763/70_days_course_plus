@@ -42,7 +42,7 @@
     return { kind: "bot", text: reply };
   }
 
-  function appendMessage(role, content, meta) {
+  function appendMessage(role, content, meta, extras) {
     const wrap = document.createElement("div");
     wrap.className = `msg msg--${role}`;
 
@@ -71,6 +71,29 @@
     const p = document.createElement("p");
     p.textContent = typeof content === "string" ? content : content.text;
     bubble.appendChild(p);
+
+    if (extras && extras.citations && extras.citations.length) {
+      const citeBox = document.createElement("div");
+      citeBox.className = "msg__citations";
+      const title = document.createElement("div");
+      title.className = "msg__citations-title";
+      title.textContent = "引用来源";
+      citeBox.appendChild(title);
+      extras.citations.forEach(function (c) {
+        const line = document.createElement("div");
+        line.className = "msg__citation-item";
+        line.textContent = `[${c.rank}] ${c.source} · ${Math.round((c.score || 0) * 100)}% · ${c.preview || ""}`;
+        citeBox.appendChild(line);
+      });
+      bubble.appendChild(citeBox);
+    }
+
+    if (extras && extras.rewrite && extras.rewrite.changed) {
+      const rw = document.createElement("div");
+      rw.className = "msg__rewrite";
+      rw.textContent = `改写: ${extras.rewrite.original} → ${extras.rewrite.rewritten}`;
+      bubble.appendChild(rw);
+    }
 
     if (meta) {
       const metaEl = document.createElement("span");
@@ -118,7 +141,10 @@
       } else {
         parsed = parseReply(result.reply);
       }
-      appendMessage("bot", parsed, result.meta);
+      appendMessage("bot", parsed, result.meta, {
+        citations: result.citations,
+        rewrite: result.rewrite,
+      });
     } catch (err) {
       appendMessage("bot", `错误：${err.message}`, "请求失败");
     } finally {

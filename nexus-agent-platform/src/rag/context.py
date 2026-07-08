@@ -17,6 +17,9 @@ from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.embedding_retriever import EmbeddingRetriever
 from rag.hybrid_retriever import HybridRetriever
 from rag.reranking_retriever import RerankingRetriever
+from rag.citation_builder import CitationBundle, build_citation_bundle
+from rag.citation_config import CitationConfig
+from rag.query_rewriter import RewriteResult
 from rag.rewriting_retriever import RewritingRetriever
 from rag.retriever import KeywordRetriever, RetrievalResult
 from tools.doc_reader import DocumentRecord, read_documents
@@ -159,3 +162,34 @@ class RAGContextService:
             )
             lines.append(f"     {r.preview(80)}")
         return "\n".join(lines)
+
+    def retrieve_citation_bundle(
+        self,
+        query: str,
+        *,
+        top_k: int | None = None,
+        config: CitationConfig | None = None,
+    ) -> CitationBundle:
+        """
+        检索并构建结构化引用包（含可选 rewrite 审计元数据）。
+
+        供 /api/chat citations 与 citation-preview 使用。
+        """
+        cfg = config or CitationConfig()
+        k = top_k if top_k is not None else cfg.max_citations
+        query = (query or "").strip()
+        if not query:
+            return CitationBundle(citations=[], query="")
+
+        results = self.index.search(query, top_k=k)
+        rewrite: RewriteResult | None = None
+        retriever = self.index.retriever
+        if isinstance(retriever, RewritingRetriever):
+            rewrite = retriever.last_rewrite
+
+        return build_citation_bundle(
+            query,
+            results,
+            config=cfg,
+            rewrite=rewrite,
+        )

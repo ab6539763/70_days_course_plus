@@ -162,35 +162,35 @@ if strategy == "auto":
 ## ingest_parsed 衔接
 
 ```python
-self,
-        parsed: ParsedDocument,
+self._append_chunks(filename, new_chunks, size_bytes=doc.size_bytes)
+        self._rebuild_index()
+        return self.documents[-1]
+
+    def ingest_file(
+        self,
+        path: Path,
         *,
         clean: bool = True,
-        chunk_strategy: str | None = None,
-        chunk_size: int | None = None,
-        overlap: int | None = None,
-        incremental: bool = False,
+        chunk_size: int = 200,
+        overlap: int = 40,
     ) -> KnowledgeDocument:
-        """将 ParsedDocument 写入知识库"""
-        cfg = self.get_chunk_config()
-        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
-        cs = chunk_size if chunk_size is not None else cfg.chunk_size
-        ov = overlap if overlap is not None else cfg.overlap
-        text = (parsed.plain_text or "").strip()
-        if not text:
-            raise ValueError("解析结果为空")
-
+        """从磁盘文件 ingestion"""
+        content, encoding = read_text_file(path)
+        cleaned = content
         if clean:
-            text, _ = clean_text(text)
-            parsed.plain_text = text
-            for section in parsed.sections:
-                section.body, _ = clean_text(section.body)
-
-        new_chunks = chunk_from_parsed(
-            parsed,
-            strategy=strategy,
-            chunk_size=cs,
-            overlap=ov,
+            cleaned, _ = clean_text(content)
+        doc = DocumentRecord(
+            path=path,
+            content=content,
+            encoding=encoding,
+            size_bytes=path.stat().st_size,
+            cleaned=cleaned,
+        )
+        new_chunks = chunk_documents(
+            [doc],
+            chunk_size=chunk_size,
+            overlap=overlap,
+            use_cleaned=clean,
         )
 ```
 
@@ -202,56 +202,57 @@ self,
 ## 附录：KnowledgeStore.ingest_parsed 全文节选
 
 ```python
-self,
-        parsed: ParsedDocument,
+self._append_chunks(filename, new_chunks, size_bytes=doc.size_bytes)
+        self._rebuild_index()
+        return self.documents[-1]
+
+    def ingest_file(
+        self,
+        path: Path,
         *,
         clean: bool = True,
-        chunk_strategy: str | None = None,
-        chunk_size: int | None = None,
-        overlap: int | None = None,
-        incremental: bool = False,
+        chunk_size: int = 200,
+        overlap: int = 40,
     ) -> KnowledgeDocument:
-        """将 ParsedDocument 写入知识库"""
-        cfg = self.get_chunk_config()
-        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
-        cs = chunk_size if chunk_size is not None else cfg.chunk_size
-        ov = overlap if overlap is not None else cfg.overlap
-        text = (parsed.plain_text or "").strip()
-        if not text:
-            raise ValueError("解析结果为空")
-
+        """从磁盘文件 ingestion"""
+        content, encoding = read_text_file(path)
+        cleaned = content
         if clean:
-            text, _ = clean_text(text)
-            parsed.plain_text = text
-            for section in parsed.sections:
-                section.body, _ = clean_text(section.body)
-
-        new_chunks = chunk_from_parsed(
-            parsed,
-            strategy=strategy,
-            chunk_size=cs,
-            overlap=ov,
+            cleaned, _ = clean_text(content)
+        doc = DocumentRecord(
+            path=path,
+            content=content,
+            encoding=encoding,
+            size_bytes=path.stat().st_size,
+            cleaned=cleaned,
         )
-        size_bytes = len(parsed.plain_text.encode("utf-8"))
-
-        if incremental:
-            removed = self._remove_document_by_source(parsed.filename)
-            self._append_chunks(
-                parsed.filename,
-                new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
-            )
-            self._incremental_index(new_chunks, replaced_count=len(removed))
-        else:
-            self._append_chunks(
-                parsed.filename,
-                new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
-            )
-            self._rebuild_index()
+        new_chunks = chunk_documents(
+            [doc],
+            chunk_size=chunk_size,
+            overlap=overlap,
+            use_cleaned=clean,
+        )
+        self._append_chunks(path.name, new_chunks, size_bytes=doc.size_bytes)
+        self._rebuild_index()
         return self.documents[-1]
+
+    def ingest_bytes(
+        self,
+        data: bytes,
+        *,
+        filename: str,
+        clean: bool = True,
+        chunk_strategy: str = "auto",
+        incremental: bool = True,
+    ) -> KnowledgeDocument:
+        """处理上传二进制 — Day 26 起委托 doc_parser"""
+        from tools.doc_parser import parse_bytes
+
+        parsed = parse_bytes(data, filename)
+        cfg = self.get_chunk_config()
+        return self.ingest_parsed(
+            parsed,
+            clean=clean,
 ```
 
 

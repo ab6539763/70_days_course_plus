@@ -103,50 +103,50 @@ __all__ = ["ingest_directory", "ingest_upload", "supported_formats"]
 ## 与 api/knowledge.py 衔接
 
 ```python
-async def upload_document(
-    file: UploadFile = File(..., description="企业文档 (.txt / .md / .pdf)"),
-) -> KnowledgeUploadResponse:
-    """
-    上传企业文档到知识库：解析 → 落盘 → 分块 → Chroma 向量索引 → 持久化。
+"""返回引用溯源开关与展示参数"""
+    cfg = get_knowledge_store().get_citation_config()
+    return CitationConfigResponse(**cfg.to_dict())
 
-    Day 26 起支持 Markdown 与 PDF。上传成功后清除服务端会话。
-    """
-    if not file.filename:
-        raise HTTPException(status_code=422, detail="缺少文件名")
 
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=422, detail="文件内容为空")
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="文件超过 500KB 上限")
-
+@router.put("/citation-config", response_model=CitationConfigResponse)
+def update_citation_config(body: CitationConfigRequest) -> CitationConfigResponse:
+    """更新引用溯源策略并持久化"""
+    store = get_knowledge_store()
     try:
-        meta = ingest_upload(data, file.filename)
+        cfg = CitationConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_citation_config(cfg)
+        store.save()
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except NexusError as exc:
-        status = 400 if exc.code in (
-            "PDF_PARSE_ERROR", "PDF_EMPTY", "UNSUPPORTED_FORMAT", "EMPTY_FILE"
-        ) else 500
-        raise HTTPException(status_code=status, detail=exc.message) from exc
-    except StorageError as exc:
-        raise HTTPException(status_code=500, detail=exc.message) from exc
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="文本文件须为 UTF-8 编码") from exc
+    return CitationConfigResponse(**cfg.to_dict())
 
-    cleared = session_manager.clear_all()
+
+@router.post("/citation-preview", response_model=CitationPreviewResponse)
+def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
+    """预览单条 query 的检索引用（含 rewrite 审计）"""
     store = get_knowledge_store()
+    data = store.fetch_citations(body.query)
+    return CitationPreviewResponse(**data)
 
-    return KnowledgeUploadResponse(
-        filename=meta.name,
-        format=meta.format,
-        chunk_count=meta.chunk_count,
-        document_count=store.document_count,
-        total_chunks=store.chunk_count,
-        sessions_cleared=cleared,
-        index_mode=store.index_mode,
-        message=f"文档已入库（{meta.format}），增量索引已更新",
-    )
+
+@router.get("/chunk-config", response_model=ChunkConfigResponse)
+def get_chunk_config() -> ChunkConfigResponse:
+    """返回当前知识库默认分块参数"""
+    cfg = get_knowledge_store().get_chunk_config()
+    return ChunkConfigResponse(**cfg.to_dict())
+
+
+@router.put("/chunk-config", response_model=ChunkConfigResponse)
+def update_chunk_config(body: ChunkConfigRequest) -> ChunkConfigResponse:
+    """更新默认分块参数（影响后续上传）"""
+    store = get_knowledge_store()
+    try:
+        cfg = ChunkConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_chunk_config(cfg)
+        store.save()
+    except ValueError as exc:
 ```
 
 

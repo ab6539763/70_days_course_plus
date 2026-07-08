@@ -27,6 +27,8 @@ class ChatResponse(BaseModel):
     meta: str = "API"
     kind: str = "llm"
     session_id: str
+    citations: list[dict] = Field(default_factory=list)
+    rewrite: dict | None = None
 
 
 class HealthResponse(BaseModel):
@@ -76,6 +78,7 @@ class KnowledgeStatusResponse(BaseModel):
     retrieval_config: dict = Field(default_factory=dict)
     rerank_config: dict = Field(default_factory=dict)
     rewrite_config: dict = Field(default_factory=dict)
+    citation_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -137,6 +140,34 @@ class RewritePreviewResponse(BaseModel):
     rewritten: str
     changed: bool
     rule_id: str | None = None
+
+
+class CitationConfigRequest(BaseModel):
+    """PUT /api/knowledge/citation-config"""
+
+    enabled: bool = True
+    max_citations: int = Field(3, ge=1, le=10)
+    preview_max_chars: int = Field(120, ge=20, le=500)
+    include_rewrite_meta: bool = True
+
+
+class CitationConfigResponse(BaseModel):
+    enabled: bool
+    max_citations: int
+    preview_max_chars: int
+    include_rewrite_meta: bool
+
+
+class CitationPreviewRequest(BaseModel):
+    """POST /api/knowledge/citation-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+
+
+class CitationPreviewResponse(BaseModel):
+    query: str
+    citations: list[dict]
+    rewrite: dict | None = None
 
 
 class RebuildRequest(BaseModel):

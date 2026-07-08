@@ -437,7 +437,15 @@ def _build_rag_service(self) -> RAGContextService:
         vector = ChromaEmbeddingRetriever(self.chunks, chroma, client=client)
         keyword = KeywordRetriever(self.chunks)
         cfg = self.get_retrieval_config()
-        retriever = HybridRetriever(self.chunks, keyword, vector, config=cfg)
+        hybrid = HybridRetriever(self.chunks, keyword, vector, config=cfg)
+        rerank_cfg = self.get_rerank_config()
+        reranking = RerankingRetriever(
+            hybrid,
+            reranker=MockCrossEncoderReranker(),
+            config=rerank_cfg,
+        )
+        rewrite_cfg = self.get_rewrite_config()
+        retriever = RewritingRetriever(reranking, config=rewrite_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
         return RAGContextService(index)
 ```
@@ -467,6 +475,8 @@ from rag.chroma_retriever import ChromaEmbeddingRetriever
 from rag.chroma_store import ChromaVectorIndex
 from rag.embedding import EmbeddingClient
 from rag.hybrid_retriever import HybridRetriever, _rrf_merge, _weighted_merge
+from rag.reranking_retriever import RerankingRetriever
+from rag.rewriting_retriever import RewritingRetriever
 from rag.knowledge_store import KnowledgeStore
 from rag.retrieval_config import (
     FUSION_RRF,
@@ -490,6 +500,11 @@ def _hybrid_store(tmp_path: Path) -> KnowledgeStore:
 def _build_hybrid(store: KnowledgeStore) -> HybridRetriever:
     rag = store.as_rag_service()
     retriever = rag.index.retriever
+    if isinstance(retriever, RewritingRetriever):
+        retriever = retriever.inner
+    if isinstance(retriever, RerankingRetriever):
+        assert isinstance(retriever.inner, HybridRetriever)
+        return retriever.inner
     assert isinstance(retriever, HybridRetriever)
     return retriever
 
@@ -637,7 +652,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.31.0"
+    assert client.get("/api/health").json()["version"] == "0.34.0"
 
 
 def test_get_retrieval_config_default_hybrid(client):
@@ -663,7 +678,7 @@ def test_put_retrieval_config_rrf(client):
 
 def test_status_includes_retrieval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.31.0"
+    assert status["platform_version"] == "0.34.0"
     assert status["retrieval_config"]["mode"] == "hybrid"
 
 
@@ -739,6 +754,41 @@ def get_retrieval_config(self) -> RetrievalConfig:
         self.retrieval_config = RetrievalConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.retrieval_config
+
+    def get_rerank_config(self) -> RerankConfig:
+        return RerankConfig.from_dict(self.rerank_config.to_dict())
+
+    def set_rerank_config(self, config: RerankConfig) -> RerankConfig:
+        config.validate()
+        self.rerank_config = RerankConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.rerank_config
+
+    def get_rewrite_config(self) -> RewriteConfig:
+        return RewriteConfig.from_dict(self.rewrite_config.to_dict())
+
+    def set_rewrite_config(self, config: RewriteConfig) -> RewriteConfig:
+        config.validate()
+        self.rewrite_config = RewriteConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
+        return self.rewrite_config
+
+    def get_citation_config(self) -> CitationConfig:
+        return CitationConfig.from_dict(self.citation_config.to_dict())
+
+    def set_citation_config(self, config: CitationConfig) -> CitationConfig:
+        config.validate()
+        self.citation_config = CitationConfig.from_dict(config.to_dict())
+        return self.citation_config
+
+    def fetch_citations(self, query: str) -> dict[str, Any]:
+        """按当前 citation_config 检索并返回引用包 dict"""
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return {"query": query.strip(), "citations": [], "rewrite": None}
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(query, config=cfg)
+        return bundle.to_dict()
 
     def ingest_text(
         self,
@@ -1067,7 +1117,7 @@ function HYBRID_SEARCH(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034
 """
 
 from __future__ import annotations
@@ -1079,12 +1129,22 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from api.schemas import (
     ChunkConfigRequest,
     ChunkConfigResponse,
+    CitationConfigRequest,
+    CitationConfigResponse,
+    CitationPreviewRequest,
+    CitationPreviewResponse,
     EvaluateRequest,
     EvaluateResponse,
     KnowledgeStatusResponse,
     KnowledgeUploadResponse,
     RebuildRequest,
     RebuildResponse,
+    RerankConfigRequest,
+    RerankConfigResponse,
+    RewriteConfigRequest,
+    RewriteConfigResponse,
+    RewritePreviewRequest,
+    RewritePreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -1094,6 +1154,10 @@ from rag.chunk_config import PRESET_CONFIGS, ChunkConfig
 from rag.ingestion import ingest_upload
 from rag.knowledge_rebuild import rebuild_store, rebuild_with_best_config
 from rag.knowledge_store import get_knowledge_store
+from rag.citation_config import CitationConfig
+from rag.query_rewriter import RuleBasedQueryRewriter
+from rag.rerank_config import RerankConfig
+from rag.rewrite_config import RewriteConfig
 from rag.retrieval_config import RetrievalConfig
 from rag.retrieval_eval import EvalQuery, pick_best_config, run_ab_experiment
 from tools.doc_parser import parse_bytes
@@ -1125,6 +1189,87 @@ def update_retrieval_config(body: RetrievalConfigRequest) -> RetrievalConfigResp
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return RetrievalConfigResponse(**cfg.to_dict())
+
+
+@router.get("/rerank-config", response_model=RerankConfigResponse)
+def get_rerank_config() -> RerankConfigResponse:
+    """返回 rerank 开关、候选池大小与模型标识"""
+    cfg = get_knowledge_store().get_rerank_config()
+    return RerankConfigResponse(**cfg.to_dict())
+
+
+@router.put("/rerank-config", response_model=RerankConfigResponse)
+def update_rerank_config(body: RerankConfigRequest) -> RerankConfigResponse:
+    """更新 rerank 策略；变更后清除 RAG 缓存"""
+    store = get_knowledge_store()
+    try:
+        cfg = RerankConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_rerank_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RerankConfigResponse(**cfg.to_dict())
+
+
+@router.get("/rewrite-config", response_model=RewriteConfigResponse)
+def get_rewrite_config() -> RewriteConfigResponse:
+    """返回查询改写开关与规则模式"""
+    cfg = get_knowledge_store().get_rewrite_config()
+    return RewriteConfigResponse(**cfg.to_dict())
+
+
+@router.put("/rewrite-config", response_model=RewriteConfigResponse)
+def update_rewrite_config(body: RewriteConfigRequest) -> RewriteConfigResponse:
+    """更新查询改写策略；变更后清除 RAG 缓存"""
+    store = get_knowledge_store()
+    try:
+        cfg = RewriteConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_rewrite_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RewriteConfigResponse(**cfg.to_dict())
+
+
+@router.post("/rewrite-preview", response_model=RewritePreviewResponse)
+def rewrite_preview(body: RewritePreviewRequest) -> RewritePreviewResponse:
+    """预览单条 query 的规则改写结果（不触发检索）"""
+    store = get_knowledge_store()
+    cfg = store.get_rewrite_config()
+    rewriter = RuleBasedQueryRewriter(config=cfg)
+    result = rewriter.rewrite(body.query)
+    return RewritePreviewResponse(**result.to_dict())
+
+
+@router.get("/citation-config", response_model=CitationConfigResponse)
+def get_citation_config() -> CitationConfigResponse:
+    """返回引用溯源开关与展示参数"""
+    cfg = get_knowledge_store().get_citation_config()
+    return CitationConfigResponse(**cfg.to_dict())
+
+
+@router.put("/citation-config", response_model=CitationConfigResponse)
+def update_citation_config(body: CitationConfigRequest) -> CitationConfigResponse:
+    """更新引用溯源策略并持久化"""
+    store = get_knowledge_store()
+    try:
+        cfg = CitationConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_citation_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return CitationConfigResponse(**cfg.to_dict())
+
+
+@router.post("/citation-preview", response_model=CitationPreviewResponse)
+def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
+    """预览单条 query 的检索引用（含 rewrite 审计）"""
+    store = get_knowledge_store()
+    data = store.fetch_citations(body.query)
+    return CitationPreviewResponse(**data)
 
 
 @router.get("/chunk-config", response_model=ChunkConfigResponse)
@@ -1198,71 +1343,6 @@ def rebuild_knowledge_base(body: RebuildRequest | None = None) -> RebuildRespons
             raise HTTPException(status_code=500, detail="评估样例文档缺失")
         report = rebuild_with_best_config(
             store,
-            eval_sample_path=_EVAL_SAMPLE,
-            include_sample_docs=body.include_sample_docs,
-        )
-    else:
-        report = rebuild_store(store, include_sample_docs=body.include_sample_docs)
-
-    cleared = session_manager.clear_all()
-    data = report.to_dict()
-    data["sessions_cleared"] = cleared
-    return RebuildResponse(**data)
-
-
-@router.get("/status", response_model=KnowledgeStatusResponse)
-def knowledge_status() -> KnowledgeStatusResponse:
-    """返回知识库文档数、分块数、支持格式与文档列表"""
-    store = get_knowledge_store()
-    data = store.status_dict()
-    return KnowledgeStatusResponse(**data)
-
-
-@router.post("/upload", response_model=KnowledgeUploadResponse)
-async def upload_document(
-    file: UploadFile = File(..., description="企业文档 (.txt / .md / .pdf)"),
-) -> KnowledgeUploadResponse:
-    """
-    上传企业文档到知识库：解析 → 落盘 → 分块 → Chroma 向量索引 → 持久化。
-
-    Day 26 起支持 Markdown 与 PDF。上传成功后清除服务端会话。
-    """
-    if not file.filename:
-        raise HTTPException(status_code=422, detail="缺少文件名")
-
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=422, detail="文件内容为空")
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="文件超过 500KB 上限")
-
-    try:
-        meta = ingest_upload(data, file.filename)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except NexusError as exc:
-        status = 400 if exc.code in (
-            "PDF_PARSE_ERROR", "PDF_EMPTY", "UNSUPPORTED_FORMAT", "EMPTY_FILE"
-        ) else 500
-        raise HTTPException(status_code=status, detail=exc.message) from exc
-    except StorageError as exc:
-        raise HTTPException(status_code=500, detail=exc.message) from exc
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="文本文件须为 UTF-8 编码") from exc
-
-    cleared = session_manager.clear_all()
-    store = get_knowledge_store()
-
-    return KnowledgeUploadResponse(
-        filename=meta.name,
-        format=meta.format,
-        chunk_count=meta.chunk_count,
-        document_count=store.document_count,
-        total_chunks=store.chunk_count,
-        sessions_cleared=cleared,
-        index_mode=store.index_mode,
-        message=f"文档已入库（{meta.format}），增量索引已更新",
-    )
 ```
 
 
@@ -1350,7 +1430,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.31.0"
+    assert client.get("/api/health").json()["version"] == "0.34.0"
 
 
 def test_get_retrieval_config_default_hybrid(client):
@@ -1376,7 +1456,7 @@ def test_put_retrieval_config_rrf(client):
 
 def test_status_includes_retrieval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.31.0"
+    assert status["platform_version"] == "0.34.0"
     assert status["retrieval_config"]["mode"] == "hybrid"
 
 

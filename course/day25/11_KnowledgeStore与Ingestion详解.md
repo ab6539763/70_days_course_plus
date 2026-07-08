@@ -137,13 +137,42 @@ ingest_text ValueError → API 422；StorageError → 500；UnicodeDecodeError �
 ## 附录：_append_chunks 与 _rebuild_index（详解专节）
 
 ```python
-self,
-        filename: str,
-        new_chunks: list[TextChunk],
-        *,
-        size_bytes: int,
-        doc_format: str = "txt",
-    ) -> None:
+store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
+        if raw.get("rewrite_config"):
+            store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
+        if raw.get("citation_config"):
+            store.citation_config = CitationConfig.from_dict(raw["citation_config"])
+        store._sync_chroma_from_json()
+        store._rag_service = store._build_rag_service()
+        return store
+
+    @classmethod
+    def load_or_bootstrap(cls, path: Path | None = None) -> KnowledgeStore:
+        """加载已有库，不存在则从 sample_docs 引导"""
+        target = path or _default_store_path()
+        if target.is_file():
+            return cls.load(target)
+        store = cls.bootstrap_from_sample_docs(store_path=target)
+        store.save(target)
+        return store
+
+    @classmethod
+    def bootstrap_from_sample_docs(cls, *, store_path: Path | None = None) -> KnowledgeStore:
+        """用内置 sample_docs 初始化知识库"""
+        rag = RAGContextService.from_sample_docs(use_embedding=True)
+        store = cls(store_path=store_path)
+        now = _utc_now()
+
+        by_source: dict[str, list[TextChunk]] = {}
+        for chunk in rag.index.chunks:
+            by_source.setdefault(chunk.source, []).append(chunk)
+```
+
+
+**`_append_chunks`**：新块 `index` 从 `len(self.chunks)` 递增，避免与旧块冲突。每 append 同步追加 `KnowledgeDocument` 元数据行。
+
+```python
+) -> None:
         base_index = len(self.chunks)
         reindexed: list[TextChunk] = []
         for i, chunk in enumerate(new_chunks):
@@ -159,36 +188,6 @@ self,
             )
         self.chunks.extend(reindexed)
         self.documents.append(
-            KnowledgeDocument(
-                name=filename,
-                ingested_at=_utc_now(),
-                size_bytes=size_bytes,
-                chunk_count=len(reindexed),
-                format=doc_format,
-            )
-        )
-```
-
-
-**`_append_chunks`**：新块 `index` 从 `len(self.chunks)` 递增，避免与旧块冲突。每 append 同步追加 `KnowledgeDocument` 元数据行。
-
-```python
-from rag.embedding_retriever import EmbeddingRetriever
-
-        if not self.chunks:
-            self.embedding_state = {}
-            self._chroma_index().reset()
-            self.invalidate_cache()
-            return
-
-        retriever = EmbeddingRetriever(self.chunks)
-        self.embedding_state = retriever._client.model.export_state()
-        vectors = retriever._client.embed_batch([c.text for c in self.chunks])
-        chroma = self._chroma_index()
-        chroma.reset()
-        chroma.upsert_chunks(self.chunks, vectors)
-        self.index_mode = INDEX_MODE_FULL
-        self.invalidate_cache()
 ```
 
 

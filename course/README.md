@@ -96,4 +96,5 @@ python3 scripts/regenerate_courses_day24_30.py
 - [x] Day 31：混合检索（关键词 + 向量融合）
 - [x] Day 32：交叉编码器重排（Rerank — hybrid top-20 → 精排 top-3）
 - [x] Day 33：查询改写（Query Rewrite — 口语问句规范化）
-- [ ] Day 34-70：持续更新中
+- [x] Day 34：引用溯源（Citation Traceability — chat citations[] + 可解释 RAG）
+- [ ] Day 35-70：持续更新中

@@ -128,6 +128,8 @@
       meta: data.meta || "API",
       kind: data.kind || "api",
       session_id: data.session_id,
+      citations: data.citations || [],
+      rewrite: data.rewrite || null,
     };
   }
 

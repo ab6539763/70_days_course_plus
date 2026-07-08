@@ -12,9 +12,10 @@ from api.response_parser import classify_reply
 from api.schemas import ChatRequest, ChatResponse, HealthResponse, SessionResetRequest, SessionResetResponse
 from api.sessions import SessionManager, session_manager
 from chat.orchestrator import ChatOrchestrator
+from rag.knowledge_store import get_knowledge_store
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.33.0"
+API_VERSION = "0.34.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -55,11 +56,18 @@ def chat(
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
+
+    cite_data = get_knowledge_store().fetch_citations(message)
+    citations = cite_data.get("citations") or []
+    rewrite = cite_data.get("rewrite")
+
     return ChatResponse(
         reply=reply,
         meta=meta,
         kind=kind,
         session_id=session_id,
+        citations=citations,
+        rewrite=rewrite,
     )
 
 

@@ -1,7 +1,34 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.33.0（Day 33 查询改写）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-033
+**版本**：v0.34.0（Day 34 引用溯源）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-034
+
+## Day 34 新增
+
+```
+src/rag/citation_builder.py
+  Citation / CitationBundle — 检索结果 → 结构化引用
+src/rag/citation_config.py
+  CitationConfig — enabled / max_citations / preview_max_chars
+src/day34/
+  citation_demo.py
+  citation_api_demo.py
+  phase3_citation_review.py
+```
+
+## API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/knowledge/citation-config` | 引用溯源开关与展示参数 |
+| PUT | `/api/knowledge/citation-config` | 更新引用策略 |
+| POST | `/api/knowledge/citation-preview` | 单条 query 引用预览 |
+
+`store.json` 新增 `citation_config` 字段；默认 `enabled=true`，`max_citations=3`。
+
+`POST /api/chat` 响应扩展 `citations[]` 与 `rewrite` 审计元数据。
+
+检索管线：`RewritingRetriever` → `RerankingRetriever` → `HybridRetriever`；引用在检索后由 `CitationBuilder` 格式化。
 
 ## Day 33 新增
 
