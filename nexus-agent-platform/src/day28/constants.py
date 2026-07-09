@@ -1,0 +1,5 @@
+"""Day 28 常量"""
+
+DAY = 28
+REQ_ID = "ZL-NA-REQ-028"
+PLATFORM_VERSION = "0.28.0"
