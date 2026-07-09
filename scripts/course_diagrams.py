@@ -13,6 +13,7 @@ def file04(day: int) -> str:
         35: _file04_day35,
         36: _file04_day36,
         37: _file04_day37,
+        38: _file04_day38,
     }
     return builders[day]()
 
@@ -369,5 +370,49 @@ GET  /validation-config   ◄── store.get_validation_config()
 PUT  /validation-config   ──► validate ──► set ──► save()
 POST /validation-preview  ──► score query+reply
 POST /api/chat            ──► validation audit
+```
+"""
+
+
+def _file04_day38() -> str:
+    return """# Day 38 流程图与示意图
+
+## validation retry 时序
+
+```mermaid
+sequenceDiagram
+    participant U as Client
+    participant C as ChatAPI
+    participant V as AnswerValidator
+    participant S as KnowledgeStore
+    U->>C: chat message
+    C->>V: validate reply
+    alt failed and retry_on_fail
+        V-->>C: not passed
+        C->>S: fetch_citations_retry rag_wide
+        S-->>C: wider citations
+        C->>V: re-validate
+    end
+    C-->>U: reply + validation.retries
+```
+
+## ASCII：重试决策
+
+```
+validate ──► passed? ──yes──► return
+              │
+              no + retry_on_fail
+              ▼
+         fetch_citations_retry
+              ▼
+         re-validate ──► refuse_on_fail?
+```
+
+## API 配置流
+
+```
+PUT  /validation-config      retry_on_fail max_retries
+POST /validation-retry-preview  模拟重试
+POST /api/chat               validation.retries retry_route
 ```
 """

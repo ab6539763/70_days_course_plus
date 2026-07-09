@@ -631,7 +631,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.37.0"
+PLATFORM_VERSION = "0.38.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -809,6 +809,31 @@ class KnowledgeStore:
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
         return bundle.to_dict()
+
+    def fetch_citations_retry(self, query: str, *, attempt: int = 1) -> dict[str, Any]:
+        """Self-RAG 重试 — 强制 rag_wide 并放大 citation pool"""
+        from rag.citation_config import CitationConfig
+        from rag.route_config import INTENT_RAG_WIDE
+
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return self.fetch_citations(query)
+
+        boosted = CitationConfig.from_dict(
+            {
+                **cfg.to_dict(),
+                "max_citations": min(100, max(cfg.max_citations, 20) + attempt * 10),
+            }
+        )
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(
+            query,
+            config=boosted,
+            intent_override=INTENT_RAG_WIDE,
+        )
+        data = bundle.to_dict()
+        data["retry_attempt"] = attempt
+        return data
 
     def ingest_text(
         self,
@@ -989,21 +1014,7 @@ class KnowledgeStore:
         store.documents = [
             KnowledgeDocument.from_dict(d) for d in raw.get("documents", [])
         ]
-        store.chunks = [_chunk_from_dict(c) for c in raw.get("chunks", [])]
-        store.embedding_state = dict(raw.get("embedding") or {})
-        store.vector_backend = str(raw.get("vector_backend") or VECTOR_BACKEND)
-        if raw.get("chunk_config"):
-            store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
-        store.last_rebuilt_at = raw.get("last_rebuilt_at")
-        store.last_incremental_at = raw.get("last_incremental_at")
-        store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
-        if raw.get("retrieval_config"):
-            store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
-        if raw.get("rerank_config"):
-            store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
-        if raw.get("rewrite_config"):
-            store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
-        if raw
+        store.chunks = [_chunk_from_dict(c) for c in raw.ge
 ```
 
 
@@ -1105,7 +1116,21 @@ self.index_mode = INDEX_MODE_INCREMENTAL
 ## 二十三、延伸阅读：knowledge_store 余下部分
 
 ```python
-.get("citation_config"):
+t("chunks", [])]
+        store.embedding_state = dict(raw.get("embedding") or {})
+        store.vector_backend = str(raw.get("vector_backend") or VECTOR_BACKEND)
+        if raw.get("chunk_config"):
+            store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
+        store.last_rebuilt_at = raw.get("last_rebuilt_at")
+        store.last_incremental_at = raw.get("last_incremental_at")
+        store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
+        if raw.get("retrieval_config"):
+            store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
+        if raw.get("rerank_config"):
+            store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
+        if raw.get("rewrite_config"):
+            store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
+        if raw.get("citation_config"):
             store.citation_config = CitationConfig.from_dict(raw["citation_config"])
         if raw.get("expansion_config"):
             store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
@@ -2033,7 +2058,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.37.0"
+    assert client.get("/api/health").json()["version"] == "0.38.0"
 
 
 def test_upload_returns_incremental_mode(client):
@@ -2067,7 +2092,7 @@ def test_status_shows_incremental_fields(client):
             files={"file": ("notice.md", fh, "text/markdown")},
         )
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.37.0"
+    assert status["platform_version"] == "0.38.0"
     assert status["index_mode"] == INDEX_MODE_INCREMENTAL
     assert status["last_incremental_at"]
     assert status["chroma_count"] == status["chunk_count"]

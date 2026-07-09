@@ -634,7 +634,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.37.0"
+    assert client.get("/api/health").json()["version"] == "0.38.0"
 
 
 def test_get_rewrite_config_default(client):
@@ -670,7 +670,7 @@ def test_rewrite_preview_colloquial(client):
 
 def test_status_includes_rewrite_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.37.0"
+    assert status["platform_version"] == "0.38.0"
     assert status["rewrite_config"]["enabled"] is True
 
 
@@ -813,6 +813,31 @@ def get_rewrite_config(self) -> RewriteConfig:
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
         return bundle.to_dict()
+
+    def fetch_citations_retry(self, query: str, *, attempt: int = 1) -> dict[str, Any]:
+        """Self-RAG 重试 — 强制 rag_wide 并放大 citation pool"""
+        from rag.citation_config import CitationConfig
+        from rag.route_config import INTENT_RAG_WIDE
+
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return self.fetch_citations(query)
+
+        boosted = CitationConfig.from_dict(
+            {
+                **cfg.to_dict(),
+                "max_citations": min(100, max(cfg.max_citations, 20) + attempt * 10),
+            }
+        )
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(
+            query,
+            config=boosted,
+            intent_override=INTENT_RAG_WIDE,
+        )
+        data = bundle.to_dict()
+        data["retry_attempt"] = attempt
+        return data
 
     def ingest_text(
         self,
@@ -1081,7 +1106,7 @@ function RERANKING_SEARCH(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037 / ZL-NA-REQ-038
 """
 
 from __future__ import annotations
@@ -1121,6 +1146,8 @@ from api.schemas import (
     ValidationConfigResponse,
     ValidationPreviewRequest,
     ValidationPreviewResponse,
+    ValidationRetryPreviewRequest,
+    ValidationRetryPreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -1245,8 +1272,7 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
     return CitationConfigResponse(**cfg.to_dict())
 
 
-@router.post("/citation-preview", response_model=CitationPreviewResponse)
-def citation_pre
+@ro
 ```
 
 
@@ -1334,7 +1360,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.37.0"
+    assert client.get("/api/health").json()["version"] == "0.38.0"
 
 
 def test_get_rewrite_config_default(client):
@@ -1370,7 +1396,7 @@ def test_rewrite_preview_colloquial(client):
 
 def test_status_includes_rewrite_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.37.0"
+    assert status["platform_version"] == "0.38.0"
     assert status["rewrite_config"]["enabled"] is True
 
 

@@ -52,7 +52,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.37.0"
+PLATFORM_VERSION = "0.38.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -172,7 +172,40 @@ class KnowledgeStore:
 ## save 持久化 envelope
 
 ```python
-use_cleaned=clean,
+) -> KnowledgeDocument:
+        """将文本写入知识库并重建索引"""
+        cfg = self.get_chunk_config()
+        cs = chunk_size if chunk_size is not None else cfg.chunk_size
+        ov = overlap if overlap is not None else cfg.overlap
+        text = (content or "").strip()
+        if not text:
+            raise ValueError("文档内容不能为空")
+        if not filename.strip():
+            raise ValueError("filename 不能为空")
+
+        cleaned = text
+        if clean:
+            cleaned, _ = clean_text(text)
+        doc = DocumentRecord(
+            path=Path(filename),
+            content=text,
+```
+
+
+**解读**：`STORE_VERSION` 是 schema 版本；`platform_version` 标记平台里程碑；`chunks` 全量序列化教学透明但体积大。
+
+---
+
+## load / load_or_bootstrap
+
+```python
+cleaned=cleaned,
+        )
+        new_chunks = chunk_documents(
+            [doc],
+            chunk_size=cs,
+            overlap=ov,
+            use_cleaned=clean,
         )
         self._append_chunks(filename, new_chunks, size_bytes=doc.size_bytes)
         self._rebuild_index()
@@ -189,25 +222,25 @@ use_cleaned=clean,
         """从磁盘文件 ingestion"""
         content, encoding = read_text_file(path)
         cleaned = content
-```
-
-
-**解读**：`STORE_VERSION` 是 schema 版本；`platform_version` 标记平台里程碑；`chunks` 全量序列化教学透明但体积大。
-
----
-
-## load / load_or_bootstrap
-
-```python
-doc = DocumentRecord(
+        if clean:
+            cleaned, _ = clean_text(content)
+        doc = DocumentRecord(
             path=path,
             content=content,
             encoding=encoding,
             size_bytes=path.stat().st_size,
             cleaned=cleaned,
-        )
-        new_chunks = chunk_documents(
-            [doc],
+```
+
+
+**解读**：`load_or_bootstrap` 是 API 冷启动唯一入口；不存在文件时 bootstrap 并立即 save，避免每次请求重复引导。
+
+---
+
+## bootstrap_from_sample_docs
+
+```python
+[doc],
             chunk_size=chunk_size,
             overlap=overlap,
             use_cleaned=clean,
@@ -230,43 +263,10 @@ doc = DocumentRecord(
 
         parsed = parse_bytes(data, filename)
         cfg = self.get_chunk_config()
-```
-
-
-**解读**：`load_or_bootstrap` 是 API 冷启动唯一入口；不存在文件时 bootstrap 并立即 save，避免每次请求重复引导。
-
----
-
-## bootstrap_from_sample_docs
-
-```python
-clean=clean,
+        return self.ingest_parsed(
+            parsed,
+            clean=clean,
             chunk_strategy=chunk_strategy if chunk_strategy != "auto" else cfg.strategy,
-            incremental=incremental,
-        )
-
-    def ingest_parsed(
-        self,
-        parsed: ParsedDocument,
-        *,
-        clean: bool = True,
-        chunk_strategy: str | None = None,
-        chunk_size: int | None = None,
-        overlap: int | None = None,
-        incremental: bool = False,
-    ) -> KnowledgeDocument:
-        """将 ParsedDocument 写入知识库"""
-        cfg = self.get_chunk_config()
-        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
-        cs = chunk_size if chunk_size is not None else cfg.chunk_size
-        ov = overlap if overlap is not None else cfg.overlap
-        text = (parsed.plain_text or "").strip()
-        if not text:
-            raise ValueError("解析结果为空")
-
-        if clean:
-            text, _ = clean_text(text)
-            parsed.plain_text = text
 ```
 
 
@@ -277,17 +277,17 @@ clean=clean,
 ## 单例 get_knowledge_store
 
 ```python
-index=base_index + i,
-                    start_char=chunk.start_char,
-                    end_char=chunk.end_char,
-                )
-            )
-        self.chunks.extend(reindexed)
-        self.documents.append(
-            KnowledgeDocument(
-                name=filename,
-                ingested_at=_utc_now(),
-                size_bytes=size_bytes,
+"citation_config": self.citation_config.to_dict(),
+            "expansion_config": self.expansion_config.to_dict(),
+            "route_config": self.route_config.to_dict(),
+            "validation_config": self.validation_config.to_dict(),
+            "vector_backend": self.vector_backend,
+            "chroma_path": str(self._resolve_chroma_path()),
+            "chroma_count": self._chroma_index().count() if self.chunks else 0,
+        }
+
+    def _append_chunks(
+        self,
 ```
 
 
@@ -464,7 +464,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.37.0"
+    assert data["platform_version"] == "0.38.0"
     assert isinstance(data["documents"], list)
 
 
@@ -496,7 +496,7 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.37.0"
+    assert raw["platform_version"] == "0.38.0"
 ```
 
 
@@ -532,37 +532,37 @@ return None
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
         return bundle.to_dict()
 
+    def fetch_citations_retry(self, query: str, *, attempt: int = 1) -> dict[str, Any]:
+        """Self-RAG 重试 — 强制 rag_wide 并放大 citation pool"""
+        from rag.citation_config import CitationConfig
+        from rag.route_config import INTENT_RAG_WIDE
+
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return self.fetch_citations(query)
+
+        boosted = CitationConfig.from_dict(
+            {
+                **cfg.to_dict(),
+                "max_citations": min(100, max(cfg.max_citations, 20) + attempt * 10),
+            }
+        )
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(
+            query,
+            config=boosted,
+            intent_override=INTENT_RAG_WIDE,
+        )
+        data = bundle.to_dict()
+        data["retry_attempt"] = attempt
+        return data
+
     def ingest_text(
         self,
         content: str,
         *,
         filename: str,
         clean: bool = True,
-        chunk_size: int | None = None,
-        overlap: int | None = None,
-    ) -> KnowledgeDocument:
-        """将文本写入知识库并重建索引"""
-        cfg = self.get_chunk_config()
-        cs = chunk_size if chunk_size is not None else cfg.chunk_size
-        ov = overlap if overlap is not None else cfg.overlap
-        text = (content or "").strip()
-        if not text:
-            raise ValueError("文档内容不能为空")
-        if not filename.strip():
-            raise ValueError("filename 不能为空")
-
-        cleaned = text
-        if clean:
-            cleaned, _ = clean_text(text)
-        doc = DocumentRecord(
-            path=Path(filename),
-            content=text,
-            encoding="utf-8",
-            size_bytes=len(text.encode("utf-8")),
-            cleaned=cleaned,
-        )
-        new_chunks = chunk_documents(
-            [doc],
 ```
 
 
@@ -778,22 +778,22 @@ return None
 ## 附录：status_dict 与测试对照（精读专节）
 
 ```python
-new_chunks = chunk_from_parsed(
-            parsed,
-            strategy=strategy,
-            chunk_size=cs,
-            overlap=ov,
-        )
-        size_bytes = len(parsed.plain_text.encode("utf-8"))
-
-        if incremental:
-            removed = self._remove_document_by_source(parsed.filename)
-            self._append_chunks(
-                parsed.filename,
-                new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
-            )
+def ingest_parsed(
+        self,
+        parsed: ParsedDocument,
+        *,
+        clean: bool = True,
+        chunk_strategy: str | None = None,
+        chunk_size: int | None = None,
+        overlap: int | None = None,
+        incremental: bool = False,
+    ) -> KnowledgeDocument:
+        """将 ParsedDocument 写入知识库"""
+        cfg = self.get_chunk_config()
+        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
+        cs = chunk_size if chunk_size is not None else cfg.chunk_size
+        ov = overlap if overlap is not None else cfg.overlap
+        text = (parsed.plain_text or "").strip()
 ```
 
 
@@ -863,7 +863,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.37.0"
+    assert data["platform_version"] == "0.38.0"
     assert isinstance(data["documents"], list)
 
 
@@ -895,7 +895,7 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.37.0"
+    assert raw["platform_version"] == "0.38.0"
 ```
 
 
@@ -918,15 +918,16 @@ def test_store_json_has_version(tmp_store, tmp_path):
 ## 节选：_chunk_to_dict
 
 ```python
-text=c.text,
-                source=c.source,
-                index=i,
-                start_char=c.start_char,
-                end_char=c.end_char,
+)
             )
-            for i, c in enumerate(self.chunks)
-        ]
-        return removed_ids
+        self.chunks.extend(reindexed)
+        self.documents.append(
+            KnowledgeDocument(
+                name=filename,
+                ingested_at=_utc_now(),
+                size_bytes=size_bytes,
+                chunk_count=len(reindexed),
+                format=doc_format,
 ```
 
 

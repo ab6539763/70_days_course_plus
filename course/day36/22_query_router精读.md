@@ -447,11 +447,13 @@ class RAGContextService:
         *,
         top_k: int | None = None,
         config: CitationConfig | None = None,
+        intent_override: str | None = None,
     ) -> CitationBundle:
         """
         检索并构建结构化引用包（含可选 rewrite 审计元数据）。
 
         供 /api/chat citations 与 citation-preview 使用。
+        intent_override: 强制路由意图（如 rag_wide 重试召回）
         """
         cfg = config or CitationConfig()
         k = top_k if top_k is not None else cfg.max_citations
@@ -459,7 +461,11 @@ class RAGContextService:
         if not query:
             return CitationBundle(citations=[], query="")
 
-        results = self.index.search(query, top_k=k)
+        retriever = self.index.retriever
+        if intent_override is not None and hasattr(retriever, "search"):
+            results = retriever.search(query, top_k=k, intent_override=intent_override)
+        else:
+            results = self.index.search(query, top_k=k)
         rewrite = _find_last_rewrite(self.index.retriever)
         expansion = _find_last_expansion(self.index.retriever)
         route = _find_last_route(self.index.retriever)
@@ -717,7 +723,7 @@ def test_knowledge_store_persists_route_config(tmp_path):
 def test_status_includes_route_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.37.0"
+    assert status["platform_version"] == "0.38.0"
     assert status["route_config"]["enabled"] is True
 
 
@@ -782,7 +788,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.37.0"
+    assert client.get("/api/health").json()["version"] == "0.38.0"
 
 
 def test_get_route_config_default(client):
@@ -828,7 +834,7 @@ def test_citation_preview_with_route(client):
 
 def test_status_includes_route_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.37.0"
+    assert status["platform_version"] == "0.38.0"
     assert status["route_config"]["enabled"] is True
 
 
@@ -1173,7 +1179,7 @@ function FETCH_CITATIONS(q, top_k):
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-036 / ZL-NA-REQ-036 / ZL-NA-REQ-037
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-036 / ZL-NA-REQ-036 / ZL-NA-REQ-037 / ZL-NA-REQ-038
 """
 
 from __future__ import annotations
@@ -1213,6 +1219,8 @@ from api.schemas import (
     ValidationConfigResponse,
     ValidationPreviewRequest,
     ValidationPreviewResponse,
+    ValidationRetryPreviewRequest,
+    ValidationRetryPreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -1337,8 +1345,7 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
     return CitationConfigResponse(**cfg.to_dict())
 
 
-@router.post("/citation-preview", response_model=CitationPreviewResponse)
-def citation_pre
+@ro
 ```
 
 
@@ -1426,7 +1433,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.37.0"
+    assert client.get("/api/health").json()["version"] == "0.38.0"
 
 
 def test_get_route_config_default(client):
@@ -1472,7 +1479,7 @@ def test_citation_preview_with_route(client):
 
 def test_status_includes_route_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.37.0"
+    assert status["platform_version"] == "0.38.0"
     assert status["route_config"]["enabled"] is True
 
 
@@ -1706,11 +1713,13 @@ class RAGContextService:
         *,
         top_k: int | None = None,
         config: CitationConfig | None = None,
+        intent_override: str | None = None,
     ) -> CitationBundle:
         """
         检索并构建结构化引用包（含可选 rewrite 审计元数据）。
 
         供 /api/chat citations 与 citation-preview 使用。
+        intent_override: 强制路由意图（如 rag_wide 重试召回）
         """
         cfg = config or CitationConfig()
         k = top_k if top_k is not None else cfg.max_citations
@@ -1718,7 +1727,11 @@ class RAGContextService:
         if not query:
             return CitationBundle(citations=[], query="")
 
-        results = self.index.search(query, top_k=k)
+        retriever = self.index.retriever
+        if intent_override is not None and hasattr(retriever, "search"):
+            results = retriever.search(query, top_k=k, intent_override=intent_override)
+        else:
+            results = self.index.search(query, top_k=k)
         rewrite = _find_last_rewrite(self.index.retriever)
         expansion = _find_last_expansion(self.index.retriever)
         route = _find_last_route(self.index.retriever)
@@ -2020,20 +2033,7 @@ class RuleBasedQueryRouter(QueryRouter):
 ## 四十一、chat citations 代码
 
 ```python
-cite_data = get_knowledge_store().fetch_citations(message)
-    citations = cite_data.get("citations") or []
-    rewrite = cite_data.get("rewrite")
-    expansion = cite_data.get("expansion")
-    route = cite_data.get("route")
 
-    store = get_knowledge_store()
-    validation = None
-    val_result = store.validate_answer(message, reply, citations)
-    if val_result is not None:
-        validation = val_result.to_dict()
-        if not val_result.passed and store.get_validation_config().refuse_on_fail:
-            reply = f"[校验未通过] {REFUSAL_MESSAGE}"
-            validation = {**validation, "refused": True}
 ```
 
 
@@ -2056,6 +2056,31 @@ def fetch_citations(self, query: str) -> dict[str, Any]:
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
         return bundle.to_dict()
+
+    def fetch_citations_retry(self, query: str, *, attempt: int = 1) -> dict[str, Any]:
+        """Self-RAG 重试 — 强制 rag_wide 并放大 citation pool"""
+        from rag.citation_config import CitationConfig
+        from rag.route_config import INTENT_RAG_WIDE
+
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return self.fetch_citations(query)
+
+        boosted = CitationConfig.from_dict(
+            {
+                **cfg.to_dict(),
+                "max_citations": min(100, max(cfg.max_citations, 20) + attempt * 10),
+            }
+        )
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(
+            query,
+            config=boosted,
+            intent_override=INTENT_RAG_WIDE,
+        )
+        data = bundle.to_dict()
+        data["retry_attempt"] = attempt
+        return data
 ```
 
 
@@ -2193,7 +2218,7 @@ def test_knowledge_store_persists_route_config(tmp_path):
 def test_status_includes_route_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.37.0"
+    assert status["platform_version"] == "0.38.0"
     assert status["route_config"]["enabled"] is True
 
 
@@ -2249,7 +2274,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.37.0"
+    assert client.get("/api/health").json()["version"] == "0.38.0"
 
 
 def test_get_route_config_default(client):
@@ -2295,7 +2320,7 @@ def test_citation_preview_with_route(client):
 
 def test_status_includes_route_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.37.0"
+    assert status["platform_version"] == "0.38.0"
     assert status["route_config"]["enabled"] is True
 
 

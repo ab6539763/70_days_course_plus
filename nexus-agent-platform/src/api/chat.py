@@ -13,10 +13,10 @@ from api.schemas import ChatRequest, ChatResponse, HealthResponse, SessionResetR
 from api.sessions import SessionManager, session_manager
 from chat.orchestrator import ChatOrchestrator
 from rag.knowledge_store import get_knowledge_store
-from rag.validation_config import REFUSAL_MESSAGE
+from rag.validation_retry import apply_validation_retry
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.37.0"
+API_VERSION = "0.38.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -58,20 +58,38 @@ def chat(
 
     kind, meta = classify_reply(reply)
 
-    cite_data = get_knowledge_store().fetch_citations(message)
+    store = get_knowledge_store()
+    cite_data = store.fetch_citations(message)
     citations = cite_data.get("citations") or []
     rewrite = cite_data.get("rewrite")
     expansion = cite_data.get("expansion")
     route = cite_data.get("route")
 
-    store = get_knowledge_store()
     validation = None
-    val_result = store.validate_answer(message, reply, citations)
-    if val_result is not None:
-        validation = val_result.to_dict()
-        if not val_result.passed and store.get_validation_config().refuse_on_fail:
-            reply = f"[校验未通过] {REFUSAL_MESSAGE}"
+    outcome = apply_validation_retry(
+        store,
+        message,
+        reply,
+        citations,
+        cite_data,
+        regenerate_fn=lambda: orchestrator.handle_message(message),
+    )
+    if outcome is not None:
+        reply = outcome.reply
+        kind, meta = classify_reply(reply)
+        citations = outcome.citations
+        cite_data = outcome.cite_data
+        rewrite = cite_data.get("rewrite")
+        expansion = cite_data.get("expansion")
+        route = cite_data.get("route")
+        validation = outcome.validation.to_dict()
+        if outcome.refused:
             validation = {**validation, "refused": True}
+        if outcome.validation.retries:
+            validation = {
+                **validation,
+                "retry_route": cite_data.get("route"),
+            }
 
     return ChatResponse(
         reply=reply,

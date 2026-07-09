@@ -9,7 +9,7 @@ from course_diagrams import file04
 
 def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     files = dict(files)
-    if 31 <= day <= 37:
+    if 31 <= day <= 38:
         files["04_流程图与示意图.md"] = file04(day)
     if day == 35:
         files.update(_day35_minimal_overrides())
@@ -22,6 +22,9 @@ def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     elif day == 37:
         files.update(_day37_minimal_overrides())
         files["03_架构设计.md"] = _architecture_day37()
+    elif day == 38:
+        files.update(_day38_minimal_overrides())
+        files["03_架构设计.md"] = _architecture_day38()
     return files
 
 
@@ -40,6 +43,10 @@ def post_fix_content(day: int, name: str, content: str) -> str:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[])
         content = _fix_day37_terms(content, name)
+    elif day == 38:
+        if not skip_header_fix:
+            content = _fix_headers(content, day, wrong_days=[37])
+        content = _fix_day38_terms(content, name)
     elif 31 <= day <= 34:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[d for d in range(31, 38) if d != day])
@@ -597,4 +604,190 @@ def _acceptance_day37() -> str:
 - [ ] chat 含 validation 字段
 - [ ] test_chat_refuses_on_fail 绿
 - [ ] tests/day37/ 21 项全绿
+"""
+
+
+def _fix_day38_terms(content: str, name: str) -> str:
+    if name == "27_Day39预习.md":
+        return content
+    subs = [
+        ("22_answer_validator精读.md", "22_validation_retry精读.md"),
+        ("17_Validation_API速查手册", "17_Retry_API速查手册"),
+        ("精读：answer_validator 与 Self-RAG 校验管线", "精读：validation_retry 与多轮 Self-RAG 重试管线"),
+        ("## 一、answer_validator.py 全文", "## 一、validation_retry.py 全文"),
+        ("## 二十一、answer_validator 完整源码", "## 二十一、validation_retry 完整源码"),
+        ("## 四十、answer_validator 全文嵌入", "## 四十、validation_retry 全文嵌入"),
+        ("| 2 | `answer_validator.py` | validate + score |", "| 2 | `validation_retry.py` | retry + rag_wide |"),
+        ("| 1 | `validation_config.py` | validate / defaults |", "| 1 | `validation_config.py` | retry_on_fail / max_retries |"),
+        ("## 9. 完整 answer_validator（走查用）", "## 9. 完整 validation_retry（走查用）"),
+        ("| 15–40 | answer_validator + validation_config |", "| 15–40 | validation_retry + fetch_citations_retry |"),
+        ("1. answer_validator.py", "1. validation_retry.py"),
+        ("python3 -c \"import rag.answer_validator; print('ok')\"", "python3 -c \"import rag.validation_retry; print('ok')\""),
+        ("答案校验详解", "校验重试详解"),
+        ("Validation 验收清单", "Retry 验收清单"),
+        ("与 Day 36 能力对照表", "与 Day 37 能力对照表"),
+        ("| Day 36 自适应路由 | Day 37 答案校验 |", "| Day 37 答案校验 | Day 38 校验重试 |"),
+        ("Phase 3 · Day 37 · Validation", "Phase 3 · Day 38 · Retry"),
+        ("Phase 3 第十二日总结（Day 37）", "Phase 3 第十三日总结（Day 38）"),
+        ("ZL-NA-REQ-037", "ZL-NA-REQ-038"),
+        ("v0.37.0", "v0.38.0"),
+        ("validation_demo.py", "retry_demo.py"),
+        ("validation_api_demo.py", "retry_api_demo.py"),
+        ("validate_answer", "apply_validation_retry"),
+        ("Self-RAG 答案校验", "多轮 Self-RAG 校验重试"),
+        ("答案校验分层", "校验重试分层"),
+        ("校验阈值与拒答实践", "重试阈值与拒答实践"),
+        ("答非所问场景", "校验失败恢复场景"),
+        ("Self-RAG与幻觉率方法论", "多轮Self-RAG方法论"),
+        ("Day37 主题？ → Self-RAG 答案校验", "Day38 主题？ → 校验失败重试"),
+        ("tests/day37/", "tests/day38/"),
+        ("day37/", "day38/"),
+        ("21 项全绿", "15 项全绿"),
+        ("RuleBasedAnswerValidator", "apply_validation_retry"),
+        ("打开 answer_validator，ValidationResult 有 passed", "打开 validation_retry，ValidationRetryOutcome 有 retries"),
+        ("citation_builder", "validation_retry"),
+        ("route-config", "validation-config"),
+        ("route-preview", "validation-retry-preview"),
+        ("自适应路由", "校验重试"),
+        ("AnswerValidator", "ValidationRetry"),
+    ]
+    return _apply_subs(content, subs)
+
+
+def _day38_minimal_overrides() -> dict[str, str]:
+    return {
+        "01_企业背景与今日任务.md": _day38_file01(),
+        "10_Retry验收清单.md": _acceptance_day38(),
+        "11_校验重试详解.md": _day38_file11(),
+        "17_Retry_API速查手册.md": _day38_api_cheatsheet(),
+        "18_与Day37能力对照表.md": _day38_file18(),
+        "24_Phase3第十三日总结.md": _day38_file24(),
+    }
+
+
+def _day38_file01() -> str:
+    return """# Day 38 企业背景与今日任务
+
+**需求**：ZL-NA-REQ-038 | **版本**：v0.38.0
+
+## 背景
+
+Day 37 拒答降低了幻觉风险，但 **误拒** 与 **可恢复失败** 需二次机会。今日交付 **validation_retry**、**fetch_citations_retry** 与 **validation-retry-preview**。
+
+## 任务
+
+| 时段 | 内容 |
+|------|------|
+| 上午 | retry_on_fail + apply_validation_retry |
+| 下午 | Lab：validation-retry-preview + retries 截图 |
+| 晚自习 | 读 Day 39 Agent 工具链预习 |
+
+## 代码阅读顺序
+
+1. `validation_config.py` — retry_on_fail / max_retries
+2. `validation_retry.py`
+3. `knowledge_store.fetch_citations_retry`
+4. `api/chat.py` retry 循环
+5. `tests/day38/`
+"""
+
+
+def _day38_file11() -> str:
+    return """# 校验重试详解（Day 38 专题）
+
+## 1. 重试时机
+
+```
+validate 失败 → fetch_citations_retry(rag_wide) → 再 validate → 仍失败则拒答
+```
+
+## 2. 策略
+
+- `retry_on_fail=true` 且 `max_retries>=1` 才重试
+- 重试强制 `intent=rag_wide`，放大 citation pool
+- `refuse_on_fail` 在重试耗尽后生效
+
+## 3. 审计字段
+
+`validation.retries`、`validation.retry_route`
+"""
+
+
+def _day38_file18() -> str:
+    return """# Day 38 与 Day 37 能力对照表
+
+| 维度 | Day 37 校验 | Day 38 重试 |
+|------|-------------|-------------|
+| 失败处理 | 直接拒答 | rag_wide 重检索后再校验 |
+| 配置 | refuse_on_fail | + retry_on_fail / max_retries |
+| API | validation-preview | + validation-retry-preview |
+| chat | validation | + retries / retry_route |
+"""
+
+
+def _day38_file24() -> str:
+    return """# Phase 3 第十三日总结（Day 38）
+
+## Day 38 交付物
+
+- validation_retry.py + fetch_citations_retry
+- validation-retry-preview API
+- chat retry 循环与 retries 审计
+- tests/day38/ 15 项全绿
+
+## 核心能力
+
+**可恢复**：校验失败不立即放弃，宽召回后再判。
+
+## 下一日
+
+Day 39：Agent 工具链与多轮记忆深化。
+"""
+
+
+def _day38_api_cheatsheet() -> str:
+    return """# Retry API 速查手册
+
+| 方法 | 路径 |
+|------|------|
+| GET | `/api/knowledge/validation-config` |
+| PUT | `/api/knowledge/validation-config` |
+| POST | `/api/knowledge/validation-preview` |
+| POST | `/api/knowledge/validation-retry-preview` |
+| POST | `/api/chat` → `validation.retries` |
+"""
+
+
+def _architecture_day38() -> str:
+    return """# Day 38 架构设计 — 多轮 Self-RAG 校验重试
+
+## 1. 重试分层
+
+```mermaid
+flowchart TD
+    CHAT["/api/chat"] --> VAL[validate]
+    VAL -->|fail| RETRY[fetch_citations_retry]
+    RETRY --> VAL2[re-validate]
+    VAL2 -->|still fail| REFUSE[refuse_on_fail]
+    CFG[ValidationConfig] --> VAL
+    CFG --> RETRY
+```
+
+## 2. 组件
+
+| 组件 | 职责 |
+|------|------|
+| validation_retry.py | apply_validation_retry 循环 |
+| fetch_citations_retry | 强制 rag_wide + pool boost |
+| RoutingRetriever | intent_override 宽召回 |
+"""
+
+
+def _acceptance_day38() -> str:
+    return """# Day 38 Retry 验收清单
+
+- [ ] retry_demo / validation-retry-preview 绿
+- [ ] chat 含 validation.retries
+- [ ] test_chat_refuses_after_retry_exhausted 绿
+- [ ] tests/day38/ 15 项全绿
 """

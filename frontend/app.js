@@ -114,7 +114,9 @@
       const vl = document.createElement("div");
       vl.className = "msg__validation";
       const status = extras.validation.passed ? "通过" : "未通过";
-      vl.textContent = `校验: ${status} · score=${(extras.validation.score || 0).toFixed(2)} · ${extras.validation.reason || ""}`;
+      const retries = extras.validation.retries || 0;
+      const retryNote = retries > 0 ? ` · 重试${retries}次` : "";
+      vl.textContent = `校验: ${status} · score=${(extras.validation.score || 0).toFixed(2)}${retryNote} · ${extras.validation.reason || ""}`;
       bubble.appendChild(vl);
     }
 

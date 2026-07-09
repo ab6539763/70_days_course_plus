@@ -41,7 +41,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.37.0"
+PLATFORM_VERSION = "0.38.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -219,6 +219,31 @@ class KnowledgeStore:
         rag = self.as_rag_service()
         bundle = rag.retrieve_citation_bundle(query, config=cfg)
         return bundle.to_dict()
+
+    def fetch_citations_retry(self, query: str, *, attempt: int = 1) -> dict[str, Any]:
+        """Self-RAG 重试 — 强制 rag_wide 并放大 citation pool"""
+        from rag.citation_config import CitationConfig
+        from rag.route_config import INTENT_RAG_WIDE
+
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return self.fetch_citations(query)
+
+        boosted = CitationConfig.from_dict(
+            {
+                **cfg.to_dict(),
+                "max_citations": min(100, max(cfg.max_citations, 20) + attempt * 10),
+            }
+        )
+        rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(
+            query,
+            config=boosted,
+            intent_override=INTENT_RAG_WIDE,
+        )
+        data = bundle.to_dict()
+        data["retry_attempt"] = attempt
+        return data
 
     def ingest_text(
         self,

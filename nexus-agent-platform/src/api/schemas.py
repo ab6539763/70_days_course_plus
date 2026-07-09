@@ -287,6 +287,27 @@ class ValidationPreviewResponse(BaseModel):
     retries: int = 0
 
 
+class ValidationRetryPreviewRequest(BaseModel):
+    """POST /api/knowledge/validation-retry-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+    reply: str = Field(..., min_length=1, max_length=4000)
+    citations: list[dict] = Field(default_factory=list)
+
+
+class ValidationRetryPreviewResponse(BaseModel):
+    query: str
+    reply: str
+    passed: bool
+    score: float
+    reason: str
+    citation_coverage: float
+    matched_citation_ranks: list[int]
+    refused: bool = False
+    retries: int = 0
+    retry_route: dict | None = None
+
+
 class RebuildRequest(BaseModel):
     """POST /api/knowledge/rebuild"""
 

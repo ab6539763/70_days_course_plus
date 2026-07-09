@@ -137,58 +137,57 @@ ingest_text ValueError → API 422；StorageError → 500；UnicodeDecodeError �
 ## 附录：_append_chunks 与 _rebuild_index（详解专节）
 
 ```python
-self._append_chunks(
+if clean:
+            text, _ = clean_text(text)
+            parsed.plain_text = text
+            for section in parsed.sections:
+                section.body, _ = clean_text(section.body)
+
+        new_chunks = chunk_from_parsed(
+            parsed,
+            strategy=strategy,
+            chunk_size=cs,
+            overlap=ov,
+        )
+        size_bytes = len(parsed.plain_text.encode("utf-8"))
+
+        if incremental:
+            removed = self._remove_document_by_source(parsed.filename)
+            self._append_chunks(
                 parsed.filename,
                 new_chunks,
                 size_bytes=size_bytes,
                 doc_format=parsed.format,
             )
-            self._rebuild_index()
-        return self.documents[-1]
-
-    def save(self, path: Path | None = None) -> Path:
-        """持久化到 JSON"""
-        target = path or self.store_path or _default_store_path()
-        self.store_path = target
-        payload = {
-            "version": STORE_VERSION,
-            "platform_version": PLATFORM_VERSION,
-            "documents": [d.to_dict() for d in self.documents],
-            "chunks": [_chunk_to_dict(c) for c in self.chunks],
-            "embedding": self.embedding_state,
-            "vector_backend": self.vector_backend,
-            "chunk_config": self.chunk_config.to_dict(),
-            "last_rebuilt_at": self.last_rebuilt_at,
-            "last_incremental_at": self.last_incremental_at,
-            "index_mode": self.index_mode,
-            "retrieval_config": self.retrieval_config.to_dict(),
-            "rerank_config": self.rerank_config.to_dict(),
-            "rewrite_config": self.rewrite_config.to_dict(),
-            "citation_config": self.citation_config.to_dict(),
-            "expansion_config": self.expansion_config.to_dict(),
-            "route_config": self.route_config.to_dict(),
+            self._incremental_index(new_chunks, replaced_count=len(removed))
+        else:
+            self._append_chunks(
+                parsed.filename,
+                new_chunks,
+                size_bytes=size_bytes,
+                doc_format=parsed.format,
 ```
 
 
 **`_append_chunks`**：新块 `index` 从 `len(self.chunks)` 递增，避免与旧块冲突。每 append 同步追加 `KnowledgeDocument` 元数据行。
 
 ```python
-store = cls.bootstrap_from_sample_docs(store_path=target)
-        store.save(target)
-        return store
-
-    @classmethod
-    def bootstrap_from_sample_docs(cls, *, store_path: Path | None = None) -> KnowledgeStore:
-        """用内置 sample_docs 初始化知识库"""
-        rag = RAGContextService.from_sample_docs(use_embedding=True)
-        store = cls(store_path=store_path)
-        now = _utc_now()
-
-        by_source: dict[str, list[TextChunk]] = {}
-        for chunk in rag.index.chunks:
-            by_source.setdefault(chunk.source, []).append(chunk)
-
-        for source, chunks in sorted(by_source.items()):
+store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
+        if raw.get("retrieval_config"):
+            store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
+        if raw.get("rerank_config"):
+            store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
+        if raw.get("rewrite_config"):
+            store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
+        if raw.get("citation_config"):
+            store.citation_config = CitationConfig.from_dict(raw["citation_config"])
+        if raw.get("expansion_config"):
+            store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
+        if raw.get("route_config"):
+            store.route_config = RouteConfig.from_dict(raw["route_config"])
+        if raw.get("validation_config"):
+            store.validation_config = ValidationConfig.from_dict(raw["validation_config"])
+        store._sync_chroma_from_json()
 ```
 
 

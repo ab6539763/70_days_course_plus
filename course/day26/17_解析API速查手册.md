@@ -61,7 +61,7 @@ curl 见正文；Python 用 parse_bytes+chunk_from_parsed 两行；错误码见 
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037 / ZL-NA-REQ-038
 """
 
 from __future__ import annotations
@@ -101,6 +101,8 @@ from api.schemas import (
     ValidationConfigResponse,
     ValidationPreviewRequest,
     ValidationPreviewResponse,
+    ValidationRetryPreviewRequest,
+    ValidationRetryPreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -231,9 +233,6 @@ def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
     store = get_knowledge_store()
     data = store.fetch_citations(body.query)
     return CitationPreviewResponse(**data)
-
-
-@router.get("/expansion-config", response_model=ExpansionConfigResponse)
 ```
 
 

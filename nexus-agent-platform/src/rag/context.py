@@ -175,11 +175,13 @@ class RAGContextService:
         *,
         top_k: int | None = None,
         config: CitationConfig | None = None,
+        intent_override: str | None = None,
     ) -> CitationBundle:
         """
         检索并构建结构化引用包（含可选 rewrite 审计元数据）。
 
         供 /api/chat citations 与 citation-preview 使用。
+        intent_override: 强制路由意图（如 rag_wide 重试召回）
         """
         cfg = config or CitationConfig()
         k = top_k if top_k is not None else cfg.max_citations
@@ -187,7 +189,11 @@ class RAGContextService:
         if not query:
             return CitationBundle(citations=[], query="")
 
-        results = self.index.search(query, top_k=k)
+        retriever = self.index.retriever
+        if intent_override is not None and hasattr(retriever, "search"):
+            results = retriever.search(query, top_k=k, intent_override=intent_override)
+        else:
+            results = self.index.search(query, top_k=k)
         rewrite = _find_last_rewrite(self.index.retriever)
         expansion = _find_last_expansion(self.index.retriever)
         route = _find_last_route(self.index.retriever)

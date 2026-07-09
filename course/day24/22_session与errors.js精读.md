@@ -328,286 +328,290 @@ sendMessageApi（mock.js L100-131）：失败时走 NexusErrors。
 
 ## 第七部分：app.js 新对话逐行
 
-**app.js L130** `    messagesEl.appendChild(wrap);`
+**app.js L130** `    wrap.appendChild(avatar);`
 
-**app.js L131** `    scrollToBottom();`
+**app.js L131** `    wrap.appendChild(bubble);`
 
-**app.js L132** `  }`
+**app.js L132** `    messagesEl.appendChild(wrap);`
   → updateSessionLabel 定义开始
 
-**app.js L133** ``
+**app.js L133** `    scrollToBottom();`
   → 守卫：无 sessionLabel 或无 NexusSession 则返回
 
-**app.js L134** `  async function dispatchMessage(text) {`
+**app.js L134** `  }`
   → shortId 显示到 #session-label
 
-**app.js L135** `    const mock = window.NexusMock;`
+**app.js L135** ``
 
-**app.js L136** `    if (!mock) {`
+**app.js L136** `  async function dispatchMessage(text) {`
 
-**app.js L137** `      throw new Error("mock.js 未加载");`
+**app.js L137** `    const mock = window.NexusMock;`
 
-**app.js L138** `    }`
+**app.js L138** `    if (!mock) {`
 
-**app.js L139** `    if (mock.useMock) {`
+**app.js L139** `      throw new Error("mock.js 未加载");`
 
-**app.js L140** `      return mock.sendMessage(text);`
+**app.js L140** `    }`
 
-**app.js L141** `    }`
+**app.js L141** `    if (mock.useMock) {`
 
-**app.js L142** `    return mock.sendMessageApi(text);`
+**app.js L142** `      return mock.sendMessage(text);`
 
-**app.js L143** `  }`
+**app.js L143** `    }`
 
-**app.js L144** ``
+**app.js L144** `    return mock.sendMessageApi(text);`
 
-**app.js L145** `  async function handleSubmit(event) {`
+**app.js L145** `  }`
 
-**app.js L146** `    event.preventDefault();`
+**app.js L146** ``
 
-**app.js L147** `    const text = inputEl.value.trim();`
+**app.js L147** `  async function handleSubmit(event) {`
 
-**app.js L148** `    if (!text) return;`
+**app.js L148** `    event.preventDefault();`
 
-**app.js L149** ``
+**app.js L149** `    const text = inputEl.value.trim();`
 
-**app.js L150** `    appendMessage("user", text);`
+**app.js L150** `    if (!text) return;`
 
-**app.js L151** `    inputEl.value = "";`
+**app.js L151** ``
 
-**app.js L152** `    setLoading(true);`
+**app.js L152** `    appendMessage("user", text);`
 
-**app.js L153** ``
+**app.js L153** `    inputEl.value = "";`
 
-**app.js L154** `    try {`
+**app.js L154** `    setLoading(true);`
 
-**app.js L155** `      const result = await dispatchMessage(text);`
+**app.js L155** ``
 
-**app.js L156** `      let parsed;`
+**app.js L156** `    try {`
 
-**app.js L157** `      if (result.kind && result.kind !== "api" && result.kind !== "mock") {`
+**app.js L157** `      const result = await dispatchMessage(text);`
 
-**app.js L158** `        parsed =`
+**app.js L158** `      let parsed;`
   → newChatBtn 存在才绑定
 
-**app.js L159** `          result.kind === "faq"`
+**app.js L159** `      if (result.kind && result.kind !== "api" && result.kind !== "mock") {`
   → click 异步处理器开始
 
-**app.js L160** `            ? { kind: "faq", text: result.reply }`
+**app.js L160** `        parsed =`
   → 确认 NexusSession 可用
 
-**app.js L161** `            : result.kind === "route"`
+**app.js L161** `          result.kind === "faq"`
   → 保存 oldSid 供 reset API
 
-**app.js L162** `              ? parseReply(result.reply)`
+**app.js L162** `            ? { kind: "faq", text: result.reply }`
   → 取 apiBase，默认同源空串
 
-**app.js L163** `              : { kind: "bot", text: result.reply };`
+**app.js L163** `            : result.kind === "route"`
   → 非 Mock 才调服务端 reset
 
-**app.js L164** `      } else {`
+**app.js L164** `              ? parseReply(result.reply)`
   → try 开始
 
-**app.js L165** `        parsed = parseReply(result.reply);`
+**app.js L165** `              : { kind: "bot", text: result.reply };`
   → POST reset 端点
 
-**app.js L166** `      }`
+**app.js L166** `      } else {`
   → method POST
 
-**app.js L167** `      appendMessage("bot", parsed, result.meta, {`
+**app.js L167** `        parsed = parseReply(result.reply);`
   → Content-Type json
 
-**app.js L168** `        citations: result.citations,`
+**app.js L168** `      }`
   → body 含 old session_id
 
-**app.js L169** `        rewrite: result.rewrite,`
+**app.js L169** `      appendMessage("bot", parsed, result.meta, {`
   → 闭合 fetch 选项
 
-**app.js L170** `        expansion: result.expansion,`
+**app.js L170** `        citations: result.citations,`
   → catch 空：失败不阻塞 UI
 
-**app.js L171** `        route: result.route,`
+**app.js L171** `        rewrite: result.rewrite,`
   → 注释说明不阻塞
 
-**app.js L172** `        validation: result.validation,`
+**app.js L172** `        expansion: result.expansion,`
   → 闭合 catch
 
-**app.js L173** `      });`
+**app.js L173** `        route: result.route,`
   → 闭合 if 非 Mock
 
-**app.js L174** `    } catch (err) {`
+**app.js L174** `        validation: result.validation,`
   → 客户端 resetSession 新 UUID
 
-**app.js L175** `      appendMessage("bot", `错误：${err.message}`, "请求失败");`
+**app.js L175** `      });`
   → 更新标签
 
-**app.js L176** `    } finally {`
+**app.js L176** `    } catch (err) {`
   → 闭合 if NexusSession
 
-**app.js L177** `      setLoading(false);`
+**app.js L177** `      appendMessage("bot", `错误：${err.message}`, "请求失败");`
   → 清空消息 DOM
 
-**app.js L178** `      inputEl.focus();`
+**app.js L178** `    } finally {`
   → appendMessage 欢迎 bot
 
-**app.js L179** `    }`
+**app.js L179** `      setLoading(false);`
   → role bot
 
-**app.js L180** `  }`
+**app.js L180** `      inputEl.focus();`
   → 欢迎文案
 
-**app.js L181** ``
+**app.js L181** `    }`
   → meta 系统
 
-**app.js L182** `  formEl.addEventListener("submit", handleSubmit);`
+**app.js L182** `  }`
   → 闭合 appendMessage
 
 **app.js L183** ``
   → 闭合 click 处理器
 
-**app.js L184** `  function updateSessionLabel() {`
+**app.js L184** `  formEl.addEventListener("submit", handleSubmit);`
   → 闭合 if newChatBtn
 
-**app.js L185** `    if (!sessionLabel || !window.NexusSession) return;`
+**app.js L185** ``
 
-**app.js L186** `    sessionLabel.textContent = NexusSession.shortId(NexusSession.getSessionId());`
+**app.js L186** `  function updateSessionLabel() {`
 
-**app.js L187** `  }`
+**app.js L187** `    if (!sessionLabel || !window.NexusSession) return;`
 
-**app.js L188** ``
+**app.js L188** `    sessionLabel.textContent = NexusSession.shortId(NexusSession.getSessionId());`
 
-**app.js L189** `  async function checkHealth() {`
+**app.js L189** `  }`
 
-**app.js L190** `    if (!badgeEl || (window.NexusConfig && window.NexusConfig.useMock)) return;`
+**app.js L190** ``
 
-**app.js L191** `    try {`
+**app.js L191** `  async function checkHealth() {`
 
-**app.js L192** `      const base = (window.NexusConfig && window.NexusConfig.apiBase) || "";`
+**app.js L192** `    if (!badgeEl || (window.NexusConfig && window.NexusConfig.useMock)) return;`
 
-**app.js L193** `      const res = await fetch(`${base}/api/health`);`
+**app.js L193** `    try {`
 
-**app.js L194** `      if (res.ok) {`
+**app.js L194** `      const base = (window.NexusConfig && window.NexusConfig.apiBase) || "";`
 
-**app.js L195** `        badgeEl.textContent = "API 在线";`
+**app.js L195** `      const res = await fetch(`${base}/api/health`);`
 
-**app.js L196** `        badgeEl.style.background = "#d1fae5";`
+**app.js L196** `      if (res.ok) {`
 
-**app.js L197** `        badgeEl.style.color = "#065f46";`
+**app.js L197** `        badgeEl.textContent = "API 在线";`
 
-**app.js L198** `      } else {`
+**app.js L198** `        badgeEl.style.background = "#d1fae5";`
 
-**app.js L199** `        badgeEl.textContent = "API 异常";`
+**app.js L199** `        badgeEl.style.color = "#065f46";`
 
-**app.js L200** `        badgeEl.style.background = "#fee2e2";`
+**app.js L200** `      } else {`
 
-**app.js L201** `        badgeEl.style.color = "#991b1b";`
+**app.js L201** `        badgeEl.textContent = "API 异常";`
 
-**app.js L202** `      }`
+**app.js L202** `        badgeEl.style.background = "#fee2e2";`
 
-**app.js L203** `    } catch (_e) {`
+**app.js L203** `        badgeEl.style.color = "#991b1b";`
 
-**app.js L204** `      badgeEl.textContent = "API 离线";`
+**app.js L204** `      }`
 
-**app.js L205** `      badgeEl.style.background = "#fee2e2";`
+**app.js L205** `    } catch (_e) {`
 
-**app.js L206** `      badgeEl.style.color = "#991b1b";`
+**app.js L206** `      badgeEl.textContent = "API 离线";`
 
-**app.js L207** `    }`
+**app.js L207** `      badgeEl.style.background = "#fee2e2";`
 
-**app.js L208** `  }`
+**app.js L208** `      badgeEl.style.color = "#991b1b";`
 
-**app.js L209** ``
+**app.js L209** `    }`
 
-**app.js L210** `  if (newChatBtn) {`
+**app.js L210** `  }`
 
-**app.js L211** `    newChatBtn.addEventListener("click", async () => {`
+**app.js L211** ``
 
-**app.js L212** `      if (window.NexusSession) {`
+**app.js L212** `  if (newChatBtn) {`
 
-**app.js L213** `        const oldSid = NexusSession.getSessionId();`
+**app.js L213** `    newChatBtn.addEventListener("click", async () => {`
 
-**app.js L214** `        const base = (window.NexusConfig && window.NexusConfig.apiBase) || "";`
+**app.js L214** `      if (window.NexusSession) {`
 
-**app.js L215** `        if (!(window.NexusConfig && window.NexusConfig.useMock)) {`
+**app.js L215** `        const oldSid = NexusSession.getSessionId();`
 
-**app.js L216** `          try {`
+**app.js L216** `        const base = (window.NexusConfig && window.NexusConfig.apiBase) || "";`
 
-**app.js L217** `            await fetch(`${base}/api/session/reset`, {`
+**app.js L217** `        if (!(window.NexusConfig && window.NexusConfig.useMock)) {`
 
-**app.js L218** `              method: "POST",`
+**app.js L218** `          try {`
 
-**app.js L219** `              headers: { "Content-Type": "application/json" },`
+**app.js L219** `            await fetch(`${base}/api/session/reset`, {`
 
-**app.js L220** `              body: JSON.stringify({ session_id: oldSid }),`
+**app.js L220** `              method: "POST",`
 
-**app.js L221** `            });`
+**app.js L221** `              headers: { "Content-Type": "application/json" },`
 
-**app.js L222** `          } catch (_e) {`
+**app.js L222** `              body: JSON.stringify({ session_id: oldSid }),`
 
-**app.js L223** `            /* 服务端重置失败不阻塞 UI */`
+**app.js L223** `            });`
 
-**app.js L224** `          }`
+**app.js L224** `          } catch (_e) {`
 
-**app.js L225** `        }`
+**app.js L225** `            /* 服务端重置失败不阻塞 UI */`
 
-**app.js L226** `        NexusSession.resetSession();`
+**app.js L226** `          }`
 
-**app.js L227** `        updateSessionLabel();`
+**app.js L227** `        }`
 
-**app.js L228** `      }`
+**app.js L228** `        NexusSession.resetSession();`
 
-**app.js L229** `      messagesEl.innerHTML = "";`
+**app.js L229** `        updateSessionLabel();`
 
-**app.js L230** `      appendMessage(`
+**app.js L230** `      }`
 
-**app.js L231** `        "bot",`
+**app.js L231** `      messagesEl.innerHTML = "";`
 
-**app.js L232** `        "已开始新对话。可继续提问。",`
+**app.js L232** `      appendMessage(`
 
-**app.js L233** `        "系统"`
+**app.js L233** `        "bot",`
 
-**app.js L234** `      );`
+**app.js L234** `        "已开始新对话。可继续提问。",`
 
-**app.js L235** `    });`
+**app.js L235** `        "系统"`
 
-**app.js L236** `  }`
+**app.js L236** `      );`
 
-**app.js L237** ``
+**app.js L237** `    });`
 
-**app.js L238** `  const badge = badgeEl;`
+**app.js L238** `  }`
 
-**app.js L239** `  if (badge && window.NexusConfig && !window.NexusConfig.useMock) {`
+**app.js L239** ``
 
-**app.js L240** `    badge.textContent = "API 模式";`
+**app.js L240** `  const badge = badgeEl;`
 
-**app.js L241** `    badge.style.background = "#d1fae5";`
+**app.js L241** `  if (badge && window.NexusConfig && !window.NexusConfig.useMock) {`
 
-**app.js L242** `    badge.style.color = "#065f46";`
+**app.js L242** `    badge.textContent = "API 模式";`
 
-**app.js L243** `    checkHealth();`
+**app.js L243** `    badge.style.background = "#d1fae5";`
 
-**app.js L244** `  }`
+**app.js L244** `    badge.style.color = "#065f46";`
 
-**app.js L245** ``
+**app.js L245** `    checkHealth();`
 
-**app.js L246** `  updateSessionLabel();`
+**app.js L246** `  }`
 
 **app.js L247** ``
 
-**app.js L248** `  inputEl.addEventListener("keydown", (e) => {`
+**app.js L248** `  updateSessionLabel();`
 
-**app.js L249** `    if (e.key === "Enter" && !e.shiftKey) {`
+**app.js L249** ``
 
-**app.js L250** `      e.preventDefault();`
+**app.js L250** `  inputEl.addEventListener("keydown", (e) => {`
 
-**app.js L251** `      formEl.requestSubmit();`
+**app.js L251** `    if (e.key === "Enter" && !e.shiftKey) {`
 
-**app.js L252** `    }`
+**app.js L252** `      e.preventDefault();`
 
-**app.js L253** `  });`
+**app.js L253** `      formEl.requestSubmit();`
 
-**app.js L254** ``
+**app.js L254** `    }`
 
-**app.js L255** `  inputEl.focus();`
+**app.js L255** `  });`
 
-**app.js L256** `})();`
+**app.js L256** ``
+
+**app.js L257** `  inputEl.focus();`
+
+**app.js L258** `})();`

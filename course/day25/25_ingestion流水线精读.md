@@ -103,7 +103,9 @@ __all__ = ["ingest_directory", "ingest_upload", "supported_formats"]
 ## 与 api/knowledge.py 衔接
 
 ```python
-except ValueError as exc:
+store.set_rewrite_config(cfg)
+        store.save()
+    except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return RewriteConfigResponse(**cfg.to_dict())
 

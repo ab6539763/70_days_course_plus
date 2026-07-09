@@ -1,7 +1,7 @@
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037 / ZL-NA-REQ-038
 """
 
 from __future__ import annotations
@@ -41,6 +41,8 @@ from api.schemas import (
     ValidationConfigResponse,
     ValidationPreviewRequest,
     ValidationPreviewResponse,
+    ValidationRetryPreviewRequest,
+    ValidationRetryPreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -272,6 +274,42 @@ def validation_preview(body: ValidationPreviewRequest) -> ValidationPreviewRespo
         body.query, body.reply, citations
     )
     return ValidationPreviewResponse(**result.to_dict())
+
+
+@router.post("/validation-retry-preview", response_model=ValidationRetryPreviewResponse)
+def validation_retry_preview(
+    body: ValidationRetryPreviewRequest,
+) -> ValidationRetryPreviewResponse:
+    """模拟校验失败后的 rag_wide 重检索与再校验"""
+    from rag.validation_retry import apply_validation_retry
+
+    store = get_knowledge_store()
+    cite_data = store.fetch_citations(body.query)
+    citations = list(body.citations) or cite_data.get("citations") or []
+    if body.citations:
+        cite_data = {**cite_data, "citations": citations}
+
+    saved = store.get_validation_config()
+    retry_cfg = ValidationConfig.from_dict(
+        {**saved.to_dict(), "enabled": True, "retry_on_fail": True, "max_retries": 1}
+    )
+    store.set_validation_config(retry_cfg)
+    try:
+        outcome = apply_validation_retry(
+            store,
+            body.query,
+            body.reply,
+            citations,
+            cite_data,
+        )
+    finally:
+        store.set_validation_config(saved)
+
+    if outcome is None:
+        raise HTTPException(status_code=400, detail="校验已关闭")
+    payload = outcome.validation.to_dict()
+    payload["retry_route"] = outcome.cite_data.get("route")
+    return ValidationRetryPreviewResponse(**payload)
 
 
 @router.get("/chunk-config", response_model=ChunkConfigResponse)

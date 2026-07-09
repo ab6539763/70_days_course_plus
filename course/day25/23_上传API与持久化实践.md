@@ -51,7 +51,7 @@ echo '{invalid' > data/knowledge/store.json
 """
 知识库 REST API — 文档上传、分块调参与检索评估
 
-需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037
+需求：ZL-NA-REQ-025 / ZL-NA-REQ-026 / ZL-NA-REQ-027 / ZL-NA-REQ-028 / ZL-NA-REQ-029 / ZL-NA-REQ-030 / ZL-NA-REQ-031 / ZL-NA-REQ-032 / ZL-NA-REQ-033 / ZL-NA-REQ-034 / ZL-NA-REQ-035 / ZL-NA-REQ-036 / ZL-NA-REQ-037 / ZL-NA-REQ-038
 """
 
 from __future__ import annotations
@@ -91,6 +91,8 @@ from api.schemas import (
     ValidationConfigResponse,
     ValidationPreviewRequest,
     ValidationPreviewResponse,
+    ValidationRetryPreviewRequest,
+    ValidationRetryPreviewResponse,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
 )
@@ -226,8 +228,6 @@ def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
 @router.get("/expansion-config", response_model=ExpansionConfigResponse)
 def get_expansion_config() -> ExpansionConfigResponse:
     """返回多 query 扩展开关与参数"""
-    cfg = get_knowledge_store().get_expansion_config()
-    return ExpansionConfigResponse(**cfg.to_dict())
 ```
 
 
@@ -256,6 +256,7 @@ echo backup ok
 ## 附录：knowledge.py upload 完整路由（实践专节）
 
 ```python
+@router.put("/rewrite-config", response_model=RewriteConfigResponse)
 def update_rewrite_config(body: RewriteConfigRequest) -> RewriteConfigResponse:
     """更新查询改写策略；变更后清除 RAG 缓存"""
     store = get_knowledge_store()
@@ -306,9 +307,6 @@ def citation_preview(body: CitationPreviewRequest) -> CitationPreviewResponse:
     store = get_knowledge_store()
     data = store.fetch_citations(body.query)
     return CitationPreviewResponse(**data)
-
-
-@router.get("/expansion-config", response_model=ExpansionConfigResponse)
 ```
 
 

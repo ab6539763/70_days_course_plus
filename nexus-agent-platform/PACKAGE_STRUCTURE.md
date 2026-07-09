@@ -1,7 +1,26 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.37.0（Day 37 Self-RAG 答案校验）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-037
+**版本**：v0.38.0（Day 38 多轮 Self-RAG 校验重试）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-038
+
+## Day 38 新增
+
+```
+src/rag/validation_retry.py
+  apply_validation_retry — 校验失败后 rag_wide 重检索再校验
+src/rag/knowledge_store.py
+  fetch_citations_retry — 放大 pool + intent_override
+src/day38/
+  retry_demo.py
+  retry_api_demo.py
+  phase3_retry_review.py
+```
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/knowledge/validation-retry-preview` | 模拟 retry 宽召回后再校验 |
+
+`POST /api/chat` 在 `retry_on_fail=true` 时执行重试循环；`validation` 含 `retries`、`retry_route`。
 
 ## Day 37 新增
 

@@ -28,7 +28,7 @@ jobs:
           pip install -r nexus-agent-platform/requirements-day01.txt
           pip install -r nexus-agent-platform/requirements-api.txt
 
-      - name: Course material quality (day24-37)
+      - name: Course material quality (day24-38)
         run: python3 scripts/regenerate_courses_day24_30.py
 
       - name: Course audit (day01-37)
@@ -346,6 +346,16 @@ jobs:
           python src/day37/validation_api_demo.py
           python src/day37/phase3_validation_review.py
           PYTHONPATH=src pytest tests/day37/ -q
+
+      - name: Day 38 Validation retry
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day38/retry_demo.py
+          python src/day38/retry_api_demo.py
+          python src/day38/phase3_retry_review.py
+          PYTHONPATH=src pytest tests/day38/ -q
 
       - name: Run tests
         working-directory: nexus-agent-platform

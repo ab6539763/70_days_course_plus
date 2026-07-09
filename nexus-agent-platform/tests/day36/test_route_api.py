@@ -30,7 +30,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.37.0"
+    assert client.get("/api/health").json()["version"] == "0.38.0"
 
 
 def test_get_route_config_default(client):
@@ -76,7 +76,7 @@ def test_citation_preview_with_route(client):
 
 def test_status_includes_route_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.37.0"
+    assert status["platform_version"] == "0.38.0"
     assert status["route_config"]["enabled"] is True
 
 
