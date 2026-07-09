@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from core.paths import get_path
+from agent.approval_config import ApprovalConfig
 from agent.executor_config import ExecutorConfig
 from agent.graph_config import GraphConfig
 from agent.react_config import ReactConfig
@@ -44,7 +45,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.41.0"
+PLATFORM_VERSION = "0.42.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -108,6 +109,7 @@ class KnowledgeStore:
     react_config: ReactConfig = field(default_factory=ReactConfig)
     executor_config: ExecutorConfig = field(default_factory=ExecutorConfig)
     graph_config: GraphConfig = field(default_factory=GraphConfig)
+    approval_config: ApprovalConfig = field(default_factory=ApprovalConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -221,6 +223,14 @@ class KnowledgeStore:
         config.validate()
         self.graph_config = GraphConfig.from_dict(config.to_dict())
         return self.graph_config
+
+    def get_approval_config(self) -> ApprovalConfig:
+        return ApprovalConfig.from_dict(self.approval_config.to_dict())
+
+    def set_approval_config(self, config: ApprovalConfig) -> ApprovalConfig:
+        config.validate()
+        self.approval_config = ApprovalConfig.from_dict(config.to_dict())
+        return self.approval_config
 
     def validate_answer(
         self,
@@ -442,6 +452,7 @@ class KnowledgeStore:
             "react_config": self.react_config.to_dict(),
             "executor_config": self.executor_config.to_dict(),
             "graph_config": self.graph_config.to_dict(),
+            "approval_config": self.approval_config.to_dict(),
         }
         save_json(target, payload)
         return target
@@ -485,6 +496,8 @@ class KnowledgeStore:
             store.executor_config = ExecutorConfig.from_dict(raw["executor_config"])
         if raw.get("graph_config"):
             store.graph_config = GraphConfig.from_dict(raw["graph_config"])
+        if raw.get("approval_config"):
+            store.approval_config = ApprovalConfig.from_dict(raw["approval_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -552,6 +565,7 @@ class KnowledgeStore:
             "react_config": self.react_config.to_dict(),
             "executor_config": self.executor_config.to_dict(),
             "graph_config": self.graph_config.to_dict(),
+            "approval_config": self.approval_config.to_dict(),
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,

@@ -31,12 +31,12 @@ def client(tmp_path):
 
 
 def test_health_version_026(client):
-    assert client.get("/api/health").json()["version"] == "0.41.0"
+    assert client.get("/api/health").json()["version"] == "0.42.0"
 
 
 def test_status_supported_formats(client):
     data = client.get("/api/knowledge/status").json()
-    assert data["platform_version"] == "0.41.0"
+    assert data["platform_version"] == "0.42.0"
     exts = {f["extension"] for f in data["supported_formats"]}
     assert ".pdf" in exts
 

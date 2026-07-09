@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit course/day01-day41 and optionally fix Mermaid blocks."""
+"""Audit course/day01-day42 and optionally fix Mermaid blocks."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from course_mermaid import sanitize_mermaid_blocks  # noqa: E402
 
 COURSE = ROOT / "course"
-GOLD_DAYS = range(24, 42)
+GOLD_DAYS = range(24, 43)
 PLATFORM = ROOT / "nexus-agent-platform"
 
 # Narrative stale markers (skip next-day preview files 27_*)
@@ -48,12 +48,17 @@ STALE_MARKERS: dict[int, list[str]] = {
         "22_agent_executor精读.md",
         "executor-preview",
     ],
+    42: [
+        "## 一、citation_builder.py 全文",
+        "22_rag_agent_graph精读.md",
+        "graph-preview",
+    ],
 }
 
 
 def audit(*, fix: bool = False) -> int:
     issues: list[str] = []
-    for day in range(1, 42):
+    for day in range(1, 43):
         d = COURSE / f"day{day:02d}"
         if not d.is_dir():
             issues.append(f"day{day:02d}: missing directory")
@@ -107,7 +112,7 @@ def audit(*, fix: bool = False) -> int:
 
 def ensure_code_pointers() -> None:
     """Create course/dayXX/code/README.md pointing at platform day modules."""
-    for day in range(1, 42):
+    for day in range(1, 43):
         d = COURSE / f"day{day:02d}"
         if not d.is_dir():
             continue

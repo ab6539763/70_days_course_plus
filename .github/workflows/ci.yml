@@ -387,6 +387,16 @@ jobs:
           python src/day41/phase4_graph_review.py
           PYTHONPATH=src pytest tests/day41/ -q
 
+      - name: Day 42 Approval workflow
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day42/approval_demo.py
+          python src/day42/approval_api_demo.py
+          python src/day42/phase4_approval_review.py
+          PYTHONPATH=src pytest tests/day42/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

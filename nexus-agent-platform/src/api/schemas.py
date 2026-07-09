@@ -30,6 +30,10 @@ class ChatRequest(BaseModel):
         default=False,
         description="为 true 时走 StateGraph 状态图编排（Day 41）",
     )
+    approval_mode: bool = Field(
+        default=False,
+        description="为 true 时走人工审批工作流（Day 42）",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -47,6 +51,7 @@ class ChatResponse(BaseModel):
     agent_trace: list[dict] | None = None
     executor_trace: list[dict] | None = None
     graph_trace: list[dict] | None = None
+    approval: dict | None = None
     tools_used: list[str] | None = None
 
 
@@ -104,6 +109,7 @@ class KnowledgeStatusResponse(BaseModel):
     react_config: dict = Field(default_factory=dict)
     executor_config: dict = Field(default_factory=dict)
     graph_config: dict = Field(default_factory=dict)
+    approval_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -421,6 +427,66 @@ class GraphPreviewResponse(BaseModel):
     steps: list[dict]
     tools_used: list[str]
     node_path: list[str] = Field(default_factory=list)
+
+
+class ApprovalConfigRequest(BaseModel):
+    """PUT /api/agent/approval-config"""
+
+    enabled: bool = True
+    require_rag_approval: bool = True
+    mock_auto_approve: bool = True
+    reviewer_label: str = Field("值班审核员", min_length=1, max_length=32)
+    reject_message: str = Field(
+        "审批未通过，请补充材料后重试。",
+        min_length=1,
+        max_length=200,
+    )
+
+
+class ApprovalConfigResponse(BaseModel):
+    enabled: bool
+    require_rag_approval: bool
+    mock_auto_approve: bool
+    reviewer_label: str
+    reject_message: str
+
+
+class ApprovalPreviewRequest(BaseModel):
+    """POST /api/agent/approval-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+    history: list[str] = Field(default_factory=list)
+
+
+class ApprovalPreviewResponse(BaseModel):
+    query: str
+    reply: str
+    steps: list[dict]
+    tools_used: list[str]
+    node_path: list[str] = Field(default_factory=list)
+    interrupted: bool = False
+    checkpoint_id: str | None = None
+    approval_status: str = "skipped"
+    approval: dict = Field(default_factory=dict)
+
+
+class ApprovalResumeRequest(BaseModel):
+    """POST /api/agent/approval-resume"""
+
+    checkpoint_id: str = Field(..., min_length=1, max_length=64)
+    approved: bool
+    comment: str = Field("", max_length=500)
+
+
+class ApprovalResumeResponse(BaseModel):
+    query: str
+    reply: str
+    steps: list[dict]
+    tools_used: list[str]
+    node_path: list[str] = Field(default_factory=list)
+    interrupted: bool = False
+    approval_status: str = "skipped"
+    approval: dict = Field(default_factory=dict)
 
 
 class RebuildRequest(BaseModel):

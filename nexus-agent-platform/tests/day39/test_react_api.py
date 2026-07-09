@@ -30,7 +30,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.41.0"
+    assert client.get("/api/health").json()["version"] == "0.42.0"
 
 
 def test_get_react_config_default(client):
@@ -78,7 +78,7 @@ def test_react_preview_with_history(client):
 
 def test_status_includes_react_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.41.0"
+    assert status["platform_version"] == "0.42.0"
     assert status["react_config"]["enabled"] is True
 
 

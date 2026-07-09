@@ -9,6 +9,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from agent.agent_executor import AgentExecutor
+from agent.approval_config import ApprovalConfig
+from agent.approval_workflow_graph import ApprovalWorkflowGraph
 from agent.executor_config import ExecutorConfig
 from agent.graph_config import GraphConfig
 from agent.rag_agent_graph import RAGAgentGraph
@@ -24,6 +26,12 @@ from api.schemas import (
     GraphConfigResponse,
     GraphPreviewRequest,
     GraphPreviewResponse,
+    ApprovalConfigRequest,
+    ApprovalConfigResponse,
+    ApprovalPreviewRequest,
+    ApprovalPreviewResponse,
+    ApprovalResumeRequest,
+    ApprovalResumeResponse,
     ReactConfigRequest,
     ReactConfigResponse,
     ReactPreviewRequest,
@@ -137,3 +145,60 @@ def graph_preview(body: GraphPreviewRequest) -> GraphPreviewResponse:
     outcome = graph.invoke(body.query, history=history or None)
     payload = outcome.to_dict()
     return GraphPreviewResponse(**payload)
+
+
+@router.get("/approval-config", response_model=ApprovalConfigResponse)
+def get_approval_config() -> ApprovalConfigResponse:
+    cfg = get_knowledge_store().get_approval_config()
+    return ApprovalConfigResponse(**cfg.to_dict())
+
+
+@router.put("/approval-config", response_model=ApprovalConfigResponse)
+def update_approval_config(body: ApprovalConfigRequest) -> ApprovalConfigResponse:
+    store = get_knowledge_store()
+    try:
+        cfg = ApprovalConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_approval_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ApprovalConfigResponse(**cfg.to_dict())
+
+
+@router.post("/approval-preview", response_model=ApprovalPreviewResponse)
+def approval_preview(body: ApprovalPreviewRequest) -> ApprovalPreviewResponse:
+    """启动审批工作流 — 可能中断等待人工审批"""
+    store = get_knowledge_store()
+    acfg = store.get_approval_config()
+    if not acfg.enabled:
+        raise HTTPException(status_code=400, detail="人工审批工作流已关闭")
+
+    orchestrator = create_orchestrator()
+    workflow = ApprovalWorkflowGraph.from_executor(
+        orchestrator.tool_executor,
+        graph_config=store.get_graph_config(),
+        approval_config=acfg,
+    )
+    history = [{"role": "user", "content": h} for h in (body.history or [])]
+    outcome = workflow.invoke(body.query, history=history or None)
+    return ApprovalPreviewResponse(**outcome.to_dict())
+
+
+@router.post("/approval-resume", response_model=ApprovalResumeResponse)
+def approval_resume(body: ApprovalResumeRequest) -> ApprovalResumeResponse:
+    """审批后恢复中断的状态图"""
+    store = get_knowledge_store()
+    orchestrator = create_orchestrator()
+    workflow = ApprovalWorkflowGraph.from_executor(
+        orchestrator.tool_executor,
+        graph_config=store.get_graph_config(),
+        approval_config=store.get_approval_config(),
+    )
+    outcome = workflow.resume(
+        body.checkpoint_id,
+        approved=body.approved,
+        comment=body.comment,
+    )
+    payload = outcome.to_dict()
+    return ApprovalResumeResponse(**payload)

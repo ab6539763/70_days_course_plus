@@ -124,19 +124,18 @@ class CompiledStateGraph:
         *,
         max_iterations: int = 8,
         step_recorder: list[GraphStep] | None = None,
+        start_at: str | None = None,
     ) -> AgentGraphState:
         current = state
-        node_path: list[str] = []
         steps = step_recorder if step_recorder is not None else []
         step_idx = len(steps)
         guard = 0
 
-        node = self._entry
+        node = start_at or self._entry
         while node != END and guard < max_iterations * 4:
             guard += 1
             if node not in self._nodes:
                 break
-            node_path.append(node)
             before = current.to_dict()
             current = self._nodes[node](current)
             step_idx += 1
@@ -151,7 +150,7 @@ class CompiledStateGraph:
                     final_answer=current.reply if current.done else None,
                 )
             )
-            if current.done:
+            if current.interrupted or current.done:
                 break
             node = self._resolve_next(node, current)
         return current

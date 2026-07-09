@@ -9,7 +9,7 @@ from course_diagrams import file04
 
 def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     files = dict(files)
-    if 31 <= day <= 41:
+    if 31 <= day <= 42:
         files["04_流程图与示意图.md"] = file04(day)
     if day == 35:
         files.update(_day35_minimal_overrides())
@@ -34,6 +34,9 @@ def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     elif day == 41:
         files.update(_day41_minimal_overrides())
         files["03_架构设计.md"] = _architecture_day41()
+    elif day == 42:
+        files.update(_day42_minimal_overrides())
+        files["03_架构设计.md"] = _architecture_day42()
     return files
 
 
@@ -68,6 +71,10 @@ def post_fix_content(day: int, name: str, content: str) -> str:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[37, 38, 39, 40])
         content = _fix_day41_terms(content, name)
+    elif day == 42:
+        if not skip_header_fix:
+            content = _fix_headers(content, day, wrong_days=[37, 38, 39, 40, 41])
+        content = _fix_day42_terms(content, name)
     elif 31 <= day <= 34:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[d for d in range(31, 38) if d != day])
@@ -1350,4 +1357,185 @@ def _acceptance_day41() -> str:
 - [ ] graph_demo / graph-preview 绿
 - [ ] chat graph_mode 含 graph_trace
 - [ ] tests/day41/ 17 项全绿
+"""
+
+
+def _fix_day42_terms(content: str, name: str) -> str:
+    if name == "27_Day43预习.md":
+        return content
+    subs = [
+        ("# Day 41 ", "# Day 42 "),
+        ("（Day 41）", "（Day 42）"),
+        ("22_rag_agent_graph精读.md", "22_approval_workflow精读.md"),
+        ("17_Graph_API速查手册", "17_Approval_API速查手册"),
+        ("精读：rag_agent_graph 与状态图编排管线", "精读：approval_workflow 与人工审批管线"),
+        ("## 一、citation_builder.py 全文", "## 一、approval_workflow_graph.py 全文"),
+        ("## 一、rag_agent_graph.py 全文", "## 一、approval_workflow_graph.py 全文"),
+        ("## 二十一、citation_builder 完整源码", "## 二十一、approval_workflow 完整源码"),
+        ("## 二十一、rag_agent_graph 完整源码", "## 二十一、approval_workflow 完整源码"),
+        ("## 四十、citation_builder 全文嵌入", "## 四十、approval_workflow 全文嵌入"),
+        ("## 四十、rag_agent_graph 全文嵌入", "## 四十、approval_workflow 全文嵌入"),
+        ("| 2 | `rag_agent_graph.py` | planner → tool → answer |", "| 2 | `approval_workflow_graph.py` | human_approval + resume |"),
+        ("StateGraph详解", "ApprovalWorkflow详解"),
+        ("Graph 验收清单", "Approval 验收清单"),
+        ("与 Day 40 能力对照表", "与 Day 41 能力对照表"),
+        ("| Day 40 AgentExecutor | Day 41 StateGraph |", "| Day 41 StateGraph | Day 42 Approval |"),
+        ("Phase 4 · Day 41 · StateGraph", "Phase 4 · Day 42 · Approval"),
+        ("Phase 4 第三日总结（Day 41）", "Phase 4 第四日总结（Day 42）"),
+        ("ZL-NA-REQ-041", "ZL-NA-REQ-042"),
+        ("v0.41.0", "v0.42.0"),
+        ("graph_demo.py", "approval_demo.py"),
+        ("graph_api_demo.py", "approval_api_demo.py"),
+        ("graph-preview", "approval-preview"),
+        ("RAGAgentGraph.invoke", "ApprovalWorkflowGraph.invoke"),
+        ("StateGraph node", "human_approval 节点"),
+        ("StateGraph 状态图编排", "人工审批工作流"),
+        ("状态图编排方法论", "人工审批与中断恢复方法论"),
+        ("节点路由与 node_path 实践", "审批卡点与 checkpoint 实践"),
+        ("tests/day41/", "tests/day42/"),
+        ("day41/", "day42/"),
+        ("17 项全绿", "16 项全绿"),
+        ("rag_agent_graph", "approval_workflow_graph"),
+        ("RAGAgentGraph", "ApprovalWorkflowGraph"),
+        ("graph_trace", "graph_trace"),
+        ("graph_mode", "approval_mode"),
+        ("GraphConfig", "ApprovalConfig"),
+        ("node_path", "checkpoint_id"),
+        ("graph-config", "approval-config"),
+    ]
+    return _apply_subs(content, subs)
+
+
+def _day42_minimal_overrides() -> dict[str, str]:
+    return {
+        "01_企业背景与今日任务.md": _day42_file01(),
+        "10_ReAct验收清单.md": _acceptance_day42(),
+        "11_ReAct详解.md": _day42_file11(),
+        "17_ReAct_API速查手册.md": _day42_api_cheatsheet(),
+        "18_与Day38能力对照表.md": _day42_file18(),
+        "24_Phase4第一日总结.md": _day42_file24(),
+    }
+
+
+def _day42_file01() -> str:
+    return """# Day 42 企业背景与今日任务
+
+**需求**：ZL-NA-REQ-042 | **版本**：v0.42.0
+
+## 背景
+
+Day 41 StateGraph 已可编排；今日在 RAG 工具链上增加 **human_approval** 卡点 — 中断、检查点、审批恢复。
+
+## 任务
+
+| 时段 | 内容 |
+|------|------|
+| 上午 | ApprovalConfig + checkpoint + ApprovalWorkflowGraph |
+| 下午 | Lab：approval-preview 中断 + approval-resume |
+| 晚自习 | 读 Day 43 Supervisor 预习 |
+
+## 代码阅读顺序
+
+1. `agent/approval_config.py`
+2. `agent/approval_checkpoint.py`
+3. `agent/approval_workflow_graph.py`
+4. `api/agent.py` approval-config / preview / resume
+5. `api/chat.py` approval_mode
+6. `tests/day42/`
+"""
+
+
+def _day42_file11() -> str:
+    return """# 人工审批工作流详解（Day 42 专题）
+
+## 1. 卡点
+
+`rag_search` 结果默认需 `human_approval` 节点审核（FAQ 直答跳过）。
+
+## 2. 中断恢复
+
+`mock_auto_approve=false` 时生成 `checkpoint_id`；`approval-resume` 携带 approved 继续。
+
+## 3. 可观测
+
+`graph_trace` 含 `human_approval` 节点；`approval.status` 为 pending/approved/rejected。
+"""
+
+
+def _day42_file18() -> str:
+    return """# Day 42 与 Day 41 能力对照表
+
+| 维度 | Day 41 StateGraph | Day 42 Approval |
+|------|-------------------|-----------------|
+| 节点 | planner/tool/answer | + human_approval |
+| RAG | 直接输出 | 需审批（可配置） |
+| API | graph-preview | approval-preview + resume |
+| chat | graph_mode | approval_mode |
+| 中断 | 无 | checkpoint_id |
+"""
+
+
+def _day42_file24() -> str:
+    return """# Phase 4 第四日总结（Day 42）
+
+## 交付
+
+- human_approval 节点 + 检查点
+- approval-config / preview / resume API
+- chat approval_mode → approval 字段
+
+## 验收
+
+- tests/day42/ 16 项全绿
+- delivery_check day01-day42 全绿
+"""
+
+
+def _day42_api_cheatsheet() -> str:
+    return """# Approval API 速查（Day 42）
+
+```
+GET  /api/agent/approval-config
+PUT  /api/agent/approval-config
+POST /api/agent/approval-preview
+POST /api/agent/approval-resume
+POST /api/chat  { "approval_mode": true }
+```
+
+响应字段：`approval`、`graph_trace`、`checkpoint_id`（中断时）
+"""
+
+
+def _architecture_day42() -> str:
+    return """# Day 42 架构设计
+
+## 模块
+
+| 模块 | 职责 |
+|------|------|
+| approval_config.py | RAG 审批策略 |
+| approval_checkpoint.py | 中断状态持久化 |
+| approval_workflow_graph.py | human_approval 节点 |
+
+```mermaid
+flowchart TD
+    CHAT["/api/chat approval_mode"] --> AW[ApprovalWorkflowGraph]
+    AW --> P[planner]
+    P --> T[tool_runner]
+    T --> H[human_approval]
+    H --> A[answer]
+    H -.中断.-> CP[checkpoint]
+    CP --> RESUME[approval-resume]
+    RESUME --> A
+```
+"""
+
+
+def _acceptance_day42() -> str:
+    return """# Day 42 Approval 验收清单
+
+- [ ] approval_demo / approval-preview 绿
+- [ ] interrupt + approval-resume 绿
+- [ ] chat approval_mode 含 approval 字段
+- [ ] tests/day42/ 16 项全绿
 """

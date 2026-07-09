@@ -1,7 +1,27 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.41.0（Day 41 StateGraph 状态图编排）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-041
+**版本**：v0.42.0（Day 42 人工审批工作流）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-042
+
+## Day 42 新增
+
+```
+src/agent/approval_config.py
+  require_rag_approval / mock_auto_approve
+src/agent/approval_checkpoint.py
+  中断检查点存取
+src/agent/approval_workflow_graph.py
+  human_approval 节点 + resume
+src/api/agent.py
+  GET/PUT approval-config
+  POST approval-preview / approval-resume
+src/api/chat.py
+  approval_mode=true → approval + graph_trace
+src/day42/
+  approval_demo.py / approval_api_demo.py
+tests/day42/
+  16 项
+```
 
 ## Day 41 新增
 

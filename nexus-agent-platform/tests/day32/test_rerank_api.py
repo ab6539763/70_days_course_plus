@@ -30,7 +30,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.41.0"
+    assert client.get("/api/health").json()["version"] == "0.42.0"
 
 
 def test_get_rerank_config_default(client):
@@ -52,7 +52,7 @@ def test_put_rerank_config_disable(client):
 
 def test_status_includes_rerank_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.41.0"
+    assert status["platform_version"] == "0.42.0"
     assert status["rerank_config"]["enabled"] is True
 
 
