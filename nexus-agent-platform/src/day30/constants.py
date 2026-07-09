@@ -1,0 +1,6 @@
+"""Day 30 常量"""
+
+DAY = 30
+REQ_ID = "ZL-NA-REQ-030"
+PLATFORM_VERSION = "0.30.0"
+INDEX_MODE_INCREMENTAL = "incremental"
