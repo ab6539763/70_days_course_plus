@@ -1,7 +1,7 @@
 """
-ReAct / AgentExecutor REST API — 配置与 preview
+ReAct / AgentExecutor / StateGraph REST API — 配置与 preview
 
-需求：ZL-NA-REQ-039 / ZL-NA-REQ-040
+需求：ZL-NA-REQ-039 / ZL-NA-REQ-040 / ZL-NA-REQ-041
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from fastapi import APIRouter, HTTPException
 
 from agent.agent_executor import AgentExecutor
 from agent.executor_config import ExecutorConfig
+from agent.graph_config import GraphConfig
+from agent.rag_agent_graph import RAGAgentGraph
 from agent.react_agent import ReActAgent
 from agent.react_config import ReactConfig
 from api.factory import create_orchestrator
@@ -18,6 +20,10 @@ from api.schemas import (
     ExecutorConfigResponse,
     ExecutorPreviewRequest,
     ExecutorPreviewResponse,
+    GraphConfigRequest,
+    GraphConfigResponse,
+    GraphPreviewRequest,
+    GraphPreviewResponse,
     ReactConfigRequest,
     ReactConfigResponse,
     ReactPreviewRequest,
@@ -96,3 +102,38 @@ def executor_preview(body: ExecutorPreviewRequest) -> ExecutorPreviewResponse:
     outcome = agent.invoke(body.query, history=history or None)
     payload = outcome.to_dict()
     return ExecutorPreviewResponse(**payload)
+
+
+@router.get("/graph-config", response_model=GraphConfigResponse)
+def get_graph_config() -> GraphConfigResponse:
+    cfg = get_knowledge_store().get_graph_config()
+    return GraphConfigResponse(**cfg.to_dict())
+
+
+@router.put("/graph-config", response_model=GraphConfigResponse)
+def update_graph_config(body: GraphConfigRequest) -> GraphConfigResponse:
+    store = get_knowledge_store()
+    try:
+        cfg = GraphConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_graph_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return GraphConfigResponse(**cfg.to_dict())
+
+
+@router.post("/graph-preview", response_model=GraphPreviewResponse)
+def graph_preview(body: GraphPreviewRequest) -> GraphPreviewResponse:
+    """无状态 StateGraph 运行 — 返回 graph_trace 与 node_path"""
+    store = get_knowledge_store()
+    cfg = store.get_graph_config()
+    if not cfg.enabled:
+        raise HTTPException(status_code=400, detail="StateGraph 已关闭")
+
+    orchestrator = create_orchestrator()
+    graph = RAGAgentGraph.from_executor(orchestrator.tool_executor, config=cfg)
+    history = [{"role": "user", "content": h} for h in (body.history or [])]
+    outcome = graph.invoke(body.query, history=history or None)
+    payload = outcome.to_dict()
+    return GraphPreviewResponse(**payload)

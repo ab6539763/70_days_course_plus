@@ -16,6 +16,7 @@ from typing import Any
 
 from core.paths import get_path
 from agent.executor_config import ExecutorConfig
+from agent.graph_config import GraphConfig
 from agent.react_config import ReactConfig
 from rag.chunker import TextChunk, chunk_documents, chunk_text
 from rag.chunk_config import DEFAULT_CHUNK_CONFIG, ChunkConfig
@@ -43,7 +44,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.40.0"
+PLATFORM_VERSION = "0.41.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -106,6 +107,7 @@ class KnowledgeStore:
     validation_config: ValidationConfig = field(default_factory=ValidationConfig)
     react_config: ReactConfig = field(default_factory=ReactConfig)
     executor_config: ExecutorConfig = field(default_factory=ExecutorConfig)
+    graph_config: GraphConfig = field(default_factory=GraphConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -211,6 +213,14 @@ class KnowledgeStore:
         config.validate()
         self.executor_config = ExecutorConfig.from_dict(config.to_dict())
         return self.executor_config
+
+    def get_graph_config(self) -> GraphConfig:
+        return GraphConfig.from_dict(self.graph_config.to_dict())
+
+    def set_graph_config(self, config: GraphConfig) -> GraphConfig:
+        config.validate()
+        self.graph_config = GraphConfig.from_dict(config.to_dict())
+        return self.graph_config
 
     def validate_answer(
         self,
@@ -431,6 +441,7 @@ class KnowledgeStore:
             "validation_config": self.validation_config.to_dict(),
             "react_config": self.react_config.to_dict(),
             "executor_config": self.executor_config.to_dict(),
+            "graph_config": self.graph_config.to_dict(),
         }
         save_json(target, payload)
         return target
@@ -472,6 +483,8 @@ class KnowledgeStore:
             store.react_config = ReactConfig.from_dict(raw["react_config"])
         if raw.get("executor_config"):
             store.executor_config = ExecutorConfig.from_dict(raw["executor_config"])
+        if raw.get("graph_config"):
+            store.graph_config = GraphConfig.from_dict(raw["graph_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -538,6 +551,7 @@ class KnowledgeStore:
             "validation_config": self.validation_config.to_dict(),
             "react_config": self.react_config.to_dict(),
             "executor_config": self.executor_config.to_dict(),
+            "graph_config": self.graph_config.to_dict(),
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,

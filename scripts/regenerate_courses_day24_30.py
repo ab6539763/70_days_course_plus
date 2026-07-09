@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from course_builder import write_course  # noqa: E402
 
-DAYS = range(24, 40)
+DAYS = range(24, 42)
 
 
 def _load(day: int):

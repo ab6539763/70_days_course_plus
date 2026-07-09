@@ -1,7 +1,29 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.40.0（Day 40 AgentExecutor 框架工具链）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-040
+**版本**：v0.41.0（Day 41 StateGraph 状态图编排）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-041
+
+## Day 41 新增
+
+```
+src/agent/state_graph.py
+  StateGraph — add_node / compile / invoke
+src/agent/graph_state.py
+  AgentGraphState — 节点间共享状态
+src/agent/rag_agent_graph.py
+  planner → tool_runner → answer 预置图
+src/agent/graph_config.py
+  GraphConfig — max_iterations / return_node_trace
+src/api/agent.py
+  GET/PUT /api/agent/graph-config
+  POST /api/agent/graph-preview
+src/api/chat.py
+  graph_mode=true → graph_trace + node_path
+src/day41/
+  graph_demo.py / graph_api_demo.py
+tests/day41/
+  17 项
+```
 
 ## Day 40 新增
 

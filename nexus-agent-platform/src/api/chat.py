@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from agent.agent_executor import AgentExecutor
+from agent.rag_agent_graph import RAGAgentGraph
 from agent.react_agent import ReActAgent
 from api.response_parser import classify_reply
 from api.schemas import ChatRequest, ChatResponse, HealthResponse, SessionResetRequest, SessionResetResponse
@@ -17,7 +18,7 @@ from rag.knowledge_store import get_knowledge_store
 from rag.validation_retry import apply_validation_retry
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.40.0"
+API_VERSION = "0.41.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -50,17 +51,28 @@ def chat(
     manager: SessionManager = Depends(get_session_manager),
 ) -> ChatResponse:
     """
-    处理单轮聊天请求；agent_mode=true 走 ReAct，executor_mode=true 走 AgentExecutor。
+    处理单轮聊天请求；agent_mode / executor_mode / graph_mode 分别走 ReAct、AgentExecutor、StateGraph。
     """
     session_id, orchestrator = manager.get_or_create(body.session_id)
     message = body.message.strip()
     store = get_knowledge_store()
     agent_trace = None
     executor_trace = None
+    graph_trace = None
     tools_used = None
 
     try:
-        if body.executor_mode and store.get_executor_config().enabled:
+        if body.graph_mode and store.get_graph_config().enabled:
+            cfg = store.get_graph_config()
+            graph = RAGAgentGraph.from_executor(orchestrator.tool_executor, config=cfg)
+            history = _session_history(orchestrator, enabled=cfg.use_session_history)
+            graph_outcome = graph.invoke(message, history=history)
+            reply = graph_outcome.reply
+            graph_trace = [s.to_dict() for s in graph_outcome.steps]
+            tools_used = list(graph_outcome.tools_used)
+            orchestrator.assistant.history.add_user(message)
+            orchestrator.assistant.history.add_assistant(reply)
+        elif body.executor_mode and store.get_executor_config().enabled:
             cfg = store.get_executor_config()
             agent = AgentExecutor.from_executor(orchestrator.tool_executor, config=cfg)
             history = _session_history(orchestrator, enabled=cfg.use_session_history)
@@ -90,7 +102,10 @@ def chat(
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
-    if executor_trace:
+    if graph_trace:
+        kind = "graph"
+        meta = "StateGraph"
+    elif executor_trace:
         kind = "executor"
         meta = "AgentExecutor"
     elif agent_trace:
@@ -115,7 +130,10 @@ def chat(
     if outcome is not None:
         reply = outcome.reply
         kind, meta = classify_reply(reply)
-        if executor_trace:
+        if graph_trace:
+            kind = "graph"
+            meta = "StateGraph"
+        elif executor_trace:
             kind = "executor"
             meta = "AgentExecutor"
         elif agent_trace:
@@ -147,6 +165,7 @@ def chat(
         validation=validation,
         agent_trace=agent_trace,
         executor_trace=executor_trace,
+        graph_trace=graph_trace,
         tools_used=tools_used,
     )
 

@@ -9,7 +9,7 @@ from course_diagrams import file04
 
 def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     files = dict(files)
-    if 31 <= day <= 40:
+    if 31 <= day <= 41:
         files["04_流程图与示意图.md"] = file04(day)
     if day == 35:
         files.update(_day35_minimal_overrides())
@@ -31,6 +31,9 @@ def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     elif day == 40:
         files.update(_day40_minimal_overrides())
         files["03_架构设计.md"] = _architecture_day40()
+    elif day == 41:
+        files.update(_day41_minimal_overrides())
+        files["03_架构设计.md"] = _architecture_day41()
     return files
 
 
@@ -61,6 +64,10 @@ def post_fix_content(day: int, name: str, content: str) -> str:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[37, 38, 39])
         content = _fix_day40_terms(content, name)
+    elif day == 41:
+        if not skip_header_fix:
+            content = _fix_headers(content, day, wrong_days=[37, 38, 39, 40])
+        content = _fix_day41_terms(content, name)
     elif 31 <= day <= 34:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[d for d in range(31, 38) if d != day])
@@ -1158,4 +1165,189 @@ def _acceptance_day40() -> str:
 - [ ] executor_demo / executor-preview 绿
 - [ ] chat executor_mode 含 executor_trace
 - [ ] tests/day40/ 17 项全绿
+"""
+
+
+def _fix_day41_terms(content: str, name: str) -> str:
+    if name == "27_Day42预习.md":
+        return content
+    subs = [
+        ("# Day 40 ", "# Day 41 "),
+        ("（Day 40）", "（Day 41）"),
+        ("22_agent_executor精读.md", "22_rag_agent_graph精读.md"),
+        ("17_Executor_API速查手册", "17_Graph_API速查手册"),
+        ("精读：agent_executor 与框架工具注册管线", "精读：rag_agent_graph 与状态图编排管线"),
+        ("## 一、citation_builder.py 全文", "## 一、rag_agent_graph.py 全文"),
+        ("## 一、agent_executor.py 全文", "## 一、rag_agent_graph.py 全文"),
+        ("## 二十一、citation_builder 完整源码", "## 二十一、rag_agent_graph 完整源码"),
+        ("## 二十一、agent_executor 完整源码", "## 二十一、rag_agent_graph 完整源码"),
+        ("## 四十、citation_builder 全文嵌入", "## 四十、rag_agent_graph 全文嵌入"),
+        ("## 四十、agent_executor 全文嵌入", "## 四十、rag_agent_graph 全文嵌入"),
+        ("| 2 | `agent_executor.py` | invoke + intermediate_steps |", "| 2 | `rag_agent_graph.py` | planner → tool → answer |"),
+        ("AgentExecutor详解", "StateGraph详解"),
+        ("Executor 验收清单", "Graph 验收清单"),
+        ("与 Day 39 能力对照表", "与 Day 40 能力对照表"),
+        ("| Day 39 ReAct Agent | Day 40 AgentExecutor |", "| Day 40 AgentExecutor | Day 41 StateGraph |"),
+        ("Phase 4 · Day 40 · Executor", "Phase 4 · Day 41 · StateGraph"),
+        ("Phase 4 第二日总结（Day 40）", "Phase 4 第三日总结（Day 41）"),
+        ("ZL-NA-REQ-040", "ZL-NA-REQ-041"),
+        ("v0.40.0", "v0.41.0"),
+        ("executor_demo.py", "graph_demo.py"),
+        ("executor_api_demo.py", "graph_api_demo.py"),
+        ("executor-preview", "graph-preview"),
+        ("AgentExecutor.invoke", "RAGAgentGraph.invoke"),
+        ("StructuredTool.run", "StateGraph node"),
+        ("AgentExecutor 框架工具链", "StateGraph 状态图编排"),
+        ("框架式工具注册方法论", "状态图编排方法论"),
+        ("迭代上限与中间步骤实践", "节点路由与 node_path 实践"),
+        ("tests/day40/", "tests/day41/"),
+        ("day40/", "day41/"),
+        ("17 项全绿", "17 项全绿"),
+        ("agent_executor", "rag_agent_graph"),
+        ("AgentExecutor", "RAGAgentGraph"),
+        ("executor_trace", "graph_trace"),
+        ("executor_mode", "graph_mode"),
+        ("ExecutorConfig", "GraphConfig"),
+        ("intermediate_steps", "node_path"),
+    ]
+    return _apply_subs(content, subs)
+
+
+def _day41_minimal_overrides() -> dict[str, str]:
+    return {
+        "01_企业背景与今日任务.md": _day41_file01(),
+        "10_ReAct验收清单.md": _acceptance_day41(),
+        "11_ReAct详解.md": _day41_file11(),
+        "17_ReAct_API速查手册.md": _day41_api_cheatsheet(),
+        "18_与Day38能力对照表.md": _day41_file18(),
+        "24_Phase4第一日总结.md": _day41_file24(),
+    }
+
+
+def _day41_file01() -> str:
+    return """# Day 41 企业背景与今日任务
+
+**需求**：ZL-NA-REQ-041 | **版本**：v0.41.0
+
+## 背景
+
+Day 40 AgentExecutor 已统一工具注册；今日交付 **StateGraph** — planner → tool_runner → answer 显式状态图，trace 含 node_path。
+
+## 任务
+
+| 时段 | 内容 |
+|------|------|
+| 上午 | StateGraph + AgentGraphState + RAGAgentGraph |
+| 下午 | Lab：graph-preview + node_path 截图 |
+| 晚自习 | 读 Day 42 人工审批预习 |
+
+## 代码阅读顺序
+
+1. `agent/graph_state.py`
+2. `agent/state_graph.py`
+3. `agent/rag_agent_graph.py`
+4. `api/agent.py` graph-config / graph-preview
+5. `api/chat.py` graph_mode
+6. `tests/day41/`
+"""
+
+
+def _day41_file11() -> str:
+    return """# StateGraph 详解（Day 41 专题）
+
+## 1. 状态图
+
+```
+planner → tool_runner → answer
+         ↑___________|
+```
+
+## 2. 节点
+
+- `planner`：选择工具或 Final Answer
+- `tool_runner`：StructuredTool.run
+- `answer`：汇总 reply
+
+## 3. 可观测
+
+`graph_trace[]` 每步含 `node`；`node_path[]` 记录遍历路径。
+"""
+
+
+def _day41_file18() -> str:
+    return """# Day 41 与 Day 40 能力对照表
+
+| 维度 | Day 40 AgentExecutor | Day 41 StateGraph |
+|------|----------------------|-----------------|
+| 编排 | 线性 invoke | 显式节点 + 边 |
+| 工具 | StructuredTool.run | tool_runner 节点 |
+| API | executor-preview | graph-preview |
+| chat | executor_mode | graph_mode |
+| trace | executor_trace | graph_trace + node_path |
+"""
+
+
+def _day41_file24() -> str:
+    return """# Phase 4 第三日总结（Day 41）
+
+## 交付
+
+- StateGraph 编译与 invoke
+- RAGAgentGraph 三节点预置图
+- graph-config / graph-preview API
+- chat graph_mode → graph_trace
+
+## 验收
+
+- tests/day41/ 17 项全绿
+- delivery_check day01-day41 全绿
+"""
+
+
+def _day41_api_cheatsheet() -> str:
+    return """# Graph API 速查（Day 41）
+
+```
+GET  /api/agent/graph-config
+PUT  /api/agent/graph-config
+POST /api/agent/graph-preview
+POST /api/chat  { "graph_mode": true }
+```
+
+响应字段：`graph_trace`、`tools_used`、`node_path`（preview）
+"""
+
+
+def _architecture_day41() -> str:
+    return """# Day 41 架构设计
+
+## 模块
+
+| 模块 | 职责 |
+|------|------|
+| state_graph.py | add_node / compile / invoke |
+| graph_state.py | AgentGraphState 共享状态 |
+| rag_agent_graph.py | planner → tool_runner → answer |
+| graph_config.py | max_iterations 等 |
+
+```mermaid
+flowchart TD
+    CHAT["/api/chat graph_mode"] --> RG[RAGAgentGraph]
+    RG --> P[planner]
+    P --> T[tool_runner]
+    T --> A[answer]
+    T --> P
+    P --> A
+    RG --> TRACE["graph_trace + node_path"]
+    CFG[GraphConfig] --> RG
+```
+"""
+
+
+def _acceptance_day41() -> str:
+    return """# Day 41 Graph 验收清单
+
+- [ ] graph_demo / graph-preview 绿
+- [ ] chat graph_mode 含 graph_trace
+- [ ] tests/day41/ 17 项全绿
 """

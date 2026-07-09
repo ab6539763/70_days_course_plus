@@ -26,6 +26,10 @@ class ChatRequest(BaseModel):
         default=False,
         description="为 true 时走 AgentExecutor 框架工具链（Day 40）",
     )
+    graph_mode: bool = Field(
+        default=False,
+        description="为 true 时走 StateGraph 状态图编排（Day 41）",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -42,6 +46,7 @@ class ChatResponse(BaseModel):
     validation: dict | None = None
     agent_trace: list[dict] | None = None
     executor_trace: list[dict] | None = None
+    graph_trace: list[dict] | None = None
     tools_used: list[str] | None = None
 
 
@@ -98,6 +103,7 @@ class KnowledgeStatusResponse(BaseModel):
     validation_config: dict = Field(default_factory=dict)
     react_config: dict = Field(default_factory=dict)
     executor_config: dict = Field(default_factory=dict)
+    graph_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -382,6 +388,39 @@ class ExecutorPreviewResponse(BaseModel):
     steps: list[dict]
     tools_used: list[str]
     intermediate_steps: list[dict] = Field(default_factory=list)
+
+
+class GraphConfigRequest(BaseModel):
+    """PUT /api/agent/graph-config"""
+
+    enabled: bool = True
+    max_iterations: int = Field(3, ge=1, le=8)
+    use_session_history: bool = True
+    return_node_trace: bool = True
+    mock_planner: bool = True
+
+
+class GraphConfigResponse(BaseModel):
+    enabled: bool
+    max_iterations: int
+    use_session_history: bool
+    return_node_trace: bool
+    mock_planner: bool
+
+
+class GraphPreviewRequest(BaseModel):
+    """POST /api/agent/graph-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+    history: list[str] = Field(default_factory=list)
+
+
+class GraphPreviewResponse(BaseModel):
+    query: str
+    reply: str
+    steps: list[dict]
+    tools_used: list[str]
+    node_path: list[str] = Field(default_factory=list)
 
 
 class RebuildRequest(BaseModel):

@@ -377,6 +377,16 @@ jobs:
           python src/day40/phase4_executor_review.py
           PYTHONPATH=src pytest tests/day40/ -q
 
+      - name: Day 41 StateGraph
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day41/graph_demo.py
+          python src/day41/graph_api_demo.py
+          python src/day41/phase4_graph_review.py
+          PYTHONPATH=src pytest tests/day41/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v
