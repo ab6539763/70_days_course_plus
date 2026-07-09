@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit course/day01-day39 and optionally fix Mermaid blocks."""
+"""Audit course/day01-day40 and optionally fix Mermaid blocks."""
 
 from __future__ import annotations
 
@@ -38,12 +38,17 @@ STALE_MARKERS: dict[int, list[str]] = {
         "22_validation_retry精读.md",
         "validation-retry-preview",
     ],
+    40: [
+        "## 一、citation_builder.py 全文",
+        "22_react_agent精读.md",
+        "react-preview",
+    ],
 }
 
 
 def audit(*, fix: bool = False) -> int:
     issues: list[str] = []
-    for day in range(1, 40):
+    for day in range(1, 41):
         d = COURSE / f"day{day:02d}"
         if not d.is_dir():
             issues.append(f"day{day:02d}: missing directory")
@@ -97,7 +102,7 @@ def audit(*, fix: bool = False) -> int:
 
 def ensure_code_pointers() -> None:
     """Create course/dayXX/code/README.md pointing at platform day modules."""
-    for day in range(1, 40):
+    for day in range(1, 41):
         d = COURSE / f"day{day:02d}"
         if not d.is_dir():
             continue

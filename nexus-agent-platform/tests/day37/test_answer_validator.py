@@ -156,7 +156,7 @@ def test_knowledge_store_persists_validation_config(tmp_path):
 def test_status_includes_validation_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.39.0"
+    assert status["platform_version"] == "0.40.0"
     assert status["validation_config"]["enabled"] is True
 
 

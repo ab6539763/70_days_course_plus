@@ -9,7 +9,7 @@ from course_diagrams import file04
 
 def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     files = dict(files)
-    if 31 <= day <= 39:
+    if 31 <= day <= 40:
         files["04_流程图与示意图.md"] = file04(day)
     if day == 35:
         files.update(_day35_minimal_overrides())
@@ -28,6 +28,9 @@ def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     elif day == 39:
         files.update(_day39_minimal_overrides())
         files["03_架构设计.md"] = _architecture_day39()
+    elif day == 40:
+        files.update(_day40_minimal_overrides())
+        files["03_架构设计.md"] = _architecture_day40()
     return files
 
 
@@ -54,6 +57,10 @@ def post_fix_content(day: int, name: str, content: str) -> str:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[37, 38])
         content = _fix_day39_terms(content, name)
+    elif day == 40:
+        if not skip_header_fix:
+            content = _fix_headers(content, day, wrong_days=[37, 38, 39])
+        content = _fix_day40_terms(content, name)
     elif 31 <= day <= 34:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[d for d in range(31, 38) if d != day])
@@ -968,4 +975,187 @@ def _acceptance_day39() -> str:
 - [ ] react_demo / react-preview 绿
 - [ ] chat agent_mode 含 agent_trace
 - [ ] tests/day39/ 17 项全绿
+"""
+
+
+def _fix_day40_terms(content: str, name: str) -> str:
+    if name == "27_Day41预习.md":
+        return content
+    subs = [
+        ("# Day 39 ", "# Day 40 "),
+        ("（Day 39）", "（Day 40）"),
+        ("22_react_agent精读.md", "22_agent_executor精读.md"),
+        ("17_ReAct_API速查手册", "17_Executor_API速查手册"),
+        ("精读：react_agent 与 ReAct 工具链管线", "精读：agent_executor 与框架工具注册管线"),
+        ("## 一、citation_builder.py 全文", "## 一、agent_executor.py 全文"),
+        ("## 一、react_agent.py 全文", "## 一、agent_executor.py 全文"),
+        ("## 二十一、citation_builder 完整源码", "## 二十一、agent_executor 完整源码"),
+        ("## 二十一、react_agent 完整源码", "## 二十一、agent_executor 完整源码"),
+        ("## 四十、citation_builder 全文嵌入", "## 四十、agent_executor 全文嵌入"),
+        ("## 四十、react_agent 全文嵌入", "## 四十、agent_executor 全文嵌入"),
+        ("| 2 | `citation_builder.py` | rewrite + MockCrossEncoder |", "| 2 | `agent_executor.py` | invoke + intermediate_steps |"),
+        ("| 2 | `react_agent.py` | Thought/Action/Observation |", "| 2 | `agent_executor.py` | invoke + intermediate_steps |"),
+        ("ReAct详解", "AgentExecutor详解"),
+        ("ReAct 验收清单", "Executor 验收清单"),
+        ("与 Day 38 能力对照表", "与 Day 39 能力对照表"),
+        ("| Day 38 校验重试 | Day 39 ReAct Agent |", "| Day 39 ReAct Agent | Day 40 AgentExecutor |"),
+        ("Phase 4 · Day 39 · ReAct", "Phase 4 · Day 40 · Executor"),
+        ("Phase 4 第一日总结（Day 39）", "Phase 4 第二日总结（Day 40）"),
+        ("ZL-NA-REQ-039", "ZL-NA-REQ-040"),
+        ("v0.39.0", "v0.40.0"),
+        ("react_demo.py", "executor_demo.py"),
+        ("react_api_demo.py", "executor_api_demo.py"),
+        ("react-preview", "executor-preview"),
+        ("ReActAgent.run", "AgentExecutor.invoke"),
+        ("tool_executor.execute", "StructuredTool.run"),
+        ("手写 ReAct Agent", "AgentExecutor 框架工具链"),
+        ("ReAct与工具链方法论", "框架式工具注册方法论"),
+        ("步数上限与延迟预算实践", "迭代上限与中间步骤实践"),
+        ("tests/day39/", "tests/day40/"),
+        ("day39/", "day40/"),
+        ("17 项全绿", "17 项全绿"),
+        ("react_agent", "agent_executor"),
+        ("ReActAgent", "AgentExecutor"),
+        ("agent_trace", "executor_trace"),
+        ("agent_mode", "executor_mode"),
+        ("max_steps", "max_iterations"),
+        ("ReactConfig", "ExecutorConfig"),
+    ]
+    return _apply_subs(content, subs)
+
+
+def _day40_minimal_overrides() -> dict[str, str]:
+    return {
+        "01_企业背景与今日任务.md": _day40_file01(),
+        "10_ReAct验收清单.md": _acceptance_day40(),
+        "11_ReAct详解.md": _day40_file11(),
+        "17_ReAct_API速查手册.md": _day40_api_cheatsheet(),
+        "18_与Day38能力对照表.md": _day40_file18(),
+        "24_Phase4第一日总结.md": _day40_file24(),
+    }
+
+
+def _day40_file01() -> str:
+    return """# Day 40 企业背景与今日任务
+
+**需求**：ZL-NA-REQ-040 | **版本**：v0.40.0
+
+## 背景
+
+Day 39 手写 ReAct 已可观测；今日交付 **AgentExecutor + StructuredTool** — 框架式工具注册与 invoke 循环，trace 与 ReAct 对齐。
+
+## 任务
+
+| 时段 | 内容 |
+|------|------|
+| 上午 | StructuredTool + tool_adapter + AgentExecutor |
+| 下午 | Lab：executor-preview + intermediate_steps 截图 |
+| 晚自习 | 读 Day 41 LangGraph 预习 |
+
+## 代码阅读顺序
+
+1. `agent/structured_tool.py`
+2. `agent/tool_adapter.py`
+3. `agent/agent_executor.py`
+4. `api/agent.py` executor-config / executor-preview
+5. `api/chat.py` executor_mode
+6. `tests/day40/`
+"""
+
+
+def _day40_file11() -> str:
+    return """# AgentExecutor 详解（Day 40 专题）
+
+## 1. StructuredTool
+
+`@tool` 装饰器注册函数 → OpenAI function schema → `StructuredTool.run()`
+
+## 2. invoke 循环
+
+```
+plan → tool.run → observation → … → Final Answer
+```
+
+## 3. 与 ReAct 对齐
+
+`ExecutorStep` 字段与 Day 39 `ReactStep` 一致；`executor_trace` 可对照 `agent_trace`。
+"""
+
+
+def _day40_file18() -> str:
+    return """# Day 40 与 Day 39 能力对照表
+
+| 维度 | Day 39 ReAct | Day 40 AgentExecutor |
+|------|--------------|----------------------|
+| 工具 | ToolExecutor 直调 | StructuredTool.run |
+| 入口 | ReActAgent.run | AgentExecutor.invoke |
+| 配置 | ReactConfig.max_steps | ExecutorConfig.max_iterations |
+| API | react-preview | executor-preview |
+| chat | agent_mode | executor_mode |
+| trace | agent_trace | executor_trace |
+"""
+
+
+def _day40_file24() -> str:
+    return """# Phase 4 第二日总结（Day 40）
+
+## 交付
+
+- StructuredTool + @tool 装饰器
+- AgentExecutor.invoke + intermediate_steps
+- executor-config / executor-preview API
+- chat executor_mode → executor_trace
+
+## 验收
+
+- tests/day40/ 17 项全绿
+- delivery_check day01-day40 全绿
+"""
+
+
+def _day40_api_cheatsheet() -> str:
+    return """# Executor API 速查（Day 40）
+
+```
+GET  /api/agent/executor-config
+PUT  /api/agent/executor-config
+POST /api/agent/executor-preview
+POST /api/chat  { "executor_mode": true }
+```
+
+响应字段：`executor_trace`、`tools_used`、`intermediate_steps`（preview）
+"""
+
+
+def _architecture_day40() -> str:
+    return """# Day 40 架构设计
+
+## 模块
+
+| 模块 | 职责 |
+|------|------|
+| structured_tool.py | @tool + OpenAI schema |
+| tool_adapter.py | ToolRegistry → StructuredTool |
+| agent_executor.py | invoke 循环 + mock planner |
+| executor_config.py | max_iterations 等 |
+
+```mermaid
+flowchart TD
+    CHAT["/api/chat executor_mode"] --> AE[AgentExecutor]
+    AE --> ST[StructuredTool]
+    ST --> TE[ToolExecutor]
+    TE --> FAQ[faq_lookup]
+    TE --> RAG[rag_search]
+    AE --> TRACE["executor_trace"]
+    CFG[ExecutorConfig] --> AE
+```
+"""
+
+
+def _acceptance_day40() -> str:
+    return """# Day 40 Executor 验收清单
+
+- [ ] executor_demo / executor-preview 绿
+- [ ] chat executor_mode 含 executor_trace
+- [ ] tests/day40/ 17 项全绿
 """

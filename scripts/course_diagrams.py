@@ -15,6 +15,7 @@ def file04(day: int) -> str:
         37: _file04_day37,
         38: _file04_day38,
         39: _file04_day39,
+        40: _file04_day40,
     }
     return builders[day]()
 
@@ -446,5 +447,36 @@ sequenceDiagram
 GET/PUT /api/agent/react-config
 POST    /api/agent/react-preview
 POST    /api/chat  agent_mode=true
+```
+"""
+
+
+def _file04_day40() -> str:
+    return """# Day 40 流程图与示意图
+
+## AgentExecutor 时序
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant E as AgentExecutor
+    participant S as StructuredTool
+    participant KB as KnowledgeStore
+    U->>E: query
+    E->>E: plan tool
+    E->>S: run rag_search
+    S->>KB: retrieve
+    KB-->>S: Observation
+    S-->>E: tool result
+    E->>E: Final Answer
+    E-->>U: reply + executor_trace
+```
+
+## API
+
+```
+GET/PUT /api/agent/executor-config
+POST    /api/agent/executor-preview
+POST    /api/chat  executor_mode=true
 ```
 """

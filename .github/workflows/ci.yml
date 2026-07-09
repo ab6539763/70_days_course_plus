@@ -367,6 +367,16 @@ jobs:
           python src/day39/phase4_react_review.py
           PYTHONPATH=src pytest tests/day39/ -q
 
+      - name: Day 40 AgentExecutor
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day40/executor_demo.py
+          python src/day40/executor_api_demo.py
+          python src/day40/phase4_executor_review.py
+          PYTHONPATH=src pytest tests/day40/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

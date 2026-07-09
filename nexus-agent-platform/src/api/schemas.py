@@ -22,6 +22,10 @@ class ChatRequest(BaseModel):
         default=False,
         description="为 true 时走 ReAct Agent 工具链（Day 39）",
     )
+    executor_mode: bool = Field(
+        default=False,
+        description="为 true 时走 AgentExecutor 框架工具链（Day 40）",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -37,6 +41,7 @@ class ChatResponse(BaseModel):
     route: dict | None = None
     validation: dict | None = None
     agent_trace: list[dict] | None = None
+    executor_trace: list[dict] | None = None
     tools_used: list[str] | None = None
 
 
@@ -92,6 +97,7 @@ class KnowledgeStatusResponse(BaseModel):
     route_config: dict = Field(default_factory=dict)
     validation_config: dict = Field(default_factory=dict)
     react_config: dict = Field(default_factory=dict)
+    executor_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -343,6 +349,39 @@ class ReactPreviewResponse(BaseModel):
     reply: str
     steps: list[dict]
     tools_used: list[str]
+
+
+class ExecutorConfigRequest(BaseModel):
+    """PUT /api/agent/executor-config"""
+
+    enabled: bool = True
+    max_iterations: int = Field(3, ge=1, le=8)
+    use_session_history: bool = True
+    return_intermediate_steps: bool = True
+    mock_planner: bool = True
+
+
+class ExecutorConfigResponse(BaseModel):
+    enabled: bool
+    max_iterations: int
+    use_session_history: bool
+    return_intermediate_steps: bool
+    mock_planner: bool
+
+
+class ExecutorPreviewRequest(BaseModel):
+    """POST /api/agent/executor-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+    history: list[str] = Field(default_factory=list)
+
+
+class ExecutorPreviewResponse(BaseModel):
+    query: str
+    reply: str
+    steps: list[dict]
+    tools_used: list[str]
+    intermediate_steps: list[dict] = Field(default_factory=list)
 
 
 class RebuildRequest(BaseModel):

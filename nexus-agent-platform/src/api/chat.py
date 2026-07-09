@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from agent.agent_executor import AgentExecutor
 from agent.react_agent import ReActAgent
 from api.response_parser import classify_reply
 from api.schemas import ChatRequest, ChatResponse, HealthResponse, SessionResetRequest, SessionResetResponse
@@ -16,7 +17,7 @@ from rag.knowledge_store import get_knowledge_store
 from rag.validation_retry import apply_validation_retry
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.39.0"
+API_VERSION = "0.40.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -49,16 +50,27 @@ def chat(
     manager: SessionManager = Depends(get_session_manager),
 ) -> ChatResponse:
     """
-    处理单轮聊天请求；agent_mode=true 时走 ReAct 工具链。
+    处理单轮聊天请求；agent_mode=true 走 ReAct，executor_mode=true 走 AgentExecutor。
     """
     session_id, orchestrator = manager.get_or_create(body.session_id)
     message = body.message.strip()
     store = get_knowledge_store()
     agent_trace = None
+    executor_trace = None
     tools_used = None
 
     try:
-        if body.agent_mode and store.get_react_config().enabled:
+        if body.executor_mode and store.get_executor_config().enabled:
+            cfg = store.get_executor_config()
+            agent = AgentExecutor.from_executor(orchestrator.tool_executor, config=cfg)
+            history = _session_history(orchestrator, enabled=cfg.use_session_history)
+            exec_outcome = agent.invoke(message, history=history)
+            reply = exec_outcome.reply
+            executor_trace = [s.to_dict() for s in exec_outcome.steps]
+            tools_used = list(exec_outcome.tools_used)
+            orchestrator.assistant.history.add_user(message)
+            orchestrator.assistant.history.add_assistant(reply)
+        elif body.agent_mode and store.get_react_config().enabled:
             cfg = store.get_react_config()
             agent = ReActAgent(orchestrator.tool_executor, config=cfg)
             history = _session_history(orchestrator, enabled=cfg.use_session_history)
@@ -78,7 +90,10 @@ def chat(
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
-    if agent_trace:
+    if executor_trace:
+        kind = "executor"
+        meta = "AgentExecutor"
+    elif agent_trace:
         kind = "agent"
         meta = "ReAct Agent"
 
@@ -100,7 +115,10 @@ def chat(
     if outcome is not None:
         reply = outcome.reply
         kind, meta = classify_reply(reply)
-        if agent_trace:
+        if executor_trace:
+            kind = "executor"
+            meta = "AgentExecutor"
+        elif agent_trace:
             kind = "agent"
             meta = "ReAct Agent"
         citations = outcome.citations
@@ -128,6 +146,7 @@ def chat(
         route=route,
         validation=validation,
         agent_trace=agent_trace,
+        executor_trace=executor_trace,
         tools_used=tools_used,
     )
 

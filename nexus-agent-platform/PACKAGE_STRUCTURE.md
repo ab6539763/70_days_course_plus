@@ -1,7 +1,29 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.39.0（Day 39 手写 ReAct Agent）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-039
+**版本**：v0.40.0（Day 40 AgentExecutor 框架工具链）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-040
+
+## Day 40 新增
+
+```
+src/agent/structured_tool.py
+  @tool 装饰器 + StructuredTool + OpenAI schema
+src/agent/tool_adapter.py
+  ToolRegistry → StructuredTool 列表
+src/agent/agent_executor.py
+  AgentExecutor.invoke — intermediate_steps 可观测
+src/agent/executor_config.py
+  ExecutorConfig — max_iterations / return_intermediate_steps
+src/api/agent.py
+  GET/PUT /api/agent/executor-config
+  POST /api/agent/executor-preview
+src/api/chat.py
+  executor_mode=true → executor_trace + tools_used
+src/day40/
+  executor_demo.py / executor_api_demo.py
+tests/day40/
+  17 项
+```
 
 ## Day 39 新增
 

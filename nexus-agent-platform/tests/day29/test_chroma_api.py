@@ -30,12 +30,12 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.39.0"
+    assert client.get("/api/health").json()["version"] == "0.40.0"
 
 
 def test_status_includes_chroma_fields(client):
     data = client.get("/api/knowledge/status").json()
-    assert data["platform_version"] == "0.39.0"
+    assert data["platform_version"] == "0.40.0"
     assert data["vector_backend"] == "chroma"
     assert data["chroma_count"] == data["chunk_count"]
     assert data["chroma_path"]
