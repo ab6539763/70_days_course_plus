@@ -9,7 +9,7 @@ from course_diagrams import file04
 
 def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     files = dict(files)
-    if 31 <= day <= 42:
+    if 31 <= day <= 43:
         files["04_流程图与示意图.md"] = file04(day)
     if day == 35:
         files.update(_day35_minimal_overrides())
@@ -37,6 +37,9 @@ def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     elif day == 42:
         files.update(_day42_minimal_overrides())
         files["03_架构设计.md"] = _architecture_day42()
+    elif day == 43:
+        files.update(_day43_minimal_overrides())
+        files["03_架构设计.md"] = _architecture_day43()
     return files
 
 
@@ -75,6 +78,10 @@ def post_fix_content(day: int, name: str, content: str) -> str:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[37, 38, 39, 40, 41])
         content = _fix_day42_terms(content, name)
+    elif day == 43:
+        if not skip_header_fix:
+            content = _fix_headers(content, day, wrong_days=[37, 38, 39, 40, 41, 42])
+        content = _fix_day43_terms(content, name)
     elif 31 <= day <= 34:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[d for d in range(31, 38) if d != day])
@@ -1538,4 +1545,187 @@ def _acceptance_day42() -> str:
 - [ ] interrupt + approval-resume 绿
 - [ ] chat approval_mode 含 approval 字段
 - [ ] tests/day42/ 16 项全绿
+"""
+
+
+def _fix_day43_terms(content: str, name: str) -> str:
+    if name == "27_Day44预习.md":
+        return content
+    subs = [
+        ("# Day 42 ", "# Day 43 "),
+        ("（Day 42）", "（Day 43）"),
+        ("22_approval_workflow精读.md", "22_supervisor_graph精读.md"),
+        ("17_Approval_API速查手册", "17_Supervisor_API速查手册"),
+        ("精读：approval_workflow 与人工审批管线", "精读：supervisor_graph 与多 Agent 委派管线"),
+        ("## 一、citation_builder.py 全文", "## 一、supervisor_graph.py 全文"),
+        ("## 一、approval_workflow_graph.py 全文", "## 一、supervisor_graph.py 全文"),
+        ("## 二十一、citation_builder 完整源码", "## 二十一、supervisor_graph 完整源码"),
+        ("## 二十一、approval_workflow 完整源码", "## 二十一、supervisor_graph 完整源码"),
+        ("## 四十、citation_builder 全文嵌入", "## 四十、supervisor_graph 全文嵌入"),
+        ("## 四十、approval_workflow 全文嵌入", "## 四十、supervisor_graph 全文嵌入"),
+        ("| 2 | `approval_workflow_graph.py` | human_approval + resume |", "| 2 | `supervisor_graph.py` | supervisor_route + SubAgent |"),
+        ("ApprovalWorkflow详解", "Supervisor详解"),
+        ("Approval 验收清单", "Supervisor 验收清单"),
+        ("与 Day 41 能力对照表", "与 Day 42 能力对照表"),
+        ("| Day 41 StateGraph | Day 42 Approval |", "| Day 42 Approval | Day 43 Supervisor |"),
+        ("Phase 4 · Day 42 · Approval", "Phase 4 · Day 43 · Supervisor"),
+        ("Phase 4 第四日总结（Day 42）", "Phase 4 第五日总结（Day 43）"),
+        ("ZL-NA-REQ-042", "ZL-NA-REQ-043"),
+        ("v0.42.0", "v0.43.0"),
+        ("approval_demo.py", "supervisor_demo.py"),
+        ("approval_api_demo.py", "supervisor_api_demo.py"),
+        ("approval-preview", "supervisor-preview"),
+        ("ApprovalWorkflowGraph.invoke", "SupervisorGraph.invoke"),
+        ("human_approval 节点", "faq_worker / rag_worker"),
+        ("人工审批工作流", "Supervisor 多 Agent 委派"),
+        ("人工审批与中断恢复方法论", "多 Agent 委派方法论"),
+        ("审批卡点与 checkpoint 实践", "Supervisor 路由与委派实践"),
+        ("tests/day42/", "tests/day43/"),
+        ("day42/", "day43/"),
+        ("16 项全绿", "17 项全绿"),
+        ("approval_workflow_graph", "supervisor_graph"),
+        ("ApprovalWorkflowGraph", "SupervisorGraph"),
+        ("approval_mode", "supervisor_mode"),
+        ("ApprovalConfig", "SupervisorConfig"),
+        ("checkpoint_id", "delegated_agents"),
+        ("approval-config", "supervisor-config"),
+        ("graph_trace", "supervisor_trace"),
+    ]
+    return _apply_subs(content, subs)
+
+
+def _day43_minimal_overrides() -> dict[str, str]:
+    return {
+        "01_企业背景与今日任务.md": _day43_file01(),
+        "10_ReAct验收清单.md": _acceptance_day43(),
+        "11_ReAct详解.md": _day43_file11(),
+        "17_ReAct_API速查手册.md": _day43_api_cheatsheet(),
+        "18_与Day38能力对照表.md": _day43_file18(),
+        "24_Phase4第一日总结.md": _day43_file24(),
+    }
+
+
+def _day43_file01() -> str:
+    return """# Day 43 企业背景与今日任务
+
+**需求**：ZL-NA-REQ-043 | **版本**：v0.43.0
+
+## 背景
+
+Day 42 审批已能管控 RAG；今日交付 **Supervisor 多 Agent** — 路由委派 faq_worker / rag_worker / intent_worker。
+
+## 任务
+
+| 时段 | 内容 |
+|------|------|
+| 上午 | SupervisorConfig + SubAgent + SupervisorGraph |
+| 下午 | Lab：supervisor-preview + delegated_agents 截图 |
+| 晚自习 | 读 Day 44 MCP 预习 |
+
+## 代码阅读顺序
+
+1. `agent/supervisor_config.py`
+2. `agent/sub_agent.py`
+3. `agent/supervisor_graph.py`
+4. `api/agent.py` supervisor-config / supervisor-preview
+5. `api/chat.py` supervisor_mode
+6. `tests/day43/`
+"""
+
+
+def _day43_file11() -> str:
+    return """# Supervisor 详解（Day 43 专题）
+
+## 1. 委派
+
+Supervisor 分析 query → 选择子 Agent → 执行工具 → synthesize 汇总。
+
+## 2. 子 Agent
+
+- `faq_worker` → faq_lookup
+- `rag_worker` → rag_search
+- `intent_worker` → intent_classify
+
+## 3. 可观测
+
+`supervisor_trace[]` 含 `delegated_agent`；`delegated_agents[]` 汇总委派路径。
+"""
+
+
+def _day43_file18() -> str:
+    return """# Day 43 与 Day 42 能力对照表
+
+| 维度 | Day 42 Approval | Day 43 Supervisor |
+|------|-----------------|-------------------|
+| 模式 | 单图 + 审批卡点 | 多子 Agent 委派 |
+| 节点 | human_approval | supervisor_route + workers |
+| API | approval-preview | supervisor-preview |
+| chat | approval_mode | supervisor_mode |
+| trace | graph_trace | supervisor_trace |
+"""
+
+
+def _day43_file24() -> str:
+    return """# Phase 4 第五日总结（Day 43）
+
+## 交付
+
+- SupervisorGraph 三子 Agent 委派
+- supervisor-config / supervisor-preview API
+- chat supervisor_mode → supervisor_trace
+
+## 验收
+
+- tests/day43/ 17 项全绿
+- delivery_check day01-day43 全绿
+"""
+
+
+def _day43_api_cheatsheet() -> str:
+    return """# Supervisor API 速查（Day 43）
+
+```
+GET  /api/agent/supervisor-config
+PUT  /api/agent/supervisor-config
+POST /api/agent/supervisor-preview
+POST /api/chat  { "supervisor_mode": true }
+```
+
+响应字段：`supervisor_trace`、`delegated_agents`、`tools_used`
+"""
+
+
+def _architecture_day43() -> str:
+    return """# Day 43 架构设计
+
+## 模块
+
+| 模块 | 职责 |
+|------|------|
+| supervisor_config.py | 委派策略 |
+| sub_agent.py | 三专职子 Agent |
+| supervisor_graph.py | route → worker → synthesize |
+
+```mermaid
+flowchart TD
+    CHAT["/api/chat supervisor_mode"] --> SG[SupervisorGraph]
+    SG --> R[supervisor_route]
+    R --> F[faq_worker]
+    R --> G[rag_worker]
+    R --> I[intent_worker]
+    F --> S[synthesize]
+    G --> S
+    I --> S
+    SG --> TRACE["supervisor_trace"]
+```
+"""
+
+
+def _acceptance_day43() -> str:
+    return """# Day 43 Supervisor 验收清单
+
+- [ ] supervisor_demo / supervisor-preview 绿
+- [ ] chat supervisor_mode 含 supervisor_trace
+- [ ] delegated_agents 正确路由
+- [ ] tests/day43/ 17 项全绿
 """

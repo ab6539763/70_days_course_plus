@@ -126,7 +126,7 @@ def test_knowledge_store_persists_expansion_config(tmp_path):
 def test_status_includes_expansion_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.42.0"
+    assert status["platform_version"] == "0.43.0"
     assert status["expansion_config"]["enabled"] is True
 
 

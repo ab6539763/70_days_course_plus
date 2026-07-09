@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full-chain E2E check mirroring .github/workflows/ci.yml (day01-day42)
+# Full-chain E2E check mirroring .github/workflows/ci.yml (day01-day43)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/nexus-agent-platform"
@@ -69,7 +69,7 @@ run $PY src/day22/mock_bridge_demo.py
 run $PY src/day23/api_health_demo.py
 run $PY src/day23/api_chat_demo.py
 
-for d in $(seq 24 42); do
+for d in $(seq 24 43); do
   dd=$(printf '%02d' "$d")
   for f in "$ROOT/nexus-agent-platform/src/day${dd}"/*_demo.py; do
     [ -f "$f" ] || continue

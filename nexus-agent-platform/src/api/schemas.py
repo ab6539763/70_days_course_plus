@@ -34,6 +34,10 @@ class ChatRequest(BaseModel):
         default=False,
         description="为 true 时走人工审批工作流（Day 42）",
     )
+    supervisor_mode: bool = Field(
+        default=False,
+        description="为 true 时走 Supervisor 多 Agent 委派（Day 43）",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -52,6 +56,8 @@ class ChatResponse(BaseModel):
     executor_trace: list[dict] | None = None
     graph_trace: list[dict] | None = None
     approval: dict | None = None
+    supervisor_trace: list[dict] | None = None
+    delegated_agents: list[str] | None = None
     tools_used: list[str] | None = None
 
 
@@ -110,6 +116,7 @@ class KnowledgeStatusResponse(BaseModel):
     executor_config: dict = Field(default_factory=dict)
     graph_config: dict = Field(default_factory=dict)
     approval_config: dict = Field(default_factory=dict)
+    supervisor_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -487,6 +494,40 @@ class ApprovalResumeResponse(BaseModel):
     interrupted: bool = False
     approval_status: str = "skipped"
     approval: dict = Field(default_factory=dict)
+
+
+class SupervisorConfigRequest(BaseModel):
+    """PUT /api/agent/supervisor-config"""
+
+    enabled: bool = True
+    max_delegations: int = Field(1, ge=1, le=3)
+    use_session_history: bool = True
+    return_delegation_trace: bool = True
+    mock_routing: bool = True
+
+
+class SupervisorConfigResponse(BaseModel):
+    enabled: bool
+    max_delegations: int
+    use_session_history: bool
+    return_delegation_trace: bool
+    mock_routing: bool
+
+
+class SupervisorPreviewRequest(BaseModel):
+    """POST /api/agent/supervisor-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+    history: list[str] = Field(default_factory=list)
+
+
+class SupervisorPreviewResponse(BaseModel):
+    query: str
+    reply: str
+    steps: list[dict]
+    tools_used: list[str]
+    delegated_agents: list[str] = Field(default_factory=list)
+    node_path: list[str] = Field(default_factory=list)
 
 
 class RebuildRequest(BaseModel):

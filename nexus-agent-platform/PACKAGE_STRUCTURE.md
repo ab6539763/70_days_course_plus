@@ -1,7 +1,27 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.42.0（Day 42 人工审批工作流）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-042
+**版本**：v0.43.0（Day 43 Supervisor 多 Agent）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-043
+
+## Day 43 新增
+
+```
+src/agent/supervisor_config.py
+  max_delegations / mock_routing
+src/agent/sub_agent.py
+  faq_worker / rag_worker / intent_worker
+src/agent/supervisor_graph.py
+  supervisor_route → worker → synthesize
+src/api/agent.py
+  GET/PUT supervisor-config
+  POST supervisor-preview
+src/api/chat.py
+  supervisor_mode=true → supervisor_trace + delegated_agents
+src/day43/
+  supervisor_demo.py / supervisor_api_demo.py
+tests/day43/
+  17 项
+```
 
 ## Day 42 新增
 

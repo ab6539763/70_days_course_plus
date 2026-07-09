@@ -397,6 +397,16 @@ jobs:
           python src/day42/phase4_approval_review.py
           PYTHONPATH=src pytest tests/day42/ -q
 
+      - name: Day 43 Supervisor multi-agent
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day43/supervisor_demo.py
+          python src/day43/supervisor_api_demo.py
+          python src/day43/phase4_supervisor_review.py
+          PYTHONPATH=src pytest tests/day43/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

@@ -12,6 +12,7 @@ from agent.agent_executor import AgentExecutor
 from agent.approval_workflow_graph import ApprovalWorkflowGraph
 from agent.rag_agent_graph import RAGAgentGraph
 from agent.react_agent import ReActAgent
+from agent.supervisor_graph import SupervisorGraph
 from api.response_parser import classify_reply
 from api.schemas import ChatRequest, ChatResponse, HealthResponse, SessionResetRequest, SessionResetResponse
 from api.sessions import SessionManager, session_manager
@@ -19,7 +20,7 @@ from rag.knowledge_store import get_knowledge_store
 from rag.validation_retry import apply_validation_retry
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.42.0"
+API_VERSION = "0.43.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -52,7 +53,7 @@ def chat(
     manager: SessionManager = Depends(get_session_manager),
 ) -> ChatResponse:
     """
-    处理单轮聊天请求；agent_mode / executor_mode / graph_mode / approval_mode 分别走不同 Agent 管线。
+    处理单轮聊天请求；各 agent_*_mode 分别走不同 Agent 管线。
     """
     session_id, orchestrator = manager.get_or_create(body.session_id)
     message = body.message.strip()
@@ -61,10 +62,26 @@ def chat(
     executor_trace = None
     graph_trace = None
     approval_payload = None
+    supervisor_trace = None
+    delegated_agents = None
     tools_used = None
 
     try:
-        if body.approval_mode and store.get_approval_config().enabled:
+        if body.supervisor_mode and store.get_supervisor_config().enabled:
+            scfg = store.get_supervisor_config()
+            supervisor = SupervisorGraph.from_executor(
+                orchestrator.tool_executor,
+                config=scfg,
+            )
+            history = _session_history(orchestrator, enabled=scfg.use_session_history)
+            sup_outcome = supervisor.invoke(message, history=history)
+            reply = sup_outcome.reply
+            supervisor_trace = [s.to_dict() for s in sup_outcome.steps]
+            delegated_agents = list(sup_outcome.delegated_agents)
+            tools_used = list(sup_outcome.tools_used)
+            orchestrator.assistant.history.add_user(message)
+            orchestrator.assistant.history.add_assistant(reply)
+        elif body.approval_mode and store.get_approval_config().enabled:
             gcfg = store.get_graph_config()
             acfg = store.get_approval_config()
             workflow = ApprovalWorkflowGraph.from_executor(
@@ -121,7 +138,10 @@ def chat(
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
-    if approval_payload is not None:
+    if supervisor_trace is not None:
+        kind = "supervisor"
+        meta = "Supervisor Multi-Agent"
+    elif approval_payload is not None:
         kind = "approval"
         meta = "Approval Workflow"
     elif graph_trace and kind != "approval":
@@ -152,7 +172,10 @@ def chat(
     if outcome is not None:
         reply = outcome.reply
         kind, meta = classify_reply(reply)
-        if approval_payload is not None:
+        if supervisor_trace is not None:
+            kind = "supervisor"
+            meta = "Supervisor Multi-Agent"
+        elif approval_payload is not None:
             kind = "approval"
             meta = "Approval Workflow"
         elif graph_trace and kind != "approval":
@@ -192,6 +215,8 @@ def chat(
         executor_trace=executor_trace,
         graph_trace=graph_trace,
         approval=approval_payload,
+        supervisor_trace=supervisor_trace,
+        delegated_agents=delegated_agents,
         tools_used=tools_used,
     )
 

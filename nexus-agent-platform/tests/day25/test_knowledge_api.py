@@ -31,7 +31,7 @@ def client(tmp_path):
 
 def test_health_version_025(client):
     data = client.get("/api/health").json()
-    assert data["version"] == "0.42.0"
+    assert data["version"] == "0.43.0"
 
 
 def test_knowledge_status(client):
@@ -40,7 +40,7 @@ def test_knowledge_status(client):
     data = resp.json()
     assert data["chunk_count"] > 0
     assert data["document_count"] >= 1
-    assert data["platform_version"] == "0.42.0"
+    assert data["platform_version"] == "0.43.0"
 
 
 def test_knowledge_upload_txt(client):

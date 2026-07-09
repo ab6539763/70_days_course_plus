@@ -18,6 +18,7 @@ def file04(day: int) -> str:
         40: _file04_day40,
         41: _file04_day41,
         42: _file04_day42,
+        43: _file04_day43,
     }
     return builders[day]()
 
@@ -541,5 +542,34 @@ GET/PUT /api/agent/approval-config
 POST    /api/agent/approval-preview
 POST    /api/agent/approval-resume
 POST    /api/chat  approval_mode=true
+```
+"""
+
+
+def _file04_day43() -> str:
+    return """# Day 43 流程图与示意图
+
+## Supervisor 委派时序
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant S as Supervisor
+    participant W as rag_worker
+    participant Y as synthesize
+    U->>S: query
+    S->>S: supervisor_route
+    S->>W: delegate rag_search
+    W-->>S: observation
+    S->>Y: synthesize
+    Y-->>U: reply + supervisor_trace
+```
+
+## API
+
+```
+GET/PUT /api/agent/supervisor-config
+POST    /api/agent/supervisor-preview
+POST    /api/chat  supervisor_mode=true
 ```
 """

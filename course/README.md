@@ -61,13 +61,13 @@ Day 58-70  → 毕业设计、平台全功能上线
 
 ## 当前进度
 
-课件 Day 24–42 由 `scripts/course_days/dayXX.py` 生成，质量标准对齐 Day 23（每篇独立内容、≥10 万字/期）。一键重生成：
+课件 Day 24–43 由 `scripts/course_days/dayXX.py` 生成，质量标准对齐 Day 23（每篇独立内容、≥10 万字/期）。一键重生成：
 
 ```bash
 python3 scripts/regenerate_courses_day24_30.py
 ```
 
-全链路交付门禁（课件审计 + day01–42 E2E + Sprint3 冒烟）：
+全链路交付门禁（课件审计 + day01–43 E2E + Sprint3 冒烟）：
 
 ```bash
 bash scripts/delivery_check.sh
@@ -111,4 +111,5 @@ bash scripts/delivery_check.sh
 - [x] Day 40：AgentExecutor 框架工具链（StructuredTool + invoke + intermediate_steps）
 - [x] Day 41：StateGraph 状态图编排（planner → tool_runner → answer + node_path）
 - [x] Day 42：人工审批工作流（human_approval + checkpoint + approval-resume）
-- [ ] Day 43-70：持续更新中
+- [x] Day 43：Supervisor 多 Agent（faq_worker / rag_worker / intent_worker 委派）
+- [ ] Day 44-70：持续更新中

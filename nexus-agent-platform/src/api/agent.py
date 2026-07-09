@@ -11,6 +11,8 @@ from fastapi import APIRouter, HTTPException
 from agent.agent_executor import AgentExecutor
 from agent.approval_config import ApprovalConfig
 from agent.approval_workflow_graph import ApprovalWorkflowGraph
+from agent.supervisor_config import SupervisorConfig
+from agent.supervisor_graph import SupervisorGraph
 from agent.executor_config import ExecutorConfig
 from agent.graph_config import GraphConfig
 from agent.rag_agent_graph import RAGAgentGraph
@@ -32,6 +34,10 @@ from api.schemas import (
     ApprovalPreviewResponse,
     ApprovalResumeRequest,
     ApprovalResumeResponse,
+    SupervisorConfigRequest,
+    SupervisorConfigResponse,
+    SupervisorPreviewRequest,
+    SupervisorPreviewResponse,
     ReactConfigRequest,
     ReactConfigResponse,
     ReactPreviewRequest,
@@ -202,3 +208,37 @@ def approval_resume(body: ApprovalResumeRequest) -> ApprovalResumeResponse:
     )
     payload = outcome.to_dict()
     return ApprovalResumeResponse(**payload)
+
+
+@router.get("/supervisor-config", response_model=SupervisorConfigResponse)
+def get_supervisor_config() -> SupervisorConfigResponse:
+    cfg = get_knowledge_store().get_supervisor_config()
+    return SupervisorConfigResponse(**cfg.to_dict())
+
+
+@router.put("/supervisor-config", response_model=SupervisorConfigResponse)
+def update_supervisor_config(body: SupervisorConfigRequest) -> SupervisorConfigResponse:
+    store = get_knowledge_store()
+    try:
+        cfg = SupervisorConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_supervisor_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return SupervisorConfigResponse(**cfg.to_dict())
+
+
+@router.post("/supervisor-preview", response_model=SupervisorPreviewResponse)
+def supervisor_preview(body: SupervisorPreviewRequest) -> SupervisorPreviewResponse:
+    """Supervisor 多 Agent 委派预览 — 返回 supervisor_trace"""
+    store = get_knowledge_store()
+    cfg = store.get_supervisor_config()
+    if not cfg.enabled:
+        raise HTTPException(status_code=400, detail="Supervisor 多 Agent 已关闭")
+
+    orchestrator = create_orchestrator()
+    graph = SupervisorGraph.from_executor(orchestrator.tool_executor, config=cfg)
+    history = [{"role": "user", "content": h} for h in (body.history or [])]
+    outcome = graph.invoke(body.query, history=history or None)
+    return SupervisorPreviewResponse(**outcome.to_dict())
