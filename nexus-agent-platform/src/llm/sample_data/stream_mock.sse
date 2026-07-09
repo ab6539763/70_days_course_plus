@@ -1,0 +1,17 @@
+data: {"object":"chat.completion.chunk","model":"deepseek-chat","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"object":"chat.completion.chunk","model":"deepseek-chat","choices":[{"index":0,"delta":{"content":"你"},"finish_reason":null}]}
+
+data: {"object":"chat.completion.chunk","model":"deepseek-chat","choices":[{"index":0,"delta":{"content":"好"},"finish_reason":null}]}
+
+data: {"object":"chat.completion.chunk","model":"deepseek-chat","choices":[{"index":0,"delta":{"content":"，"},"finish_reason":null}]}
+
+data: {"object":"chat.completion.chunk","model":"deepseek-chat","choices":[{"index":0,"delta":{"content":"我是"},"finish_reason":null}]}
+
+data: {"object":"chat.completion.chunk","model":"deepseek-chat","choices":[{"index":0,"delta":{"content":" NexusAgent"},"finish_reason":null}]}
+
+data: {"object":"chat.completion.chunk","model":"deepseek-chat","choices":[{"index":0,"delta":{"content":" 助手。"},"finish_reason":null}]}
+
+data: {"object":"chat.completion.chunk","model":"deepseek-chat","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":32,"completion_tokens":14,"total_tokens":46}}
+
+data: [DONE]
