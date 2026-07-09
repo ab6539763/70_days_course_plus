@@ -162,7 +162,16 @@ if strategy == "auto":
 ## ingest_parsed 衔接
 
 ```python
-return None
+def validate_answer(
+        self,
+        query: str,
+        reply: str,
+        citations: list[dict[str, Any]],
+    ) -> ValidationResult | None:
+        """按当前 validation_config 校验 reply 与 citations 一致性"""
+        cfg = self.get_validation_config()
+        if not cfg.enabled:
+            return None
         validator = RuleBasedAnswerValidator(config=cfg)
         return validator.validate(query, reply, citations)
 
@@ -182,16 +191,6 @@ return None
         return bundle.to_dict()
 
     def fetch_citations_retry(self, query: str, *, attempt: int = 1) -> dict[str, Any]:
-        """Self-RAG 重试 — 强制 rag_wide 并放大 citation pool"""
-        from rag.citation_config import CitationConfig
-        from rag.route_config import INTENT_RAG_WIDE
-
-        cfg = self.get_citation_config()
-        if not cfg.enabled:
-            return self.fetch_citations(query)
-
-        boosted = CitationConfig.from_dict(
-            {
 ```
 
 
@@ -202,7 +201,16 @@ return None
 ## 附录：KnowledgeStore.ingest_parsed 全文节选
 
 ```python
-return None
+def validate_answer(
+        self,
+        query: str,
+        reply: str,
+        citations: list[dict[str, Any]],
+    ) -> ValidationResult | None:
+        """按当前 validation_config 校验 reply 与 citations 一致性"""
+        cfg = self.get_validation_config()
+        if not cfg.enabled:
+            return None
         validator = RuleBasedAnswerValidator(config=cfg)
         return validator.validate(query, reply, citations)
 
@@ -243,16 +251,6 @@ return None
             intent_override=INTENT_RAG_WIDE,
         )
         data = bundle.to_dict()
-        data["retry_attempt"] = attempt
-        return data
-
-    def ingest_text(
-        self,
-        content: str,
-        *,
-        filename: str,
-        clean: bool = True,
-        chunk_size: int | None = None,
 ```
 
 

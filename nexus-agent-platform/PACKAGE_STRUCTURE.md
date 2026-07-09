@@ -1,7 +1,25 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.38.0（Day 38 多轮 Self-RAG 校验重试）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-038
+**版本**：v0.39.0（Day 39 手写 ReAct Agent）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-039
+
+## Day 39 新增
+
+```
+src/agent/react_agent.py
+  ReActAgent — Thought/Action/Observation 可观测循环
+src/agent/react_config.py
+  ReactConfig — max_steps / use_session_history
+src/api/agent.py
+  GET/PUT /api/agent/react-config
+  POST /api/agent/react-preview
+src/day39/
+  react_demo.py
+  react_api_demo.py
+  phase4_react_review.py
+```
+
+`POST /api/chat` 支持 `agent_mode: true`；响应含 `agent_trace`、`tools_used`。
 
 ## Day 38 新增
 

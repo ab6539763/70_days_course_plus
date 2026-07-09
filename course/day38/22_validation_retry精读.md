@@ -904,7 +904,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.38.0"
+    assert client.get("/api/health").json()["version"] == "0.39.0"
 
 
 def test_validation_retry_preview(client):
@@ -954,7 +954,7 @@ def test_put_validation_config_retry_fields(client):
 
 def test_status_includes_validation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.38.0"
+    assert status["platform_version"] == "0.39.0"
     assert status["validation_config"]["retry_on_fail"] is False
 
 
@@ -1078,6 +1078,14 @@ def get_validation_config(self) -> ValidationConfig:
         config.validate()
         self.validation_config = ValidationConfig.from_dict(config.to_dict())
         return self.validation_config
+
+    def get_react_config(self) -> ReactConfig:
+        return ReactConfig.from_dict(self.react_config.to_dict())
+
+    def set_react_config(self, config: ReactConfig) -> ReactConfig:
+        config.validate()
+        self.react_config = ReactConfig.from_dict(config.to_dict())
+        return self.react_config
 
     def apply_validation_retry(
         self,
@@ -1510,7 +1518,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.38.0"
+    assert client.get("/api/health").json()["version"] == "0.39.0"
 
 
 def test_validation_retry_preview(client):
@@ -1560,7 +1568,7 @@ def test_put_validation_config_retry_fields(client):
 
 def test_status_includes_validation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.38.0"
+    assert status["platform_version"] == "0.39.0"
     assert status["validation_config"]["retry_on_fail"] is False
 
 
@@ -2103,6 +2111,9 @@ outcome = apply_validation_retry(
     if outcome is not None:
         reply = outcome.reply
         kind, meta = classify_reply(reply)
+        if agent_trace:
+            kind = "agent"
+            meta = "ReAct Agent"
         citations = outcome.citations
         cite_data = outcome.cite_data
         rewrite = cite_data.get("rewrite")
@@ -2424,7 +2435,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.38.0"
+    assert client.get("/api/health").json()["version"] == "0.39.0"
 
 
 def test_validation_retry_preview(client):
@@ -2474,7 +2485,7 @@ def test_put_validation_config_retry_fields(client):
 
 def test_status_includes_validation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.38.0"
+    assert status["platform_version"] == "0.39.0"
     assert status["validation_config"]["retry_on_fail"] is False
 
 

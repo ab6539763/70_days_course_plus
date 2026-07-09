@@ -14,6 +14,7 @@ def file04(day: int) -> str:
         36: _file04_day36,
         37: _file04_day37,
         38: _file04_day38,
+        39: _file04_day39,
     }
     return builders[day]()
 
@@ -414,5 +415,36 @@ validate ──► passed? ──yes──► return
 PUT  /validation-config      retry_on_fail max_retries
 POST /validation-retry-preview  模拟重试
 POST /api/chat               validation.retries retry_route
+```
+"""
+
+
+def _file04_day39() -> str:
+    return """# Day 39 流程图与示意图
+
+## ReAct 时序
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as ReActAgent
+    participant T as ToolExecutor
+    participant KB as KnowledgeStore
+    U->>A: query
+    A->>A: Thought
+    A->>T: Action rag_search
+    T->>KB: retrieve
+    KB-->>T: Observation
+    T-->>A: tool result
+    A->>A: Final Answer
+    A-->>U: reply + agent_trace
+```
+
+## API
+
+```
+GET/PUT /api/agent/react-config
+POST    /api/agent/react-preview
+POST    /api/chat  agent_mode=true
 ```
 """

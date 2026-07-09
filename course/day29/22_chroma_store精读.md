@@ -415,6 +415,7 @@ from pathlib import Path
 from typing import Any
 
 from core.paths import get_path
+from agent.react_config import ReactConfig
 from rag.chunker import TextChunk, chunk_documents, chunk_text
 from rag.chunk_config import DEFAULT_CHUNK_CONFIG, ChunkConfig
 from rag.chunk_strategies import chunk_from_parsed
@@ -432,7 +433,6 @@ from rag.hybrid_retriever import HybridRetriever
 from rag.rerank_config import RerankConfig
 from rag.reranker import MockCrossEncoderReranker
 from rag.reranking_retriever import RerankingRetriever
-from rag.retrieval_config import RetrievalConfig
 ```
 
 
@@ -528,6 +528,8 @@ def load(cls, path: Path) -> KnowledgeStore:
             store.route_config = RouteConfig.from_dict(raw["route_config"])
         if raw.get("validation_config"):
             store.validation_config = ValidationConfig.from_dict(raw["validation_config"])
+        if raw.get("react_config"):
+            store.react_config = ReactConfig.from_dict(raw["react_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store

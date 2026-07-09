@@ -9,7 +9,7 @@ from course_diagrams import file04
 
 def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     files = dict(files)
-    if 31 <= day <= 38:
+    if 31 <= day <= 39:
         files["04_流程图与示意图.md"] = file04(day)
     if day == 35:
         files.update(_day35_minimal_overrides())
@@ -25,6 +25,9 @@ def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     elif day == 38:
         files.update(_day38_minimal_overrides())
         files["03_架构设计.md"] = _architecture_day38()
+    elif day == 39:
+        files.update(_day39_minimal_overrides())
+        files["03_架构设计.md"] = _architecture_day39()
     return files
 
 
@@ -47,6 +50,10 @@ def post_fix_content(day: int, name: str, content: str) -> str:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[37])
         content = _fix_day38_terms(content, name)
+    elif day == 39:
+        if not skip_header_fix:
+            content = _fix_headers(content, day, wrong_days=[37, 38])
+        content = _fix_day39_terms(content, name)
     elif 31 <= day <= 34:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[d for d in range(31, 38) if d != day])
@@ -790,4 +797,175 @@ def _acceptance_day38() -> str:
 - [ ] chat 含 validation.retries
 - [ ] test_chat_refuses_after_retry_exhausted 绿
 - [ ] tests/day38/ 15 项全绿
+"""
+
+
+def _fix_day39_terms(content: str, name: str) -> str:
+    if name == "27_Day40预习.md":
+        return content
+    subs = [
+        ("# Day 37 ", "# Day 39 "),
+        ("（Day 37）", "（Day 39）"),
+        ("22_validation_retry精读.md", "22_react_agent精读.md"),
+        ("22_answer_validator精读.md", "22_react_agent精读.md"),
+        ("17_Retry_API速查手册", "17_ReAct_API速查手册"),
+        ("17_Validation_API速查手册", "17_ReAct_API速查手册"),
+        ("精读：validation_retry 与多轮 Self-RAG 重试管线", "精读：react_agent 与 ReAct 工具链管线"),
+        ("精读：answer_validator 与 Self-RAG 校验管线", "精读：react_agent 与 ReAct 工具链管线"),
+        ("## 一、citation_builder.py 全文", "## 一、react_agent.py 全文"),
+        ("## 一、validation_retry.py 全文", "## 一、react_agent.py 全文"),
+        ("## 一、answer_validator.py 全文", "## 一、react_agent.py 全文"),
+        ("## 二十一、citation_builder 完整源码", "## 二十一、react_agent 完整源码"),
+        ("## 二十一、validation_retry 完整源码", "## 二十一、react_agent 完整源码"),
+        ("## 四十、citation_builder 全文嵌入", "## 四十、react_agent 全文嵌入"),
+        ("## 四十、validation_retry 全文嵌入", "## 四十、react_agent 全文嵌入"),
+        ("| 2 | `validation_retry.py` | retry + rag_wide |", "| 2 | `react_agent.py` | Thought/Action/Observation |"),
+        ("| 2 | `answer_validator.py` | validate + score |", "| 2 | `react_agent.py` | Thought/Action/Observation |"),
+        ("| 2 | `citation_builder.py` | rewrite + MockCrossEncoder |", "| 2 | `react_agent.py` | Thought/Action/Observation |"),
+        ("校验重试详解", "ReAct详解"),
+        ("Retry 验收清单", "ReAct 验收清单"),
+        ("与 Day 37 能力对照表", "与 Day 38 能力对照表"),
+        ("| Day 37 答案校验 | Day 38 校验重试 |", "| Day 38 校验重试 | Day 39 ReAct Agent |"),
+        ("Phase 3 · Day 38 · Retry", "Phase 4 · Day 39 · ReAct"),
+        ("Phase 3 第十三日总结（Day 38）", "Phase 4 第一日总结（Day 39）"),
+        ("ZL-NA-REQ-038", "ZL-NA-REQ-039"),
+        ("v0.38.0", "v0.39.0"),
+        ("retry_demo.py", "react_demo.py"),
+        ("retry_api_demo.py", "react_api_demo.py"),
+        ("validation-retry-preview", "react-preview"),
+        ("apply_validation_retry", "ReActAgent.run"),
+        ("fetch_citations_retry", "tool_executor.execute"),
+        ("多轮 Self-RAG 校验重试", "手写 ReAct Agent"),
+        ("校验失败恢复场景", "Agent工具调用场景"),
+        ("多轮Self-RAG方法论", "ReAct与工具链方法论"),
+        ("重试阈值与拒答实践", "步数上限与延迟预算实践"),
+        ("tests/day38/", "tests/day39/"),
+        ("day38/", "day39/"),
+        ("15 项全绿", "17 项全绿"),
+        ("validation_retry", "react_agent"),
+        ("ValidationRetry", "ReActAgent"),
+        ("agent_trace", "agent_trace"),
+    ]
+    return _apply_subs(content, subs)
+
+
+def _day39_minimal_overrides() -> dict[str, str]:
+    return {
+        "01_企业背景与今日任务.md": _day39_file01(),
+        "10_ReAct验收清单.md": _acceptance_day39(),
+        "11_ReAct详解.md": _day39_file11(),
+        "17_ReAct_API速查手册.md": _day39_api_cheatsheet(),
+        "18_与Day38能力对照表.md": _day39_file18(),
+        "24_Phase4第一日总结.md": _day39_file24(),
+    }
+
+
+def _day39_file01() -> str:
+    return """# Day 39 企业背景与今日任务
+
+**需求**：ZL-NA-REQ-039 | **版本**：v0.39.0
+
+## 背景
+
+Day 38 被动重试已能恢复失败；今日交付 **手写 ReAct Agent** — LLM/规则规划 Thought → Action → Observation，全链路可审计。
+
+## 任务
+
+| 时段 | 内容 |
+|------|------|
+| 上午 | ReactConfig + ReActAgent + ToolExecutor |
+| 下午 | Lab：react-preview + agent_trace 截图 |
+| 晚自习 | 读 Day 40 LangChain Agent 预习 |
+
+## 代码阅读顺序
+
+1. `agent/react_config.py`
+2. `agent/react_agent.py`
+3. `api/agent.py`
+4. `api/chat.py` agent_mode
+5. `tests/day39/`
+"""
+
+
+def _day39_file11() -> str:
+    return """# ReAct 详解（Day 39 专题）
+
+## 1. 循环
+
+```
+Thought → Action → Observation → … → Final Answer
+```
+
+## 2. 工具
+
+复用 Day 21 `ToolRegistry`：`faq_lookup`、`rag_search`、`intent_classify`
+
+## 3. 可观测
+
+`agent_trace[]` 每步含 thought/action/observation；`tools_used[]` 汇总。
+"""
+
+
+def _day39_file18() -> str:
+    return """# Day 39 与 Day 38 能力对照表
+
+| 维度 | Day 38 重试 | Day 39 ReAct |
+|------|-------------|--------------|
+| 决策 | 固定 rag_wide | Agent 选择工具 |
+| 输出 | validation.retries | agent_trace + tools_used |
+| API | validation-retry-preview | react-preview |
+| chat | 被动重试 | agent_mode=true |
+"""
+
+
+def _day39_file24() -> str:
+    return """# Phase 4 第一日总结（Day 39）
+
+## Day 39 交付物
+
+- agent/react_agent.py + react_config.py
+- GET/PUT /api/agent/react-config
+- POST /api/agent/react-preview
+- chat agent_mode + agent_trace
+- tests/day39/ 17 项全绿
+
+## 下一日
+
+Day 40：LangChain Agent 框架对比。
+"""
+
+
+def _day39_api_cheatsheet() -> str:
+    return """# ReAct API 速查手册
+
+| 方法 | 路径 |
+|------|------|
+| GET | `/api/agent/react-config` |
+| PUT | `/api/agent/react-config` |
+| POST | `/api/agent/react-preview` |
+| POST | `/api/chat` + `agent_mode: true` |
+"""
+
+
+def _architecture_day39() -> str:
+    return """# Day 39 架构设计 — 手写 ReAct Agent
+
+```mermaid
+flowchart TD
+    CHAT["/api/chat agent_mode"] --> RA[ReActAgent]
+    RA --> TE[ToolExecutor]
+    TE --> FAQ[faq_lookup]
+    TE --> RAG[rag_search]
+    RA --> TRACE["agent_trace"]
+    CFG[ReactConfig] --> RA
+```
+"""
+
+
+def _acceptance_day39() -> str:
+    return """# Day 39 ReAct 验收清单
+
+- [ ] react_demo / react-preview 绿
+- [ ] chat agent_mode 含 agent_trace
+- [ ] tests/day39/ 17 项全绿
 """

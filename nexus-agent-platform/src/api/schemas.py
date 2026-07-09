@@ -18,6 +18,10 @@ class ChatRequest(BaseModel):
         max_length=64,
         description="会话 ID，省略则使用 default",
     )
+    agent_mode: bool = Field(
+        default=False,
+        description="为 true 时走 ReAct Agent 工具链（Day 39）",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -32,6 +36,8 @@ class ChatResponse(BaseModel):
     expansion: dict | None = None
     route: dict | None = None
     validation: dict | None = None
+    agent_trace: list[dict] | None = None
+    tools_used: list[str] | None = None
 
 
 class HealthResponse(BaseModel):
@@ -85,6 +91,7 @@ class KnowledgeStatusResponse(BaseModel):
     expansion_config: dict = Field(default_factory=dict)
     route_config: dict = Field(default_factory=dict)
     validation_config: dict = Field(default_factory=dict)
+    react_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -306,6 +313,36 @@ class ValidationRetryPreviewResponse(BaseModel):
     refused: bool = False
     retries: int = 0
     retry_route: dict | None = None
+
+
+class ReactConfigRequest(BaseModel):
+    """PUT /api/agent/react-config"""
+
+    enabled: bool = True
+    max_steps: int = Field(3, ge=1, le=8)
+    use_session_history: bool = True
+    mock_planner: bool = True
+
+
+class ReactConfigResponse(BaseModel):
+    enabled: bool
+    max_steps: int
+    use_session_history: bool
+    mock_planner: bool
+
+
+class ReactPreviewRequest(BaseModel):
+    """POST /api/agent/react-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+    history: list[str] = Field(default_factory=list)
+
+
+class ReactPreviewResponse(BaseModel):
+    query: str
+    reply: str
+    steps: list[dict]
+    tools_used: list[str]
 
 
 class RebuildRequest(BaseModel):

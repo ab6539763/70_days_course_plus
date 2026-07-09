@@ -32,7 +32,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.38.0"
+    assert client.get("/api/health").json()["version"] == "0.39.0"
 
 
 def test_upload_returns_incremental_mode(client):
@@ -66,7 +66,7 @@ def test_status_shows_incremental_fields(client):
             files={"file": ("notice.md", fh, "text/markdown")},
         )
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.38.0"
+    assert status["platform_version"] == "0.39.0"
     assert status["index_mode"] == INDEX_MODE_INCREMENTAL
     assert status["last_incremental_at"]
     assert status["chroma_count"] == status["chunk_count"]

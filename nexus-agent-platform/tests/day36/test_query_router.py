@@ -95,7 +95,7 @@ def test_knowledge_store_persists_route_config(tmp_path):
 def test_status_includes_route_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.38.0"
+    assert status["platform_version"] == "0.39.0"
     assert status["route_config"]["enabled"] is True
 
 

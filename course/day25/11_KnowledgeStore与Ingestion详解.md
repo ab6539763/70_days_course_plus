@@ -137,7 +137,18 @@ ingest_text ValueError → API 422；StorageError → 500；UnicodeDecodeError �
 ## 附录：_append_chunks 与 _rebuild_index（详解专节）
 
 ```python
-if clean:
+incremental: bool = False,
+    ) -> KnowledgeDocument:
+        """将 ParsedDocument 写入知识库"""
+        cfg = self.get_chunk_config()
+        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
+        cs = chunk_size if chunk_size is not None else cfg.chunk_size
+        ov = overlap if overlap is not None else cfg.overlap
+        text = (parsed.plain_text or "").strip()
+        if not text:
+            raise ValueError("解析结果为空")
+
+        if clean:
             text, _ = clean_text(text)
             parsed.plain_text = text
             for section in parsed.sections:
@@ -156,38 +167,28 @@ if clean:
             self._append_chunks(
                 parsed.filename,
                 new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
-            )
-            self._incremental_index(new_chunks, replaced_count=len(removed))
-        else:
-            self._append_chunks(
-                parsed.filename,
-                new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
 ```
 
 
 **`_append_chunks`**：新块 `index` 从 `len(self.chunks)` 递增，避免与旧块冲突。每 append 同步追加 `KnowledgeDocument` 元数据行。
 
 ```python
-store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
+store = cls(store_path=path)
+        store.documents = [
+            KnowledgeDocument.from_dict(d) for d in raw.get("documents", [])
+        ]
+        store.chunks = [_chunk_from_dict(c) for c in raw.get("chunks", [])]
+        store.embedding_state = dict(raw.get("embedding") or {})
+        store.vector_backend = str(raw.get("vector_backend") or VECTOR_BACKEND)
+        if raw.get("chunk_config"):
+            store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
+        store.last_rebuilt_at = raw.get("last_rebuilt_at")
+        store.last_incremental_at = raw.get("last_incremental_at")
+        store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
         if raw.get("retrieval_config"):
             store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
         if raw.get("rerank_config"):
             store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
-        if raw.get("rewrite_config"):
-            store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
-        if raw.get("citation_config"):
-            store.citation_config = CitationConfig.from_dict(raw["citation_config"])
-        if raw.get("expansion_config"):
-            store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
-        if raw.get("route_config"):
-            store.route_config = RouteConfig.from_dict(raw["route_config"])
-        if raw.get("validation_config"):
-            store.validation_config = ValidationConfig.from_dict(raw["validation_config"])
-        store._sync_chroma_from_json()
 ```
 
 

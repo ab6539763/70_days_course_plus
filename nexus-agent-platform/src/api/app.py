@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from api.agent import router as agent_router
 from api.chat import router as chat_router
 from api.knowledge import router as knowledge_router
 from core.exceptions import APIError, ConfigError, ModelValidationError, NexusError
@@ -44,6 +45,7 @@ def create_app(*, enable_cors: bool = True) -> FastAPI:
 
     app.include_router(chat_router)
     app.include_router(knowledge_router)
+    app.include_router(agent_router)
 
     @app.exception_handler(ModelValidationError)
     async def validation_handler(_request: Request, exc: ModelValidationError):

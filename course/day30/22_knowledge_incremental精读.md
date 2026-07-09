@@ -605,6 +605,7 @@ from pathlib import Path
 from typing import Any
 
 from core.paths import get_path
+from agent.react_config import ReactConfig
 from rag.chunker import TextChunk, chunk_documents, chunk_text
 from rag.chunk_config import DEFAULT_CHUNK_CONFIG, ChunkConfig
 from rag.chunk_strategies import chunk_from_parsed
@@ -631,7 +632,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.38.0"
+PLATFORM_VERSION = "0.39.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -692,6 +693,7 @@ class KnowledgeStore:
     expansion_config: ExpansionConfig = field(default_factory=ExpansionConfig)
     route_config: RouteConfig = field(default_factory=RouteConfig)
     validation_config: ValidationConfig = field(default_factory=ValidationConfig)
+    react_config: ReactConfig = field(default_factory=ReactConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -781,6 +783,14 @@ class KnowledgeStore:
         config.validate()
         self.validation_config = ValidationConfig.from_dict(config.to_dict())
         return self.validation_config
+
+    def get_react_config(self) -> ReactConfig:
+        return ReactConfig.from_dict(self.react_config.to_dict())
+
+    def set_react_config(self, config: ReactConfig) -> ReactConfig:
+        config.validate()
+        self.react_config = ReactConfig.from_dict(config.to_dict())
+        return self.react_config
 
     def validate_answer(
         self,
@@ -999,22 +1009,9 @@ class KnowledgeStore:
             "expansion_config": self.expansion_config.to_dict(),
             "route_config": self.route_config.to_dict(),
             "validation_config": self.validation_config.to_dict(),
+            "react_config": self.react_config.to_dict(),
         }
-        save_json(target, payload)
-        return target
-
-    @classmethod
-    def load(cls, path: Path) -> KnowledgeStore:
-        """从 JSON 加载知识库"""
-        raw = load_json(path, default=None)
-        if not raw:
-            return cls.bootstrap_from_sample_docs(store_path=path)
-
-        store = cls(store_path=path)
-        store.documents = [
-            KnowledgeDocument.from_dict(d) for d in raw.get("documents", [])
-        ]
-        store.chunks = [_chunk_from_dict(c) for c in raw.ge
+        save_json
 ```
 
 
@@ -1116,7 +1113,21 @@ self.index_mode = INDEX_MODE_INCREMENTAL
 ## 二十三、延伸阅读：knowledge_store 余下部分
 
 ```python
-t("chunks", [])]
+(target, payload)
+        return target
+
+    @classmethod
+    def load(cls, path: Path) -> KnowledgeStore:
+        """从 JSON 加载知识库"""
+        raw = load_json(path, default=None)
+        if not raw:
+            return cls.bootstrap_from_sample_docs(store_path=path)
+
+        store = cls(store_path=path)
+        store.documents = [
+            KnowledgeDocument.from_dict(d) for d in raw.get("documents", [])
+        ]
+        store.chunks = [_chunk_from_dict(c) for c in raw.get("chunks", [])]
         store.embedding_state = dict(raw.get("embedding") or {})
         store.vector_backend = str(raw.get("vector_backend") or VECTOR_BACKEND)
         if raw.get("chunk_config"):
@@ -1138,6 +1149,8 @@ t("chunks", [])]
             store.route_config = RouteConfig.from_dict(raw["route_config"])
         if raw.get("validation_config"):
             store.validation_config = ValidationConfig.from_dict(raw["validation_config"])
+        if raw.get("react_config"):
+            store.react_config = ReactConfig.from_dict(raw["react_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -1202,6 +1215,7 @@ t("chunks", [])]
             "expansion_config": self.expansion_config.to_dict(),
             "route_config": self.route_config.to_dict(),
             "validation_config": self.validation_config.to_dict(),
+            "react_config": self.react_config.to_dict(),
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,
@@ -2058,7 +2072,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.38.0"
+    assert client.get("/api/health").json()["version"] == "0.39.0"
 
 
 def test_upload_returns_incremental_mode(client):
@@ -2092,7 +2106,7 @@ def test_status_shows_incremental_fields(client):
             files={"file": ("notice.md", fh, "text/markdown")},
         )
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.38.0"
+    assert status["platform_version"] == "0.39.0"
     assert status["index_mode"] == INDEX_MODE_INCREMENTAL
     assert status["last_incremental_at"]
     assert status["chroma_count"] == status["chunk_count"]

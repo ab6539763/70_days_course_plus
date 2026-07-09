@@ -120,6 +120,14 @@
       bubble.appendChild(vl);
     }
 
+    if (extras && extras.agent_trace && extras.agent_trace.length) {
+      const ag = document.createElement("div");
+      ag.className = "msg__agent-trace";
+      const tools = (extras.tools_used || []).join(", ") || "—";
+      ag.textContent = `Agent: ${extras.agent_trace.length} 步 · 工具: ${tools}`;
+      bubble.appendChild(ag);
+    }
+
     if (meta) {
       const metaEl = document.createElement("span");
       metaEl.className = "msg__meta";
@@ -162,7 +170,9 @@
             ? { kind: "faq", text: result.reply }
             : result.kind === "route"
               ? parseReply(result.reply)
-              : { kind: "bot", text: result.reply };
+              : result.kind === "agent"
+                ? { kind: "bot", text: result.reply }
+                : { kind: "bot", text: result.reply };
       } else {
         parsed = parseReply(result.reply);
       }
@@ -172,6 +182,8 @@
         expansion: result.expansion,
         route: result.route,
         validation: result.validation,
+        agent_trace: result.agent_trace,
+        tools_used: result.tools_used,
       });
     } catch (err) {
       appendMessage("bot", `错误：${err.message}`, "请求失败");

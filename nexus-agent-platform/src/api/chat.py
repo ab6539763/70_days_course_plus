@@ -8,21 +8,28 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from agent.react_agent import ReActAgent
 from api.response_parser import classify_reply
 from api.schemas import ChatRequest, ChatResponse, HealthResponse, SessionResetRequest, SessionResetResponse
 from api.sessions import SessionManager, session_manager
-from chat.orchestrator import ChatOrchestrator
 from rag.knowledge_store import get_knowledge_store
 from rag.validation_retry import apply_validation_retry
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.38.0"
+API_VERSION = "0.39.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
 
 def get_session_manager() -> SessionManager:
     return session_manager
+
+
+def _session_history(orchestrator, *, enabled: bool) -> list[dict[str, str]] | None:
+    if not enabled:
+        return None
+    msgs = orchestrator.assistant.history.messages
+    return [{"role": m.role, "content": m.content} for m in msgs if m.role in ("user", "assistant")]
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -42,13 +49,27 @@ def chat(
     manager: SessionManager = Depends(get_session_manager),
 ) -> ChatResponse:
     """
-    处理单轮聊天请求，内部调用 ChatOrchestrator.handle_message。
+    处理单轮聊天请求；agent_mode=true 时走 ReAct 工具链。
     """
     session_id, orchestrator = manager.get_or_create(body.session_id)
     message = body.message.strip()
+    store = get_knowledge_store()
+    agent_trace = None
+    tools_used = None
 
     try:
-        reply = orchestrator.handle_message(message)
+        if body.agent_mode and store.get_react_config().enabled:
+            cfg = store.get_react_config()
+            agent = ReActAgent(orchestrator.tool_executor, config=cfg)
+            history = _session_history(orchestrator, enabled=cfg.use_session_history)
+            react_outcome = agent.run(message, history=history)
+            reply = react_outcome.reply
+            agent_trace = [s.to_dict() for s in react_outcome.steps]
+            tools_used = list(react_outcome.tools_used)
+            orchestrator.assistant.history.add_user(message)
+            orchestrator.assistant.history.add_assistant(reply)
+        else:
+            reply = orchestrator.handle_message(message)
     except ConfigError as exc:
         raise _http_from_nexus(exc, status_code=500) from exc
     except APIError as exc:
@@ -57,8 +78,10 @@ def chat(
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
+    if agent_trace:
+        kind = "agent"
+        meta = "ReAct Agent"
 
-    store = get_knowledge_store()
     cite_data = store.fetch_citations(message)
     citations = cite_data.get("citations") or []
     rewrite = cite_data.get("rewrite")
@@ -77,6 +100,9 @@ def chat(
     if outcome is not None:
         reply = outcome.reply
         kind, meta = classify_reply(reply)
+        if agent_trace:
+            kind = "agent"
+            meta = "ReAct Agent"
         citations = outcome.citations
         cite_data = outcome.cite_data
         rewrite = cite_data.get("rewrite")
@@ -101,6 +127,8 @@ def chat(
         expansion=expansion,
         route=route,
         validation=validation,
+        agent_trace=agent_trace,
+        tools_used=tools_used,
     )
 
 

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from core.paths import get_path
+from agent.react_config import ReactConfig
 from rag.chunker import TextChunk, chunk_documents, chunk_text
 from rag.chunk_config import DEFAULT_CHUNK_CONFIG, ChunkConfig
 from rag.chunk_strategies import chunk_from_parsed
@@ -33,7 +34,6 @@ from rag.chroma_store import VECTOR_BACKEND, ChromaVectorIndex
 from rag.citation_config import CitationConfig
 from rag.expanding_retriever import ExpandingRetriever
 from rag.expansion_config import ExpansionConfig
-from rag.answer_validator import RuleBasedAnswerValidator, ValidationResult
 ```
 
 
@@ -44,6 +44,7 @@ from rag.answer_validator import RuleBasedAnswerValidator, ValidationResult
 ## KnowledgeDocument 元数据类
 
 ```python
+from rag.retrieval_config import RetrievalConfig
 from rag.rewrite_config import RewriteConfig
 from rag.rewriting_retriever import RewritingRetriever
 from tools.doc_reader import DocumentRecord, read_text_file
@@ -52,7 +53,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.38.0"
+PLATFORM_VERSION = "0.39.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -70,7 +71,6 @@ class KnowledgeDocument:
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
-            "ingested_at": self.ingested_at,
 ```
 
 
@@ -85,7 +85,8 @@ class KnowledgeDocument:
 ## KnowledgeStore 字段
 
 ```python
-}
+"format": self.format,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> KnowledgeDocument:
@@ -105,7 +106,6 @@ class KnowledgeStore:
 
     典型用法：
         store = KnowledgeStore.load_or_bootstrap()
-        store.ingest_text("新产品说明…", filename="notice.txt")
 ```
 
 
@@ -119,7 +119,9 @@ class KnowledgeStore:
 ## ingest_text 核心写入
 
 ```python
-@property
+return len(self.chunks)
+
+    @property
     def document_count(self) -> int:
         return len(self.documents)
 
@@ -155,8 +157,6 @@ class KnowledgeStore:
     def set_rerank_config(self, config: RerankConfig) -> RerankConfig:
         config.validate()
         self.rerank_config = RerankConfig.from_dict(config.to_dict())
-        self.invalidate_cache()
-        return self.rerank_config
 ```
 
 
@@ -172,23 +172,23 @@ class KnowledgeStore:
 ## save 持久化 envelope
 
 ```python
-) -> KnowledgeDocument:
+return data
+
+    def ingest_text(
+        self,
+        content: str,
+        *,
+        filename: str,
+        clean: bool = True,
+        chunk_size: int | None = None,
+        overlap: int | None = None,
+    ) -> KnowledgeDocument:
         """将文本写入知识库并重建索引"""
         cfg = self.get_chunk_config()
         cs = chunk_size if chunk_size is not None else cfg.chunk_size
         ov = overlap if overlap is not None else cfg.overlap
         text = (content or "").strip()
         if not text:
-            raise ValueError("文档内容不能为空")
-        if not filename.strip():
-            raise ValueError("filename 不能为空")
-
-        cleaned = text
-        if clean:
-            cleaned, _ = clean_text(text)
-        doc = DocumentRecord(
-            path=Path(filename),
-            content=text,
 ```
 
 
@@ -199,7 +199,17 @@ class KnowledgeStore:
 ## load / load_or_bootstrap
 
 ```python
-cleaned=cleaned,
+raise ValueError("filename 不能为空")
+
+        cleaned = text
+        if clean:
+            cleaned, _ = clean_text(text)
+        doc = DocumentRecord(
+            path=Path(filename),
+            content=text,
+            encoding="utf-8",
+            size_bytes=len(text.encode("utf-8")),
+            cleaned=cleaned,
         )
         new_chunks = chunk_documents(
             [doc],
@@ -220,16 +230,6 @@ cleaned=cleaned,
         overlap: int = 40,
     ) -> KnowledgeDocument:
         """从磁盘文件 ingestion"""
-        content, encoding = read_text_file(path)
-        cleaned = content
-        if clean:
-            cleaned, _ = clean_text(content)
-        doc = DocumentRecord(
-            path=path,
-            content=content,
-            encoding=encoding,
-            size_bytes=path.stat().st_size,
-            cleaned=cleaned,
 ```
 
 
@@ -240,7 +240,17 @@ cleaned=cleaned,
 ## bootstrap_from_sample_docs
 
 ```python
-[doc],
+if clean:
+            cleaned, _ = clean_text(content)
+        doc = DocumentRecord(
+            path=path,
+            content=content,
+            encoding=encoding,
+            size_bytes=path.stat().st_size,
+            cleaned=cleaned,
+        )
+        new_chunks = chunk_documents(
+            [doc],
             chunk_size=chunk_size,
             overlap=overlap,
             use_cleaned=clean,
@@ -257,16 +267,6 @@ cleaned=cleaned,
         clean: bool = True,
         chunk_strategy: str = "auto",
         incremental: bool = True,
-    ) -> KnowledgeDocument:
-        """处理上传二进制 — Day 26 起委托 doc_parser"""
-        from tools.doc_parser import parse_bytes
-
-        parsed = parse_bytes(data, filename)
-        cfg = self.get_chunk_config()
-        return self.ingest_parsed(
-            parsed,
-            clean=clean,
-            chunk_strategy=chunk_strategy if chunk_strategy != "auto" else cfg.strategy,
 ```
 
 
@@ -277,17 +277,17 @@ cleaned=cleaned,
 ## 单例 get_knowledge_store
 
 ```python
-"citation_config": self.citation_config.to_dict(),
-            "expansion_config": self.expansion_config.to_dict(),
-            "route_config": self.route_config.to_dict(),
-            "validation_config": self.validation_config.to_dict(),
-            "vector_backend": self.vector_backend,
-            "chroma_path": str(self._resolve_chroma_path()),
-            "chroma_count": self._chroma_index().count() if self.chunks else 0,
-        }
-
-    def _append_chunks(
-        self,
+"document_count": self.document_count,
+            "chunk_count": self.chunk_count,
+            "documents": [d.to_dict() for d in self.documents],
+            "store_path": str(self.store_path) if self.store_path else None,
+            "platform_version": PLATFORM_VERSION,
+            "supported_formats": supported_formats(),
+            "chunk_config": self.chunk_config.to_dict(),
+            "last_rebuilt_at": self.last_rebuilt_at,
+            "last_incremental_at": self.last_incremental_at,
+            "index_mode": self.index_mode,
+            "retrieval_config": self.retrieval_config.to_dict(),
 ```
 
 
@@ -310,7 +310,9 @@ cleaned=cleaned,
 ## 扩展精读：ingest_file 与 ingest_bytes
 
 ```python
-def get_rewrite_config(self) -> RewriteConfig:
+return self.rerank_config
+
+    def get_rewrite_config(self) -> RewriteConfig:
         return RewriteConfig.from_dict(self.rewrite_config.to_dict())
 
     def set_rewrite_config(self, config: RewriteConfig) -> RewriteConfig:
@@ -353,13 +355,11 @@ def get_rewrite_config(self) -> RewriteConfig:
         self.validation_config = ValidationConfig.from_dict(config.to_dict())
         return self.validation_config
 
-    def validate_answer(
-        self,
-        query: str,
-        reply: str,
-        citations: list[dict[str, Any]],
-    ) -> ValidationResult | None:
-        """按当前 validation_config 校验 reply 与 citations 一致性"""
+    def get_react_config(self) -> ReactConfig:
+        return ReactConfig.from_dict(self.react_config.to_dict())
+
+    def set_react_config(self, config: ReactConfig) -> ReactConfig:
+        config.validate()
 ```
 
 
@@ -371,7 +371,8 @@ def get_rewrite_config(self) -> RewriteConfig:
 ## 扩展精读：as_rag_service 与 _build_rag_service
 
 ```python
-index_mode: str = INDEX_MODE_FULL
+last_incremental_at: str | None = None
+    index_mode: str = INDEX_MODE_FULL
     retrieval_config: RetrievalConfig = field(default_factory=RetrievalConfig)
     rerank_config: RerankConfig = field(default_factory=RerankConfig)
     rewrite_config: RewriteConfig = field(default_factory=RewriteConfig)
@@ -379,8 +380,7 @@ index_mode: str = INDEX_MODE_FULL
     expansion_config: ExpansionConfig = field(default_factory=ExpansionConfig)
     route_config: RouteConfig = field(default_factory=RouteConfig)
     validation_config: ValidationConfig = field(default_factory=ValidationConfig)
-    store_path: Path | None = None
-    chroma_path: Path | None = None
+    react_config: ReactConfig = field(default_factory=ReactConfig)
 ```
 
 
@@ -464,7 +464,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.38.0"
+    assert data["platform_version"] == "0.39.0"
     assert isinstance(data["documents"], list)
 
 
@@ -496,7 +496,7 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.38.0"
+    assert raw["platform_version"] == "0.39.0"
 ```
 
 
@@ -513,7 +513,16 @@ def test_store_json_has_version(tmp_store, tmp_path):
 ## 扩展精读：ingest_parsed（Day 26 衔接）
 
 ```python
-return None
+def validate_answer(
+        self,
+        query: str,
+        reply: str,
+        citations: list[dict[str, Any]],
+    ) -> ValidationResult | None:
+        """按当前 validation_config 校验 reply 与 citations 一致性"""
+        cfg = self.get_validation_config()
+        if not cfg.enabled:
+            return None
         validator = RuleBasedAnswerValidator(config=cfg)
         return validator.validate(query, reply, citations)
 
@@ -553,16 +562,6 @@ return None
             config=boosted,
             intent_override=INTENT_RAG_WIDE,
         )
-        data = bundle.to_dict()
-        data["retry_attempt"] = attempt
-        return data
-
-    def ingest_text(
-        self,
-        content: str,
-        *,
-        filename: str,
-        clean: bool = True,
 ```
 
 
@@ -778,22 +777,23 @@ return None
 ## 附录：status_dict 与测试对照（精读专节）
 
 ```python
-def ingest_parsed(
+from tools.doc_parser import parse_bytes
+
+        parsed = parse_bytes(data, filename)
+        cfg = self.get_chunk_config()
+        return self.ingest_parsed(
+            parsed,
+            clean=clean,
+            chunk_strategy=chunk_strategy if chunk_strategy != "auto" else cfg.strategy,
+            incremental=incremental,
+        )
+
+    def ingest_parsed(
         self,
         parsed: ParsedDocument,
         *,
         clean: bool = True,
         chunk_strategy: str | None = None,
-        chunk_size: int | None = None,
-        overlap: int | None = None,
-        incremental: bool = False,
-    ) -> KnowledgeDocument:
-        """将 ParsedDocument 写入知识库"""
-        cfg = self.get_chunk_config()
-        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
-        cs = chunk_size if chunk_size is not None else cfg.chunk_size
-        ov = overlap if overlap is not None else cfg.overlap
-        text = (parsed.plain_text or "").strip()
 ```
 
 
@@ -863,7 +863,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.38.0"
+    assert data["platform_version"] == "0.39.0"
     assert isinstance(data["documents"], list)
 
 
@@ -895,7 +895,7 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.38.0"
+    assert raw["platform_version"] == "0.39.0"
 ```
 
 
@@ -918,16 +918,16 @@ def test_store_json_has_version(tmp_store, tmp_path):
 ## 节选：_chunk_to_dict
 
 ```python
-)
-            )
-        self.chunks.extend(reindexed)
-        self.documents.append(
-            KnowledgeDocument(
-                name=filename,
-                ingested_at=_utc_now(),
-                size_bytes=size_bytes,
-                chunk_count=len(reindexed),
-                format=doc_format,
+size_bytes: int,
+        doc_format: str = "txt",
+    ) -> None:
+        base_index = len(self.chunks)
+        reindexed: list[TextChunk] = []
+        for i, chunk in enumerate(new_chunks):
+            reindexed.append(
+                TextChunk(
+                    chunk_id=chunk.chunk_id,
+                    text=chunk.text,
 ```
 
 
@@ -954,7 +954,9 @@ JSON 序列化丢弃 runtime 对象，只留可恢复字段。
 Day 25 `ingest_bytes` 在 Day 26 仓库中首行调用 `parse_bytes`：
 
 ```python
-self.route_config = RouteConfig.from_dict(config.to_dict())
+def set_route_config(self, config: RouteConfig) -> RouteConfig:
+        config.validate()
+        self.route_config = RouteConfig.from_dict(config.to_dict())
         self.invalidate_cache()
         return self.route_config
 
@@ -966,13 +968,11 @@ self.route_config = RouteConfig.from_dict(config.to_dict())
         self.validation_config = ValidationConfig.from_dict(config.to_dict())
         return self.validation_config
 
-    def validate_answer(
-        self,
-        query: str,
-        reply: str,
-        citations: list[dict[str, Any]],
-    ) -> ValidationResult | None:
-        """按当前 validation_config 校验 reply 与 citations 一致性"""
+    def get_react_config(self) -> ReactConfig:
+        return ReactConfig.from_dict(self.react_config.to_dict())
+
+    def set_react_config(self, config: ReactConfig) -> ReactConfig:
+        config.validate()
 ```
 
 

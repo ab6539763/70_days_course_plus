@@ -61,13 +61,13 @@ Day 58-70  → 毕业设计、平台全功能上线
 
 ## 当前进度
 
-课件 Day 24–38 由 `scripts/course_days/dayXX.py` 生成，质量标准对齐 Day 23（每篇独立内容、≥10 万字/期）。一键重生成：
+课件 Day 24–39 由 `scripts/course_days/dayXX.py` 生成，质量标准对齐 Day 23（每篇独立内容、≥10 万字/期）。一键重生成：
 
 ```bash
 python3 scripts/regenerate_courses_day24_30.py
 ```
 
-全链路交付门禁（课件审计 + day01–38 E2E + Sprint3 冒烟）：
+全链路交付门禁（课件审计 + day01–39 E2E + Sprint3 冒烟）：
 
 ```bash
 bash scripts/delivery_check.sh
@@ -107,4 +107,5 @@ bash scripts/delivery_check.sh
 - [x] Day 36：自适应路由（Query Router — 按意图动态 expand/rewrite）
 - [x] Day 37：Self-RAG 答案校验（Answer Validation — 生成后 citations 一致性校验）
 - [x] Day 38：多轮 Self-RAG 校验重试（Validation Retry — 失败后 rag_wide 重检索）
-- [ ] Day 39-70：持续更新中
+- [x] Day 39：手写 ReAct Agent（可观测工具链 — Thought/Action/Observation）
+- [ ] Day 40-70：持续更新中

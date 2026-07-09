@@ -792,7 +792,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.38.0"
+    assert client.get("/api/health").json()["version"] == "0.39.0"
 
 
 def test_get_citation_config_default(client):
@@ -839,7 +839,7 @@ def test_citation_preview_with_rewrite(client):
 
 def test_status_includes_citation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.38.0"
+    assert status["platform_version"] == "0.39.0"
     assert status["citation_config"]["enabled"] is True
 
 
@@ -956,6 +956,14 @@ def get_citation_config(self) -> CitationConfig:
         config.validate()
         self.validation_config = ValidationConfig.from_dict(config.to_dict())
         return self.validation_config
+
+    def get_react_config(self) -> ReactConfig:
+        return ReactConfig.from_dict(self.react_config.to_dict())
+
+    def set_react_config(self, config: ReactConfig) -> ReactConfig:
+        config.validate()
+        self.react_config = ReactConfig.from_dict(config.to_dict())
+        return self.react_config
 
     def validate_answer(
         self,
@@ -1428,7 +1436,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.38.0"
+    assert client.get("/api/health").json()["version"] == "0.39.0"
 
 
 def test_get_citation_config_default(client):
@@ -1475,7 +1483,7 @@ def test_citation_preview_with_rewrite(client):
 
 def test_status_includes_citation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.38.0"
+    assert status["platform_version"] == "0.39.0"
     assert status["citation_config"]["enabled"] is True
 
 
@@ -2263,7 +2271,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.38.0"
+    assert client.get("/api/health").json()["version"] == "0.39.0"
 
 
 def test_get_citation_config_default(client):
@@ -2310,7 +2318,7 @@ def test_citation_preview_with_rewrite(client):
 
 def test_status_includes_citation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.38.0"
+    assert status["platform_version"] == "0.39.0"
     assert status["citation_config"]["enabled"] is True
 
 
