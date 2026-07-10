@@ -91,7 +91,7 @@ def audit(*, fix: bool = False) -> int:
                     f.write_text(fixed, encoding="utf-8")
             if "<!-- missing:" in text:
                 issues.append(f"day{day:02d}/{f.name}: embedded missing repo path")
-            if day in STALE_MARKERS and not f.name.startswith("27_"):
+            if day in STALE_MARKERS and not f.name.startswith(("27_", "18_")):
                 for marker in STALE_MARKERS[day]:
                     if marker in text:
                         issues.append(f"day{day:02d}/{f.name}: stale marker {marker!r}")

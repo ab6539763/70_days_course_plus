@@ -10,7 +10,7 @@ planner → tool_runner → answer
 ## 2. 节点
 
 - `planner`：选择工具或 Final Answer
-- `tool_runner`：StateGraph node
+- `tool_runner`：StructuredTool.run
 - `answer`：汇总 reply
 
 ## 3. 可观测

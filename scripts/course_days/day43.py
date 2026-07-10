@@ -102,22 +102,22 @@ def build() -> dict[str, str]:
         "07_晚自习.md": _file07(),
         "08_作业.md": _file08(),
         "09_作业答案.md": _file09(),
-        "10_ReAct验收清单.md": _file10(),
-        "11_ReAct详解.md": _file11(),
+        "10_Supervisor验收清单.md": _file10(),
+        "11_Supervisor详解.md": _file11(),
         "12_课堂练习册.md": _file12(),
-        "13_深度扩展_ReAct与工具链方法论.md": _file13(),
-        "14_企业案例集_Agent工具调用场景.md": _file14(),
+        "13_深度扩展_Supervisor方法论.md": _file13(),
+        "14_企业案例集_多Agent协作场景.md": _file14(),
         "15_授课实录.md": _file15(),
         "16_复习卡片.md": _file16(),
-        "17_ReAct_API速查手册.md": _file17(),
-        "18_与Day38能力对照表.md": _file18(),
+        "17_Supervisor_API速查手册.md": _file17(),
+        "18_与Day42能力对照表.md": _file18(),
         "19_讲师补充阅读.md": _file19(),
         "20_完整代码走查.md": _file20(),
         "21_课堂知识竞赛.md": _file21(),
-        "22_react_agent精读.md": _file22(),
+        "22_supervisor_graph精读.md": _file22(),
         "23_步数上限与延迟预算实践.md": _file23(),
-        "24_Phase4第一日总结.md": _file24(),
-        "25_react_api脚本精读.md": _file25(),
+        "24_Phase4第五日总结.md": _file24(),
+        "25_supervisor_graph_api脚本精读.md": _file25(),
         "26_实操Lab手册.md": _file26(),
         "27_Day44预习.md": _file27(),
     }
@@ -1629,9 +1629,9 @@ Reimers & Gurevych 指出 bi-encoder 适合召回，cross-encoder 适合 rewrite
 
 
 def _file20() -> str:
-    return f"""# Day 37 完整代码走查
+    return f"""# Day 43 完整代码走查
 
-按**调用顺序**阅读，预计 90 分钟。精读全文见 `22_citation_builder精读.md`。
+按**调用顺序**阅读，预计 90 分钟。精读全文见 `22_supervisor_graph精读.md`。
 
 ---
 
@@ -1639,43 +1639,40 @@ def _file20() -> str:
 
 | 顺序 | 文件 | 关注 |
 |------|------|------|
-| 1 | `citation_config.py` | validate / defaults |
-| 2 | `citation_builder.py` | rewrite + MockCrossEncoder |
-| 3 | `context.py` | 三阶段 search |
-| 4 | `knowledge_store.py` | _build_rag_service 外包 |
-| 5 | `api/knowledge.py` | route-config |
-| 6 | `day37/route_demo.py` | 开关对比 |
-| 7 | `day37/route_api_demo.py` | TestClient |
-| 8 | `tests/day37/` | 20 项 |
+| 1 | `agent/supervisor_config.py` | SupervisorConfig — max_delegations |
+| 2 | `agent/sub_agent.py` | 三个专职子 Agent |
+| 3 | `agent/supervisor_graph.py` | supervisor_route → worker → synthesize |
+| 4 | `day43/supervisor_demo.py` | CLI 演示 |
+| 5 | `day43/supervisor_api_demo.py` | TestClient 演示 |
+| 6 | `tests/day43/` | 17 项 |
 
 ---
 
 ## 1. 配置层
 
-`RouteConfig` 是改写单一真相源。store 启动 `from_dict` 加载；API PUT 更新。
+`supervisor_config.py` 是本日配置的单一真相源。store 启动时 `from_dict` 加载；API `PUT` 更新并持久化。
 
-**检查点**：默认 enabled=True, pool=20。
-
----
-
-## 2. search 调用栈
-
-```
-POST /api/chat
-  → RAGContextService.retrieve
-    → DocumentIndex.search
-      → RAGContextService.search
-        → HybridRetriever.search(pool)
-        → RuleBasedQueryRouter.route.rewrite
-```
+**检查点**：默认 `enabled=True`。
 
 ---
 
-## 3. _build_rag_service
+## 2. 调用栈
 
-{fenced("python", _BUILD_RAG)}
+```
+POST /api/chat  (supervisor_mode=true)
+  → SupervisorGraph.invoke / .run
+    → 决策 / 路由
+      → ToolExecutor.execute
+        → Observation
+```
 
-**练习**：确认 `RAGContextService` 包裹 `HybridRetriever`，而非替换。
+---
+
+## 3. 核心类全文
+
+{fenced("python", QUERY_ROUTER)}
+
+**练习**：找出决策循环的终止条件与 `supervisor_trace` 记录位置。
 
 ---
 
@@ -1683,15 +1680,15 @@ POST /api/chat
 
 {fenced("python", _ROUTE_API)}
 
-**检查点**：422 来自 `ValueError` → HTTPException。
+**检查点**：非法配置 → `ValueError` → HTTP 422。
 
 ---
 
-## 5. route_demo
+## 5. CLI 演示
 
 {fenced("python", ROUTE_DEMO)}
 
-对每条 `ROUTE_QUERIES` 对比 enabled 开关。
+对每条内置 case study 打印决策/委派路径。
 
 ---
 
@@ -1699,30 +1696,29 @@ POST /api/chat
 
 | 文件 | 覆盖 |
 |------|------|
-| test_query_router.py | rewrite、翻牌、持久化、inner |
-| test_route_api.py | HTTP、chat、version |
+| tests/day43/test_*.py | 单元 + API + chat 集成 |
 
-**必读**：`test_RuleBasedQueryRouter.route_from_results_candidates`、`test_citation_preview_with_rewrite`。
+**必读**：`tests/day43/` 中覆盖「空 query」与「配置关闭」两个边界的测试。
 
 ---
 
 ## 7. 走查后自测
 
-1. 闭卷写出三阶段 search 5 步。  
-2. 说明 rewrite 四项组成。  
-3. 指出 PUT 后 chat 如何读到新 pool。
+1. 闭卷写出 `SupervisorGraph` 主循环步骤。
+2. 说明 `supervisor_trace` 每个字段含义。
+3. 指出 `PUT /api/agent/supervisor-config` 后 chat 如何读到新配置。
 
 ---
 
-## 8. knowledge_store rewrite 节选
+## 8. knowledge_store 配置方法节选
 
 {fenced("python", _ROUTE_CFG_METHODS)}
 
 ---
 
-## 9. 完整 citation_builder（走查用）
+## 9. API demo 全文（走查用）
 
-{fenced("python", QUERY_ROUTER)}
+{fenced("python", ROUTE_API_DEMO)}
 
 ---
 
@@ -1730,24 +1726,24 @@ POST /api/chat
 
 | 分钟 | 内容 |
 |------|------|
-| 0–15 | citation_config |
-| 15–40 | citation_builder + rewrite |
-| 40–55 | context |
-| 55–70 | _build_rag_service + API |
-| 70–90 | demos + tests |
+| 0-15 | 配置层 |
+| 15-40 | 核心类主循环 |
+| 40-55 | API 层 |
+| 55-70 | demo 走读 |
+| 70-90 | 测试 + chat 回归 |
 
 ---
 
 ## 11. 常见问题走查
 
-**Q save 后 RAG 何时刷新？** `set_citation_config` → `invalidate_cache`。  
-**Q enabled=False 还构造 citation_builder 吗？** 构造但不调用 rewrite。  
+**Q save 后配置何时生效？** `set_*_config` 立即写回内存，`store.save()` 落盘。
+**Q `supervisor_mode=false` 时还会构造核心对象吗？** 不会，`chat.py` 直接跳过该分支。
 
 ---
 
 ## 12. 走查验收 oral exam
 
-学员随机抽：讲解 `test_RuleBasedQueryRouter.route_from_results_candidates` 如何构造噪声候选。
+学员随机抽：讲解 `SupervisorGraph` 如何把一次调用的每一步记录进 `supervisor_trace`。
 """
 
 
@@ -2098,7 +2094,7 @@ function FETCH_CITATIONS(q, top_k):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 context，找 search。先看 enabled：关了就 hybrid。开则 pool=max(20,top_k)。inner 召回，citation_builder 逐对 rewrite，截断 top_k。这就是 ZL-NA-REQ-032 的读取路径。」
+「打开 supervisor_graph，看委派路由。先看 supervisor_route；按关键词委派给 faq_worker/rag_worker/intent_worker 之一，synthesize 汇总。这就是 {REQ} 的执行路径。」
 
 ---
 
@@ -2224,13 +2220,13 @@ ColBERT late interaction 介于 bi 与 cross；本课不展开。
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 citation_builder，Citation 有 rank chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 supervisor_graph，SupervisorStep 记录 delegated_agent。chat 里 supervisor_trace 挂在 reply 后面。这就是 ZL-NA-REQ-043。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 37 · Citation · {REQ} · citation_builder 精读完**
+**NexusAgent 课程 · Phase 4 · Day 43 · Supervisor · {REQ} · supervisor_graph 精读完**
 """
 
 
@@ -2405,9 +2401,9 @@ Day 37：HyDE / 自适应路由 — 一条问句变多条检索 query。
 
 
 def _file25() -> str:
-    return f"""# route_api 脚本精读
+    return f"""# Day 43 API 脚本精读
 
-## route_api_demo.py 全文
+## API demo 全文
 
 {fenced("python", ROUTE_API_DEMO)}
 
@@ -2417,31 +2413,29 @@ def _file25() -> str:
 
 | 行段 | 说明 |
 |------|------|
-| L13–L17 | 注入 `src` 与 `NEXUS_LLM_MOCK` |
-| L21–L22 | TestClient 与 app |
-| L26 | bootstrap 保证语料 |
-| L30–L31 | GET 默认 rewrite 配置 |
-| L33–L37 | PUT pool=20 — **API 核心演示** |
-| L39–L40 | status 对账 citation_config |
-| L42–L44 | chat + health version `{VER}` |
+| 开头 | 注入 `src` 与 `NEXUS_LLM_MOCK` |
+| TestClient | 创建 app 与测试客户端 |
+| bootstrap | 保证语料/知识库已初始化 |
+| GET 配置 | 读默认配置 |
+| PUT 配置 | 更新配置 — **API 核心演示** |
+| status | 对账 config 是否写回 store |
+| chat + health | 端到端 + 版本号 `v0.43.0` |
 
 ---
 
-## route_demo.py 全文
+## CLI demo 全文
 
 {fenced("python", ROUTE_DEMO)}
 
-`_top_hit` 切换 enabled 后 `as_rag_service()` — 注意缓存失效。
-
 ---
 
-## constants.py
+## constants.py（case studies，query / 预期工具）
 
 ```python
-ROUTE_QUERIES = (
-    {{"query": "年化收益率可达", "expect_any": ("8%", "年化")}},
-    {{"query": "13900001111", "expect_any": ("13900001111", "联系")}},
-    {{"query": "投资有风险", "expect_any": ("风险", "谨慎")}},
+CASES = (
+    ("「客服电话多少」", "..."),
+    ("「年化收益怎么样」", "..."),
+    ("「帮我总结一下理财产品」", "..."),
 )
 ```
 
@@ -2450,9 +2444,9 @@ ROUTE_QUERIES = (
 ## 运行矩阵
 
 ```bash
-PYTHONPATH=src python3 src/day37/route_demo.py
-PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day37/route_api_demo.py
-pytest tests/day37/test_route_api.py -v
+PYTHONPATH=src python3 src/day43/supervisor_demo.py
+PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day43/supervisor_api_demo.py
+pytest tests/day43/ -v
 ```
 """
 
@@ -2655,4 +2649,4 @@ Day43 让 Agent **可协作**；Day44 让工具链**可扩展**。
 
 
 if __name__ == "__main__":
-    write_course(39, build(), min_chars=100_000)
+    write_course(43, build(), min_chars=100_000)

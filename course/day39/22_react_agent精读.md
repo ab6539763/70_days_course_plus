@@ -826,6 +826,46 @@ def get_react_config(self) -> ReactConfig:
         config.validate()
         self.react_config = ReactConfig.from_dict(config.to_dict())
         return self.react_config
+
+    def get_executor_config(self) -> ExecutorConfig:
+        return ExecutorConfig.from_dict(self.executor_config.to_dict())
+
+    def set_executor_config(self, config: ExecutorConfig) -> ExecutorConfig:
+        config.validate()
+        self.executor_config = ExecutorConfig.from_dict(config.to_dict())
+        return self.executor_config
+
+    def get_graph_config(self) -> GraphConfig:
+        return GraphConfig.from_dict(self.graph_config.to_dict())
+
+    def set_graph_config(self, config: GraphConfig) -> GraphConfig:
+        config.validate()
+        self.graph_config = GraphConfig.from_dict(config.to_dict())
+        return self.graph_config
+
+    def get_approval_config(self) -> ApprovalConfig:
+        return ApprovalConfig.from_dict(self.approval_config.to_dict())
+
+    def set_approval_config(self, config: ApprovalConfig) -> ApprovalConfig:
+        config.validate()
+        self.approval_config = ApprovalConfig.from_dict(config.to_dict())
+        return self.approval_config
+
+    def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
+        return McpConfig.from_dict(self.mcp_config.to_dict())
+
+    def set_mcp_config(self, config: McpConfig) -> McpConfig:
+        config.validate()
+        self.mcp_config = McpConfig.from_dict(config.to_dict())
+        return self.mcp_config
 ```
 
 
@@ -968,7 +1008,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.39.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_get_react_config_default(client):
@@ -1016,7 +1056,7 @@ def test_react_preview_with_history(client):
 
 def test_status_includes_react_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.39.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["react_config"]["enabled"] is True
 
 
@@ -1101,6 +1141,46 @@ def get_react_config(self) -> ReactConfig:
         config.validate()
         self.react_config = ReactConfig.from_dict(config.to_dict())
         return self.react_config
+
+    def get_executor_config(self) -> ExecutorConfig:
+        return ExecutorConfig.from_dict(self.executor_config.to_dict())
+
+    def set_executor_config(self, config: ExecutorConfig) -> ExecutorConfig:
+        config.validate()
+        self.executor_config = ExecutorConfig.from_dict(config.to_dict())
+        return self.executor_config
+
+    def get_graph_config(self) -> GraphConfig:
+        return GraphConfig.from_dict(self.graph_config.to_dict())
+
+    def set_graph_config(self, config: GraphConfig) -> GraphConfig:
+        config.validate()
+        self.graph_config = GraphConfig.from_dict(config.to_dict())
+        return self.graph_config
+
+    def get_approval_config(self) -> ApprovalConfig:
+        return ApprovalConfig.from_dict(self.approval_config.to_dict())
+
+    def set_approval_config(self, config: ApprovalConfig) -> ApprovalConfig:
+        config.validate()
+        self.approval_config = ApprovalConfig.from_dict(config.to_dict())
+        return self.approval_config
+
+    def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
+        return McpConfig.from_dict(self.mcp_config.to_dict())
+
+    def set_mcp_config(self, config: McpConfig) -> McpConfig:
+        config.validate()
+        self.mcp_config = McpConfig.from_dict(config.to_dict())
+        return self.mcp_config
 ```
 
 
@@ -1690,7 +1770,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.39.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_get_react_config_default(client):
@@ -1738,7 +1818,7 @@ def test_react_preview_with_history(client):
 
 def test_status_includes_react_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.39.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["react_config"]["enabled"] is True
 
 
@@ -1780,7 +1860,7 @@ def test_invalid_react_max_steps_422(client):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 context，找 search。先看 enabled：关了就 hybrid。开则 pool=max(20,top_k)。inner 召回，citation_builder 逐对 rewrite，截断 top_k。这就是 ZL-NA-REQ-032 的读取路径。」
+「打开 react_agent，看主循环。先看 enabled 分支；开则进入 Thought→Action→Observation 三段。Action 调 ToolExecutor，Observation 写回 trace，截断 max_steps。这就是 ZL-NA-REQ-039 的执行路径。」
 
 ---
 
@@ -2413,7 +2493,22 @@ if body.agent_mode and store.get_react_config().enabled:
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
-    if agent_trace:
+    if mcp_trace is not None:
+        kind = "mcp"
+        meta = "MCP Tool Bridge"
+    elif supervisor_trace is not None:
+        kind = "supervisor"
+        meta = "Supervisor Multi-Agent"
+    elif approval_payload is not None:
+        kind = "approval"
+        meta = "Approval Workflow"
+    elif graph_trace and kind != "approval":
+        kind = "graph"
+        meta = "StateGraph"
+    elif executor_trace:
+        kind = "executor"
+        meta = "AgentExecutor"
+    elif agent_trace:
         kind = "agent"
         meta = "ReAct Agent"
 ```
@@ -2762,7 +2857,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.39.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_get_react_config_default(client):
@@ -2810,7 +2905,7 @@ def test_react_preview_with_history(client):
 
 def test_status_includes_react_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.39.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["react_config"]["enabled"] is True
 
 
@@ -2852,10 +2947,10 @@ def test_invalid_react_max_steps_422(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 citation_builder，Citation 有 rank chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 react_agent，ReactStep 有 step thought action observation final_answer。chat 里 agent_trace 挂在 reply 后面。这就是 ZL-NA-REQ-039。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 37 · Citation · ZL-NA-REQ-039 · citation_builder 精读完**
+**NexusAgent 课程 · Phase 4 · Day 39 · ReAct · ZL-NA-REQ-039 · react_agent 精读完**

@@ -1,60 +1,30 @@
-# 企业案例集：口语命中 优化
+# 企业案例集：手写 ReAct Agent
 
-## 案例 1：年化收益率 FAQ
+## 案例 1：多轮追问
 
-**现象**：hybrid top-1 为「市场波动有风险」，top-2 含「8%」。  
-**根因**：长文 keyword 命中「收益」「市场」。  
-**方案**：开启 rewrite，`rewrite` 对含「年化收益率可达 8%」短句给高分。  
-**结果**：口语命中 54% → 71%（内部标注集）。  
+**场景**：用户先问「客服电话」再问「收益率」
+**处理**：同一 session 内两次独立 Thought→Action，agent_trace 分别记录
 
-## 案例 2：理财经理电话
+## 案例 2：工具不存在
 
-**现象**：Day33 已把号码 chunk 进 top-3，但排第 2。  
-**根因**：风险提示段 vector 分略高。  
-**方案**：子串 `13900001111` → rewrite=1.0。  
-**结果**：口语命中 稳定 100%（该 query 集）。  
+**场景**：Thought 选中一个未注册工具名
+**处理**：ToolExecutor 抛错，Observation 返回错误文本，Agent 仍能给出兜底回复
 
-## 案例 3：合规「投资有风险」
+## 案例 3：步数超限
 
-**现象**：开启 rewrite 后排序略变但仍 top-1 合规。  
-**启示**：并非所有 query 都需 rewrite；可 A/B。  
+**场景**：max_steps=3 但问题需要 4 步
+**处理**：第 3 步后强制生成 Final Answer，避免死循环
 
-## 案例 4：大促高峰
+## 案例复盘模板
 
-**现象**：P95 超 SLA。  
-**方案**：PUT pool=10 + 保留 enabled。  
-**权衡**：口语命中 -3%，延迟 -35%。  
+| 日期 | 变更 | 影响 | 备注 |
+|------|------|------|------|
+| — | 上线 agent_mode | — | 配合灰度开关 |
 
-## 案例 5：Incident 降级
+## 与客服话术联动
 
-**现象**：怀疑 rewrite 引入回归。  
-**方案**：PUT `enabled=false`，回退 Day33，30 分钟恢复。  
+客服培训重点：解释「机器人这次是怎么决定调用哪个工具的」，对应 `agent_trace` 里的 thought 字段。
 
-## 案例 6：多产品线
+## Incident 降级预案
 
-**现象**：SKU-A 与 SKU-B 文档相似。  
-**方案**：提高 pool 到 30，让两 SKU 都进池再由 cross 区分细 token。  
-
-## 案例 7：质检审计
-
-**指标**：首条引用来源必须可追溯到 chunk_id。  
-**工具**：rewrite 前后各打 log，对比 top-1 chunk_id 变化率。  
-
-## 案例 8：与客服话术联动
-
-客服培训：「机器人第一条引用变准了」— 对应 口语命中 项目 OKR。
-
-## 案例 9：离线评估脚本
-
-```python
-for q in eval_queries:
-    off = search(q, rewrite=False)[0].chunk_id
-    on = search(q, rewrite=True)[0].chunk_id
-    ...
-```
-
-## 案例 10：复盘模板
-
-| 日期 | 变更 | 口语命中 | 备注 |
-|------|------|-------|------|
-| 08-08 | 上线 rewrite | +17pp | pool=20 |
+怀疑新逻辑引入回归时，`PUT /api/agent/react-config` 将 `enabled` 置为 `false`，立即回退到 Day 38 行为。

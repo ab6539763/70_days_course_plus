@@ -1,4 +1,4 @@
-# Day 42 精读：answer_validator 与 Self-RAG 校验管线
+# Day 42 精读：approval_workflow 与人工审批管线
 
 **需求**：ZL-NA-REQ-042 | **学时**：120 min
 
@@ -1254,6 +1254,22 @@ def get_approval_config(self) -> ApprovalConfig:
         config.validate()
         self.approval_config = ApprovalConfig.from_dict(config.to_dict())
         return self.approval_config
+
+    def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
+        return McpConfig.from_dict(self.mcp_config.to_dict())
+
+    def set_mcp_config(self, config: McpConfig) -> McpConfig:
+        config.validate()
+        self.mcp_config = McpConfig.from_dict(config.to_dict())
+        return self.mcp_config
 ```
 
 
@@ -1428,7 +1444,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.42.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_get_approval_config_default(client):
@@ -1495,7 +1511,7 @@ def test_approval_interrupt_resume(client):
 
 def test_status_includes_approval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.42.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["approval_config"]["enabled"] is True
 
 
@@ -1584,6 +1600,22 @@ def get_approval_config(self) -> ApprovalConfig:
         config.validate()
         self.approval_config = ApprovalConfig.from_dict(config.to_dict())
         return self.approval_config
+
+    def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
+        return McpConfig.from_dict(self.mcp_config.to_dict())
+
+    def set_mcp_config(self, config: McpConfig) -> McpConfig:
+        config.validate()
+        self.mcp_config = McpConfig.from_dict(config.to_dict())
+        return self.mcp_config
 ```
 
 
@@ -2351,7 +2383,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.42.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_get_approval_config_default(client):
@@ -2418,7 +2450,7 @@ def test_approval_interrupt_resume(client):
 
 def test_status_includes_approval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.42.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["approval_config"]["enabled"] is True
 
 
@@ -2464,7 +2496,7 @@ def test_invalid_reviewer_label_422(client):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 context，找 search。先看 enabled：关了就 hybrid。开则 pool=max(20,top_k)。inner 召回，citation_builder 逐对 rewrite，截断 top_k。这就是 ZL-NA-REQ-032 的读取路径。」
+「打开 approval_workflow_graph，看审批节点。先看 require_rag_approval；命中则中断并返回 checkpoint_id，resume 后续跑。这就是 ZL-NA-REQ-042 的执行路径。」
 
 ---
 
@@ -3318,7 +3350,13 @@ if body.approval_mode and store.get_approval_config().enabled:
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
-    if approval_payload is not None:
+    if mcp_trace is not None:
+        kind = "mcp"
+        meta = "MCP Tool Bridge"
+    elif supervisor_trace is not None:
+        kind = "supervisor"
+        meta = "Supervisor Multi-Agent"
+    elif approval_payload is not None:
         kind = "approval"
         meta = "Approval Workflow"
     elif graph_trace and kind != "approval":
@@ -3580,7 +3618,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.42.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_get_approval_config_default(client):
@@ -3647,7 +3685,7 @@ def test_approval_interrupt_resume(client):
 
 def test_status_includes_approval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.42.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["approval_config"]["enabled"] is True
 
 
@@ -3693,10 +3731,10 @@ def test_invalid_reviewer_label_422(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 citation_builder，Citation 有 rank chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 approval_workflow_graph，中断时返回 checkpoint_id。chat 里 approval 字段挂在 reply 后面。这就是 ZL-NA-REQ-042。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 37 · Citation · ZL-NA-REQ-042 · citation_builder 精读完**
+**NexusAgent 课程 · Phase 4 · Day 42 · Approval · ZL-NA-REQ-042 · approval_workflow 精读完**

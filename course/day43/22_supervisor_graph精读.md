@@ -1,65 +1,70 @@
-# Day 44 精读：answer_validator 与 Self-RAG 校验管线
+# Day 43 精读：supervisor_graph 与多 Agent 委派管线
 
-**需求**：ZL-NA-REQ-044 | **学时**：120 min
+**需求**：ZL-NA-REQ-043 | **学时**：120 min
 
 ---
 
-## 一、mcp_runner.py 全文
+## 一、supervisor_graph.py 全文
 
 ```python
 """
-McpRunner — MCP 工具发现 → 路由 → 调用 → 汇总
+SupervisorGraph — Supervisor 路由 + 子 Agent 委派 + 汇总
 
-需求：ZL-NA-REQ-044
+LangGraph 风格多 Agent 编排（无 langgraph 依赖）。
+
+需求：ZL-NA-REQ-043
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
-from agent.mcp_client import McpClient
-from agent.mcp_config import McpConfig
-from agent.mcp_protocol import MCP_METHOD_CALL, MCP_METHOD_LIST
-from agent.mcp_server import NexusMcpServer
+from agent.state_graph import END
+from agent.structured_tool import StructuredTool
+from agent.sub_agent import SUB_AGENTS, SubAgentRunner
+from agent.supervisor_config import SupervisorConfig
+from agent.supervisor_state import SupervisorState
+from agent.tool_adapter import tools_from_executor
 from tools.executor import ToolExecutor
+
+NodeFn = Callable[[SupervisorState], SupervisorState]
 
 
 @dataclass(frozen=True)
-class McpStep:
-    """MCP 级 trace — 对齐 mcp_trace 并扩展 mcp_method"""
+class SupervisorStep:
+    """委派级 trace — 与 supervisor_trace 字段对齐并扩展 delegated_agent"""
 
     step: int
-    phase: str
+    node: str
     thought: str
-    mcp_method: str | None = None
+    delegated_agent: str | None = None
     tool: str | None = None
-    arguments: dict[str, Any] | None = None
     observation: str | None = None
     final_answer: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "step": self.step,
-            "phase": self.phase,
+            "node": self.node,
             "thought": self.thought,
-            "mcp_method": self.mcp_method,
+            "delegated_agent": self.delegated_agent,
             "tool": self.tool,
-            "arguments": dict(self.arguments or {}),
             "observation": self.observation,
             "final_answer": self.final_answer,
         }
 
 
 @dataclass(frozen=True)
-class McpRunOutcome:
+class SupervisorRunOutcome:
     query: str
     reply: str
-    steps: tuple[McpStep, ...]
+    steps: tuple[SupervisorStep, ...]
     tools_used: tuple[str, ...]
-    mcp_tools: tuple[str, ...]
-    server_name: str
+    delegated_agents: tuple[str, ...]
+    node_path: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -67,155 +72,233 @@ class McpRunOutcome:
             "reply": self.reply,
             "steps": [s.to_dict() for s in self.steps],
             "tools_used": list(self.tools_used),
-            "mcp_tools": list(self.mcp_tools),
-            "server_name": self.server_name,
+            "delegated_agents": list(self.delegated_agents),
+            "node_path": list(self.node_path),
         }
 
 
-class McpRunner:
-    """MCP 协议驱动的工具调用编排"""
+class _SupervisorStateGraph:
+    """轻量状态图 — 专用于 SupervisorState"""
+
+    def __init__(self) -> None:
+        self._nodes: dict[str, NodeFn] = {}
+        self._edges: dict[str, str] = {}
+        self._conditional: dict[str, tuple[Callable[[SupervisorState], str], dict[str, str]]] = {}
+        self._entry: str | None = None
+
+    def add_node(self, name: str, fn: NodeFn) -> _SupervisorStateGraph:
+        self._nodes[name] = fn
+        return self
+
+    def set_entry_point(self, name: str) -> _SupervisorStateGraph:
+        self._entry = name
+        return self
+
+    def add_edge(self, start: str, end: str) -> _SupervisorStateGraph:
+        self._edges[start] = end
+        return self
+
+    def add_conditional_edges(
+        self,
+        start: str,
+        router: Callable[[SupervisorState], str],
+        mapping: dict[str, str],
+    ) -> _SupervisorStateGraph:
+        self._conditional[start] = (router, mapping)
+        return self
+
+    def invoke(
+        self,
+        state: SupervisorState,
+        *,
+        step_recorder: list[SupervisorStep] | None = None,
+    ) -> SupervisorState:
+        steps = step_recorder if step_recorder is not None else []
+        current = state
+        node = self._entry or ""
+        guard = 0
+        while node != END and guard < 12:
+            guard += 1
+            if node not in self._nodes:
+                break
+            before = current.to_dict()
+            current = self._nodes[node](current)
+            steps.append(
+                SupervisorStep(
+                    step=len(steps) + 1,
+                    node=node,
+                    thought=current.routing_reason or f"节点 {node} 完成",
+                    delegated_agent=before.get("delegated_agent") or current.delegated_agent,
+                    tool=current.worker_tool,
+                    observation=current.worker_output,
+                    final_answer=current.reply if current.done else None,
+                )
+            )
+            if current.done:
+                break
+            if node in self._conditional:
+                router, mapping = self._conditional[node]
+                node = mapping.get(router(current), END)
+            else:
+                node = self._edges.get(node, END)
+        return current
+
+
+class SupervisorGraph:
+    """Supervisor 协调多个 SubAgent 完成用户请求"""
 
     def __init__(
         self,
-        executor: ToolExecutor,
+        tools: list[StructuredTool],
         *,
-        config: McpConfig | None = None,
+        config: SupervisorConfig | None = None,
     ) -> None:
-        self._config = config or McpConfig()
-        self._server = NexusMcpServer(executor, config=self._config)
-        self._client = McpClient(self._server)
+        self._tools = tools
+        self._tool_names = {t.name for t in tools}
+        self._runner = SubAgentRunner(tools)
+        self._config = config or SupervisorConfig()
+        self._graph = self._build_graph()
 
     @classmethod
     def from_executor(
         cls,
         executor: ToolExecutor,
         *,
-        config: McpConfig | None = None,
-    ) -> McpRunner:
-        return cls(executor, config=config)
+        config: SupervisorConfig | None = None,
+    ) -> SupervisorGraph:
+        return cls(tools_from_executor(executor), config=config)
 
     @property
-    def config(self) -> McpConfig:
+    def config(self) -> SupervisorConfig:
         return self._config
-
-    def list_tools(self) -> list[str]:
-        return [t.name for t in self._client.list_tools()]
-
-    def list_tool_descriptors(self) -> list[dict]:
-        return [t.to_dict() for t in self._client.list_tools()]
 
     def invoke(
         self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> McpRunOutcome:
+    ) -> SupervisorRunOutcome:
         query = (query or "").strip()
         cfg = self._config
         if not query:
             return self._empty_outcome("", "请输入有效问题。")
         if not cfg.enabled:
-            return self._empty_outcome(query, "MCP 工具桥接已关闭。")
+            return self._empty_outcome(query, "Supervisor 多 Agent 已关闭。")
 
-        steps: list[McpStep] = []
-        hist_note = ""
-        if history and cfg.use_session_history:
-            hist_note = f"（结合 {len(history)} 条会话记忆）"
-
-        descriptors = self._client.list_tools()
-        mcp_tools = tuple(t.name for t in descriptors)
-        steps.append(
-            McpStep(
-                step=1,
-                phase="discover",
-                thought=f"通过 MCP tools/list 发现 {len(descriptors)} 个工具{hist_note}。",
-                mcp_method=MCP_METHOD_LIST,
-            )
-        )
-
-        tool_name, arguments, reason = self._route_tool(query, mcp_tools)
-        steps.append(
-            McpStep(
-                step=2,
-                phase="route",
-                thought=reason,
-                tool=tool_name,
-                arguments=arguments,
-            )
-        )
-
-        observation = self._client.call_tool(tool_name, arguments)
-        steps.append(
-            McpStep(
-                step=3,
-                phase="call",
-                thought=f"经 MCP tools/call 执行 {tool_name}。",
-                mcp_method=MCP_METHOD_CALL,
-                tool=tool_name,
-                arguments=arguments,
-                observation=observation,
-            )
-        )
-
-        reply = self._synthesize(query, observation, tool_name)
-        steps.append(
-            McpStep(
-                step=4,
-                phase="answer",
-                thought="汇总 MCP 工具 Observation 生成回复。",
-                final_answer=reply,
-            )
-        )
-
-        trace = tuple(steps) if cfg.return_mcp_trace else ()
-        return McpRunOutcome(
+        state = SupervisorState(query=query, history=list(history or []))
+        steps: list[SupervisorStep] = []
+        final = self._graph.invoke(state, step_recorder=steps)
+        return SupervisorRunOutcome(
             query=query,
-            reply=reply,
-            steps=trace,
-            tools_used=(tool_name,),
-            mcp_tools=mcp_tools,
-            server_name=cfg.server_name,
+            reply=final.reply or "未得到答案。",
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(final.tools_used)),
+            delegated_agents=tuple(dict.fromkeys(final.delegated_agents)),
+            node_path=tuple(s.node for s in steps),
         )
 
-    def _empty_outcome(self, query: str, reply: str) -> McpRunOutcome:
-        return McpRunOutcome(
+    def _empty_outcome(self, query: str, reply: str) -> SupervisorRunOutcome:
+        return SupervisorRunOutcome(
             query=query,
             reply=reply,
             steps=(),
             tools_used=(),
-            mcp_tools=(),
-            server_name=self._config.server_name,
+            delegated_agents=(),
+            node_path=(),
         )
 
-    def _route_tool(
-        self,
-        query: str,
-        available: tuple[str, ...],
-    ) -> tuple[str, dict[str, Any], str]:
-        q = query.lower()
-        if self._config.mock_routing:
-            if any(k in q for k in ("总结", "归纳", "概括", "分类")):
-                tool = "intent_classify" if "intent_classify" in available else available[0]
-                return tool, {"query": query}, "路由到意图 MCP 工具 intent_classify。"
-            if any(k in q for k in ("电话", "客服", "139", "联系")):
-                tool = "faq_lookup" if "faq_lookup" in available else available[0]
-                return tool, {"query": query}, "路由到 FAQ MCP 工具 faq_lookup。"
-            if any(k in q for k in ("收益", "年化", "风险", "理财", "产品")):
-                tool = "rag_search" if "rag_search" in available else available[0]
-                return tool, {"query": query}, "路由到 RAG MCP 工具 rag_search。"
-        if re.search(r"\d{7,}", q):
-            tool = "faq_lookup" if "faq_lookup" in available else available[0]
-            return tool, {"query": query}, "检测到号码模式，路由 faq_lookup。"
-        tool = "rag_search" if "rag_search" in available else available[0]
-        return tool, {"query": query}, "默认路由到 rag_search。"
+    def _build_graph(self) -> _SupervisorStateGraph:
+        g = _SupervisorStateGraph()
+        g.add_node("supervisor_route", self._node_supervisor_route)
+        for spec in SUB_AGENTS:
+            g.add_node(spec.name, self._make_worker_node(spec))
+        g.add_node("synthesize", self._node_synthesize)
+        g.set_entry_point("supervisor_route")
+        g.add_conditional_edges(
+            "supervisor_route",
+            lambda s: s.delegated_agent or "faq_worker",
+            {spec.name: spec.name for spec in SUB_AGENTS},
+        )
+        for spec in SUB_AGENTS:
+            g.add_edge(spec.name, "synthesize")
+        g.add_edge("synthesize", END)
+        return g
 
-    def _synthesize(self, query: str, observation: str, tool: str) -> str:
-        obs = (observation or "").strip()
-        if not obs:
-            return f"已通过 MCP 调用 {tool}，但未获得有效结果。"
-        if len(obs) > 280:
-            obs = obs[:277] + "..."
-        return f"【MCP:{tool}】{obs}"
+    def _make_worker_node(self, spec):
+        def _node(state: SupervisorState) -> SupervisorState:
+            tool_name, output = self._runner.run(spec, state.query)
+            state.worker_tool = tool_name
+            state.worker_output = output
+            if output and not output.strip().endswith("失败:"):
+                state.tools_used.append(tool_name)
+            if spec.name not in state.delegated_agents:
+                state.delegated_agents.append(spec.name)
+            state.routing_reason = f"{spec.label} 已执行 {tool_name}"
+            return state
+
+        return _node
+
+    def _node_supervisor_route(self, state: SupervisorState) -> SupervisorState:
+        agent_name, reason = self._route_query(state)
+        state.delegated_agent = agent_name
+        state.routing_reason = reason
+        if agent_name not in state.delegated_agents:
+            state.delegated_agents.append(agent_name)
+        return state
+
+    def _node_synthesize(self, state: SupervisorState) -> SupervisorState:
+        if state.worker_output:
+            state.reply = self._output_to_answer(state.worker_output, state.query)
+        else:
+            state.reply = "子 Agent 未返回有效结果。"
+        state.done = True
+        state.routing_reason = "Supervisor 汇总子 Agent 输出"
+        return state
+
+    def _route_query(self, state: SupervisorState) -> tuple[str, str]:
+        query = state.query
+        q = query.lower()
+        hist_ctx = ""
+        if state.history:
+            last_user = [h["content"] for h in state.history if h.get("role") == "user"]
+            if last_user:
+                hist_ctx = f"（结合 {len(last_user)} 条会话记忆）"
+
+        if "intent_classify" in self._tool_names and "总结" in q:
+            return (
+                "intent_worker",
+                f"Supervisor 委派意图分析专员{hist_ctx}",
+            )
+        if "faq_lookup" in self._tool_names and re.search(
+            r"电话|客服|400|热线|联系", q
+        ):
+            return (
+                "faq_worker",
+                f"Supervisor 委派 FAQ 专员{hist_ctx}",
+            )
+        if "rag_search" in self._tool_names:
+            return (
+                "rag_worker",
+                f"Supervisor 委派知识库专员{hist_ctx}",
+            )
+        if "faq_lookup" in self._tool_names:
+            return ("faq_worker", f"Supervisor 回退 FAQ 专员{hist_ctx}")
+        return ("faq_worker", "Supervisor：无匹配专员，回退 FAQ")
+
+    @staticmethod
+    def _output_to_answer(output: str, query: str) -> str:
+        text = output.strip()
+        if text.startswith("[faq_lookup]"):
+            body = text.split("]", 1)[-1].strip()
+            return body.split("\n")[-1].strip() if "\n" in body else body
+        if text.startswith("[rag_search]"):
+            body = text.split("]", 1)[-1].strip()
+            lines = [ln for ln in body.splitlines() if ln.strip()]
+            if lines:
+                return f"根据知识库：{lines[0][:200]}"
+        if text.startswith("[intent_classify]"):
+            return f"根据意图分析：{text.split(']', 1)[-1].strip()}"
+        return f"根据子 Agent 结果：{text[:300]}"
 ```
 
 
@@ -234,9 +317,9 @@ class McpRunner:
 
 ```python
 """
-MCP 配置 — 自研 MCP Server 暴露 Nexus 工具链
+Supervisor 配置 — 多 Agent 委派与 trace 开关
 
-需求：ZL-NA-REQ-044
+需求：ZL-NA-REQ-043
 """
 
 from __future__ import annotations
@@ -246,46 +329,38 @@ from typing import Any
 
 
 @dataclass
-class McpConfig:
-    """MCP 协议桥接策略"""
+class SupervisorConfig:
+    """Supervisor 多 Agent 路由策略"""
 
     enabled: bool = True
-    server_name: str = "nexus-tools"
-    expose_external_tools: bool = True
-    mock_routing: bool = True
+    max_delegations: int = 1
     use_session_history: bool = True
-    return_mcp_trace: bool = True
-    max_tool_calls: int = 2
+    return_delegation_trace: bool = True
+    mock_routing: bool = True
 
     def validate(self) -> None:
-        if self.max_tool_calls < 1 or self.max_tool_calls > 4:
-            raise ValueError(f"max_tool_calls 须在 1~4，收到 {self.max_tool_calls}")
-        if not (self.server_name or "").strip():
-            raise ValueError("server_name 不能为空")
+        if self.max_delegations < 1 or self.max_delegations > 3:
+            raise ValueError(f"max_delegations 须在 1~3，收到 {self.max_delegations}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled,
-            "server_name": self.server_name,
-            "expose_external_tools": self.expose_external_tools,
-            "mock_routing": self.mock_routing,
+            "max_delegations": self.max_delegations,
             "use_session_history": self.use_session_history,
-            "return_mcp_trace": self.return_mcp_trace,
-            "max_tool_calls": self.max_tool_calls,
+            "return_delegation_trace": self.return_delegation_trace,
+            "mock_routing": self.mock_routing,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> McpConfig:
+    def from_dict(cls, data: dict[str, Any] | None) -> SupervisorConfig:
         if not data:
             return cls()
         return cls(
             enabled=bool(data.get("enabled", True)),
-            server_name=str(data.get("server_name", "nexus-tools")),
-            expose_external_tools=bool(data.get("expose_external_tools", True)),
-            mock_routing=bool(data.get("mock_routing", True)),
+            max_delegations=int(data.get("max_delegations", 1)),
             use_session_history=bool(data.get("use_session_history", True)),
-            return_mcp_trace=bool(data.get("return_mcp_trace", True)),
-            max_tool_calls=int(data.get("max_tool_calls", 2)),
+            return_delegation_trace=bool(data.get("return_delegation_trace", True)),
+            mock_routing=bool(data.get("mock_routing", True)),
         )
 ```
 
@@ -301,109 +376,67 @@ class McpConfig:
 ## 四、rewrite 全文
 
 ```python
-class McpRunner:
-    """MCP 协议驱动的工具调用编排"""
+class SupervisorGraph:
+    """Supervisor 协调多个 SubAgent 完成用户请求"""
 
     def __init__(
         self,
-        executor: ToolExecutor,
+        tools: list[StructuredTool],
         *,
-        config: McpConfig | None = None,
+        config: SupervisorConfig | None = None,
     ) -> None:
-        self._config = config or McpConfig()
-        self._server = NexusMcpServer(executor, config=self._config)
-        self._client = McpClient(self._server)
+        self._tools = tools
+        self._tool_names = {t.name for t in tools}
+        self._runner = SubAgentRunner(tools)
+        self._config = config or SupervisorConfig()
+        self._graph = self._build_graph()
 
     @classmethod
     def from_executor(
         cls,
         executor: ToolExecutor,
         *,
-        config: McpConfig | None = None,
-    ) -> McpRunner:
-        return cls(executor, config=config)
+        config: SupervisorConfig | None = None,
+    ) -> SupervisorGraph:
+        return cls(tools_from_executor(executor), config=config)
 
     @property
-    def config(self) -> McpConfig:
+    def config(self) -> SupervisorConfig:
         return self._config
-
-    def list_tools(self) -> list[str]:
-        return [t.name for t in self._client.list_tools()]
-
-    def list_tool_descriptors(self) -> list[dict]:
-        return [t.to_dict() for t in self._client.list_tools()]
 
     def invoke(
         self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> McpRunOutcome:
+    ) -> SupervisorRunOutcome:
         query = (query or "").strip()
         cfg = self._config
         if not query:
             return self._empty_outcome("", "请输入有效问题。")
         if not cfg.enabled:
-            return self._empty_outcome(query, "MCP 工具桥接已关闭。")
+            return self._empty_outcome(query, "Supervisor 多 Agent 已关闭。")
 
-        steps: list[McpStep] = []
-        hist_note = ""
-        if history and cfg.use_session_history:
-            hist_note = f"（结合 {len(history)} 条会话记忆）"
-
-        descriptors = self._client.list_tools()
-        mcp_tools = tuple(t.name for t in descriptors)
-        steps.append(
-            McpStep(
-                step=1,
-                phase="discover",
-                thought=f"通过 MCP tools/list 发现 {len(descriptors)} 个工具{hist_note}。",
-                mcp_method=MCP_METHOD_LIST,
-            )
+        state = SupervisorState(query=query, history=list(history or []))
+        steps: list[SupervisorStep] = []
+        final = self._graph.invoke(state, step_recorder=steps)
+        return SupervisorRunOutcome(
+            query=query,
+            reply=final.reply or "未得到答案。",
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(final.tools_used)),
+            delegated_agents=tuple(dict.fromkeys(final.delegated_agents)),
+            node_path=tuple(s.node for s in steps),
         )
 
-        tool_name, arguments, reason = self._route_tool(query, mcp_tools)
-        steps.append(
-            McpStep(
-                step=2,
-                phase="route",
-                thought=reason,
-                tool=tool_name,
-                arguments=arguments,
-            )
-        )
-
-        observation = self._client.call_tool(tool_name, arguments)
-        steps.append(
-            McpStep(
-                step=3,
-                phase="call",
-                thought=f"经 MCP tools/call 执行 {tool_name}。",
-                mcp_method=MCP_METHOD_CALL,
-                tool=tool_name,
-                arguments=arguments,
-                observation=observation,
-            )
-        )
-
-        reply = self._synthesize(query, observation, tool_name)
-        steps.append(
-            McpStep(
-                step=4,
-                phase="answer",
-                thought="汇总 MCP 工具 Observation 生成回复。",
-                final_answer=reply,
-            )
-        )
-
-        trace = tuple(steps) if cfg.return_mcp_trace else ()
-        return McpRunOutcome(
+    def _empty_outcome(self, query: str, reply: str) -> SupervisorRunOutcome:
+        return SupervisorRunOutcome(
             query=query,
             reply=reply,
-            steps=trace,
-            tools_used=(tool_name,),
-            mcp_tools=mcp_tools,
-            server_name=cfg.server_name,
+            steps=(),
+            tools_used=(),
+            delegated_agents=(),
+            node_path=(),
         )
 ```
 
@@ -421,109 +454,67 @@ class McpRunner:
 ## 五、_bigram_overlap
 
 ```python
-class McpRunner:
-    """MCP 协议驱动的工具调用编排"""
+class SupervisorGraph:
+    """Supervisor 协调多个 SubAgent 完成用户请求"""
 
     def __init__(
         self,
-        executor: ToolExecutor,
+        tools: list[StructuredTool],
         *,
-        config: McpConfig | None = None,
+        config: SupervisorConfig | None = None,
     ) -> None:
-        self._config = config or McpConfig()
-        self._server = NexusMcpServer(executor, config=self._config)
-        self._client = McpClient(self._server)
+        self._tools = tools
+        self._tool_names = {t.name for t in tools}
+        self._runner = SubAgentRunner(tools)
+        self._config = config or SupervisorConfig()
+        self._graph = self._build_graph()
 
     @classmethod
     def from_executor(
         cls,
         executor: ToolExecutor,
         *,
-        config: McpConfig | None = None,
-    ) -> McpRunner:
-        return cls(executor, config=config)
+        config: SupervisorConfig | None = None,
+    ) -> SupervisorGraph:
+        return cls(tools_from_executor(executor), config=config)
 
     @property
-    def config(self) -> McpConfig:
+    def config(self) -> SupervisorConfig:
         return self._config
-
-    def list_tools(self) -> list[str]:
-        return [t.name for t in self._client.list_tools()]
-
-    def list_tool_descriptors(self) -> list[dict]:
-        return [t.to_dict() for t in self._client.list_tools()]
 
     def invoke(
         self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> McpRunOutcome:
+    ) -> SupervisorRunOutcome:
         query = (query or "").strip()
         cfg = self._config
         if not query:
             return self._empty_outcome("", "请输入有效问题。")
         if not cfg.enabled:
-            return self._empty_outcome(query, "MCP 工具桥接已关闭。")
+            return self._empty_outcome(query, "Supervisor 多 Agent 已关闭。")
 
-        steps: list[McpStep] = []
-        hist_note = ""
-        if history and cfg.use_session_history:
-            hist_note = f"（结合 {len(history)} 条会话记忆）"
-
-        descriptors = self._client.list_tools()
-        mcp_tools = tuple(t.name for t in descriptors)
-        steps.append(
-            McpStep(
-                step=1,
-                phase="discover",
-                thought=f"通过 MCP tools/list 发现 {len(descriptors)} 个工具{hist_note}。",
-                mcp_method=MCP_METHOD_LIST,
-            )
+        state = SupervisorState(query=query, history=list(history or []))
+        steps: list[SupervisorStep] = []
+        final = self._graph.invoke(state, step_recorder=steps)
+        return SupervisorRunOutcome(
+            query=query,
+            reply=final.reply or "未得到答案。",
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(final.tools_used)),
+            delegated_agents=tuple(dict.fromkeys(final.delegated_agents)),
+            node_path=tuple(s.node for s in steps),
         )
 
-        tool_name, arguments, reason = self._route_tool(query, mcp_tools)
-        steps.append(
-            McpStep(
-                step=2,
-                phase="route",
-                thought=reason,
-                tool=tool_name,
-                arguments=arguments,
-            )
-        )
-
-        observation = self._client.call_tool(tool_name, arguments)
-        steps.append(
-            McpStep(
-                step=3,
-                phase="call",
-                thought=f"经 MCP tools/call 执行 {tool_name}。",
-                mcp_method=MCP_METHOD_CALL,
-                tool=tool_name,
-                arguments=arguments,
-                observation=observation,
-            )
-        )
-
-        reply = self._synthesize(query, observation, tool_name)
-        steps.append(
-            McpStep(
-                step=4,
-                phase="answer",
-                thought="汇总 MCP 工具 Observation 生成回复。",
-                final_answer=reply,
-            )
-        )
-
-        trace = tuple(steps) if cfg.return_mcp_trace else ()
-        return McpRunOutcome(
+    def _empty_outcome(self, query: str, reply: str) -> SupervisorRunOutcome:
+        return SupervisorRunOutcome(
             query=query,
             reply=reply,
-            steps=trace,
-            tools_used=(tool_name,),
-            mcp_tools=mcp_tools,
-            server_name=cfg.server_name,
+            steps=(),
+            tools_used=(),
+            delegated_agents=(),
+            node_path=(),
         )
 ```
 
@@ -779,75 +770,92 @@ def _find_last_route(retriever: Retriever) -> RouteResult | None:
 ```python
 def invoke(
         self,
+        state: SupervisorState,
+        *,
+        step_recorder: list[SupervisorStep] | None = None,
+    ) -> SupervisorState:
+        steps = step_recorder if step_recorder is not None else []
+        current = state
+        node = self._entry or ""
+        guard = 0
+        while node != END and guard < 12:
+            guard += 1
+            if node not in self._nodes:
+                break
+            before = current.to_dict()
+            current = self._nodes[node](current)
+            steps.append(
+                SupervisorStep(
+                    step=len(steps) + 1,
+                    node=node,
+                    thought=current.routing_reason or f"节点 {node} 完成",
+                    delegated_agent=before.get("delegated_agent") or current.delegated_agent,
+                    tool=current.worker_tool,
+                    observation=current.worker_output,
+                    final_answer=current.reply if current.done else None,
+                )
+            )
+            if current.done:
+                break
+            if node in self._conditional:
+                router, mapping = self._conditional[node]
+                node = mapping.get(router(current), END)
+            else:
+                node = self._edges.get(node, END)
+        return current
+
+
+class SupervisorGraph:
+    """Supervisor 协调多个 SubAgent 完成用户请求"""
+
+    def __init__(
+        self,
+        tools: list[StructuredTool],
+        *,
+        config: SupervisorConfig | None = None,
+    ) -> None:
+        self._tools = tools
+        self._tool_names = {t.name for t in tools}
+        self._runner = SubAgentRunner(tools)
+        self._config = config or SupervisorConfig()
+        self._graph = self._build_graph()
+
+    @classmethod
+    def from_executor(
+        cls,
+        executor: ToolExecutor,
+        *,
+        config: SupervisorConfig | None = None,
+    ) -> SupervisorGraph:
+        return cls(tools_from_executor(executor), config=config)
+
+    @property
+    def config(self) -> SupervisorConfig:
+        return self._config
+
+    def invoke(
+        self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> McpRunOutcome:
+    ) -> SupervisorRunOutcome:
         query = (query or "").strip()
         cfg = self._config
         if not query:
             return self._empty_outcome("", "请输入有效问题。")
         if not cfg.enabled:
-            return self._empty_outcome(query, "MCP 工具桥接已关闭。")
+            return self._empty_outcome(query, "Supervisor 多 Agent 已关闭。")
 
-        steps: list[McpStep] = []
-        hist_note = ""
-        if history and cfg.use_session_history:
-            hist_note = f"（结合 {len(history)} 条会话记忆）"
-
-        descriptors = self._client.list_tools()
-        mcp_tools = tuple(t.name for t in descriptors)
-        steps.append(
-            McpStep(
-                step=1,
-                phase="discover",
-                thought=f"通过 MCP tools/list 发现 {len(descriptors)} 个工具{hist_note}。",
-                mcp_method=MCP_METHOD_LIST,
-            )
-        )
-
-        tool_name, arguments, reason = self._route_tool(query, mcp_tools)
-        steps.append(
-            McpStep(
-                step=2,
-                phase="route",
-                thought=reason,
-                tool=tool_name,
-                arguments=arguments,
-            )
-        )
-
-        observation = self._client.call_tool(tool_name, arguments)
-        steps.append(
-            McpStep(
-                step=3,
-                phase="call",
-                thought=f"经 MCP tools/call 执行 {tool_name}。",
-                mcp_method=MCP_METHOD_CALL,
-                tool=tool_name,
-                arguments=arguments,
-                observation=observation,
-            )
-        )
-
-        reply = self._synthesize(query, observation, tool_name)
-        steps.append(
-            McpStep(
-                step=4,
-                phase="answer",
-                thought="汇总 MCP 工具 Observation 生成回复。",
-                final_answer=reply,
-            )
-        )
-
-        trace = tuple(steps) if cfg.return_mcp_trace else ()
-        return McpRunOutcome(
+        state = SupervisorState(query=query, history=list(history or []))
+        steps: list[SupervisorStep] = []
+        final = self._graph.invoke(state, step_recorder=steps)
+        return SupervisorRunOutcome(
             query=query,
-            reply=reply,
-            steps=trace,
-            tools_used=(tool_name,),
-            mcp_tools=mcp_tools,
-            server_name=cfg.server_name,
+            reply=final.reply or "未得到答案。",
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(final.tools_used)),
+            delegated_agents=tuple(dict.fromkeys(final.delegated_agents)),
+            node_path=tuple(s.node for s in steps),
         )
 ```
 
@@ -865,9 +873,9 @@ def invoke(
 
 ```python
 """
-MCP 配置 — 自研 MCP Server 暴露 Nexus 工具链
+Supervisor 配置 — 多 Agent 委派与 trace 开关
 
-需求：ZL-NA-REQ-044
+需求：ZL-NA-REQ-043
 """
 
 from __future__ import annotations
@@ -877,46 +885,38 @@ from typing import Any
 
 
 @dataclass
-class McpConfig:
-    """MCP 协议桥接策略"""
+class SupervisorConfig:
+    """Supervisor 多 Agent 路由策略"""
 
     enabled: bool = True
-    server_name: str = "nexus-tools"
-    expose_external_tools: bool = True
-    mock_routing: bool = True
+    max_delegations: int = 1
     use_session_history: bool = True
-    return_mcp_trace: bool = True
-    max_tool_calls: int = 2
+    return_delegation_trace: bool = True
+    mock_routing: bool = True
 
     def validate(self) -> None:
-        if self.max_tool_calls < 1 or self.max_tool_calls > 4:
-            raise ValueError(f"max_tool_calls 须在 1~4，收到 {self.max_tool_calls}")
-        if not (self.server_name or "").strip():
-            raise ValueError("server_name 不能为空")
+        if self.max_delegations < 1 or self.max_delegations > 3:
+            raise ValueError(f"max_delegations 须在 1~3，收到 {self.max_delegations}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled,
-            "server_name": self.server_name,
-            "expose_external_tools": self.expose_external_tools,
-            "mock_routing": self.mock_routing,
+            "max_delegations": self.max_delegations,
             "use_session_history": self.use_session_history,
-            "return_mcp_trace": self.return_mcp_trace,
-            "max_tool_calls": self.max_tool_calls,
+            "return_delegation_trace": self.return_delegation_trace,
+            "mock_routing": self.mock_routing,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> McpConfig:
+    def from_dict(cls, data: dict[str, Any] | None) -> SupervisorConfig:
         if not data:
             return cls()
         return cls(
             enabled=bool(data.get("enabled", True)),
-            server_name=str(data.get("server_name", "nexus-tools")),
-            expose_external_tools=bool(data.get("expose_external_tools", True)),
-            mock_routing=bool(data.get("mock_routing", True)),
+            max_delegations=int(data.get("max_delegations", 1)),
             use_session_history=bool(data.get("use_session_history", True)),
-            return_mcp_trace=bool(data.get("return_mcp_trace", True)),
-            max_tool_calls=int(data.get("max_tool_calls", 2)),
+            return_delegation_trace=bool(data.get("return_delegation_trace", True)),
+            mock_routing=bool(data.get("mock_routing", True)),
         )
 ```
 
@@ -928,7 +928,15 @@ class McpConfig:
 ## 九、_build_rag_service 装配
 
 ```python
-def get_mcp_config(self) -> McpConfig:
+def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
         return McpConfig.from_dict(self.mcp_config.to_dict())
 
     def set_mcp_config(self, config: McpConfig) -> McpConfig:
@@ -945,7 +953,7 @@ def get_mcp_config(self) -> McpConfig:
 ## 十、测试精读 test_query_router.py
 
 ```python
-"""Day 44 MCP Server/Runner 单元测试。"""
+"""Day 43 SupervisorGraph 单元测试。"""
 
 from __future__ import annotations
 
@@ -958,102 +966,75 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from agent.mcp_bridge import structured_tools_from_mcp
-from agent.mcp_client import McpClient
-from agent.mcp_config import McpConfig
-from agent.mcp_protocol import MCP_METHOD_CALL, MCP_METHOD_LIST, McpJsonRpcRequest
-from agent.mcp_runner import McpRunner
-from agent.mcp_server import NexusMcpServer
+from agent.sub_agent import SUB_AGENTS
+from agent.supervisor_config import SupervisorConfig
+from agent.supervisor_graph import SupervisorGraph
+from agent.supervisor_state import SupervisorState
 from api.factory import create_orchestrator
 
 
 @pytest.fixture
-def runner():
+def graph():
     orch = create_orchestrator()
-    return McpRunner.from_executor(orch.tool_executor, config=McpConfig())
-
-
-def test_mcp_config_validate():
-    McpConfig().validate()
-    with pytest.raises(ValueError):
-        McpConfig(max_tool_calls=0).validate()
-    with pytest.raises(ValueError):
-        McpConfig(server_name="  ").validate()
-
-
-def test_mcp_server_list_tools(runner):
-    server = runner._server  # noqa: SLF001
-    tools = server.list_tools()
-    names = {t.name for t in tools}
-    assert "faq_lookup" in names
-    assert "rag_search" in names
-
-
-def test_mcp_server_handle_list(runner):
-    server = runner._server  # noqa: SLF001
-    resp = server.handle(McpJsonRpcRequest(method=MCP_METHOD_LIST))
-    assert resp.ok
-    assert len(resp.result["tools"]) >= 3
-
-
-def test_mcp_server_handle_call_faq(runner):
-    server = runner._server  # noqa: SLF001
-    resp = server.handle(
-        McpJsonRpcRequest(
-            method=MCP_METHOD_CALL,
-            params={"name": "faq_lookup", "arguments": {"query": "客服电话"}},
-        )
+    return SupervisorGraph.from_executor(
+        orch.tool_executor,
+        config=SupervisorConfig(max_delegations=2),
     )
-    assert resp.ok
-    text = resp.result["content"][0]["text"]
-    assert text
 
 
-def test_mcp_client_list_and_call(runner):
-    client = McpClient(runner._server)  # noqa: SLF001
-    tools = client.list_tools()
-    assert any(t.name == "rag_search" for t in tools)
-    obs = client.call_tool("rag_search", {"query": "年化收益"})
-    assert obs
+def test_supervisor_config_validate():
+    SupervisorConfig().validate()
+    with pytest.raises(ValueError):
+        SupervisorConfig(max_delegations=0).validate()
 
 
-def test_mcp_bridge_structured_tools(runner):
-    client = McpClient(runner._server)  # noqa: SLF001
-    structured = structured_tools_from_mcp(client)
-    names = {t.name for t in structured}
-    assert "intent_classify" in names
-    out = structured[0].run({"query": "测试"})
-    assert isinstance(out, str)
+def test_sub_agents_registry():
+    names = {s.name for s in SUB_AGENTS}
+    assert names == {"faq_worker", "rag_worker", "intent_worker"}
 
 
-def test_mcp_runner_faq_delegation(runner):
-    outcome = runner.invoke("客服电话多少")
+def test_supervisor_faq_delegation(graph):
+    outcome = graph.invoke("客服电话多少")
+    assert "faq_worker" in outcome.delegated_agents
     assert "faq_lookup" in outcome.tools_used
-    assert "faq_lookup" in outcome.mcp_tools
-    assert any(s.phase == "call" for s in outcome.steps)
+    assert "supervisor_route" in outcome.node_path
 
 
-def test_mcp_runner_rag_delegation(runner):
-    outcome = runner.invoke("年化收益怎么样")
+def test_supervisor_rag_delegation(graph):
+    outcome = graph.invoke("年化收益怎么样")
+    assert "rag_worker" in outcome.delegated_agents
     assert "rag_search" in outcome.tools_used
 
 
-def test_mcp_runner_intent_delegation(runner):
-    outcome = runner.invoke("帮我总结一下理财产品")
+def test_supervisor_intent_delegation(graph):
+    outcome = graph.invoke("帮我总结一下理财产品")
+    assert "intent_worker" in outcome.delegated_agents
     assert "intent_classify" in outcome.tools_used
 
 
-def test_mcp_config_persists_in_store(tmp_path):
+def test_supervisor_uses_history(graph):
+    history = [{"role": "user", "content": "之前问过理财产品"}]
+    outcome = graph.invoke("再查一下年化收益", history=history)
+    assert outcome.reply
+    assert any("supervisor_route" in n for n in outcome.node_path)
+
+
+def test_supervisor_config_persists_in_store(tmp_path):
     from rag.knowledge_store import KnowledgeStore
 
     path = tmp_path / "store.json"
     store = KnowledgeStore.bootstrap_from_sample_docs(store_path=path)
-    store.set_mcp_config(McpConfig(server_name="custom-mcp", max_tool_calls=3))
+    store.set_supervisor_config(SupervisorConfig(max_delegations=2))
     store.save(path)
     loaded = KnowledgeStore.load(path)
-    cfg = loaded.get_mcp_config()
-    assert cfg.server_name == "custom-mcp"
-    assert cfg.max_tool_calls == 3
+    cfg = loaded.get_supervisor_config()
+    assert cfg.max_delegations == 2
+
+
+def test_supervisor_state_roundtrip():
+    state = SupervisorState(query="q", delegated_agent="faq_worker")
+    restored = SupervisorState.from_dict(state.to_dict())
+    assert restored.delegated_agent == "faq_worker"
 ```
 
 
@@ -1071,7 +1052,7 @@ def test_mcp_config_persists_in_store(tmp_path):
 ## 十一、API 测试 test_route_api.py
 
 ```python
-"""Day 44 MCP API 测试。"""
+"""Day 43 Supervisor API 测试。"""
 
 from __future__ import annotations
 
@@ -1106,52 +1087,41 @@ def test_health_version(client):
     assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
-def test_get_mcp_config_default(client):
-    data = client.get("/api/agent/mcp-config").json()
+def test_get_supervisor_config_default(client):
+    data = client.get("/api/agent/supervisor-config").json()
     assert data["enabled"] is True
-    assert data["server_name"] == "nexus-tools"
+    assert data["max_delegations"] == 1
 
 
-def test_put_mcp_config(client):
+def test_put_supervisor_config(client):
     resp = client.put(
-        "/api/agent/mcp-config",
+        "/api/agent/supervisor-config",
         json={
             "enabled": True,
-            "server_name": "nexus-tools",
-            "expose_external_tools": True,
-            "mock_routing": True,
+            "max_delegations": 2,
             "use_session_history": True,
-            "return_mcp_trace": True,
-            "max_tool_calls": 3,
+            "return_delegation_trace": True,
+            "mock_routing": True,
         },
     )
     assert resp.status_code == 200
-    assert resp.json()["max_tool_calls"] == 3
+    assert resp.json()["max_delegations"] == 2
 
 
-def test_mcp_list_tools(client):
-    resp = client.post("/api/agent/mcp-list-tools", json={})
-    assert resp.status_code == 200
-    data = resp.json()
-    names = {t["name"] for t in data["tools"]}
-    assert "faq_lookup" in names
-    assert data["server_name"] == "nexus-tools"
-
-
-def test_mcp_preview_rag(client):
+def test_supervisor_preview_rag(client):
     resp = client.post(
-        "/api/agent/mcp-preview",
+        "/api/agent/supervisor-preview",
         json={"query": "年化收益怎么样"},
     )
     assert resp.status_code == 200
     data = resp.json()
+    assert "rag_worker" in data["delegated_agents"]
     assert "rag_search" in data["tools_used"]
-    assert "rag_search" in data["mcp_tools"]
 
 
-def test_mcp_preview_with_history(client):
+def test_supervisor_preview_with_history(client):
     resp = client.post(
-        "/api/agent/mcp-preview",
+        "/api/agent/supervisor-preview",
         json={
             "query": "年化收益",
             "history": ["理财产品风险大吗"],
@@ -1161,50 +1131,48 @@ def test_mcp_preview_with_history(client):
     assert resp.json()["reply"]
 
 
-def test_status_includes_mcp_config(client):
+def test_status_includes_supervisor_config(client):
     status = client.get("/api/knowledge/status").json()
     assert status["platform_version"] == "0.44.0"
-    assert status["mcp_config"]["enabled"] is True
+    assert status["supervisor_config"]["enabled"] is True
 
 
-def test_chat_mcp_mode_trace(client):
+def test_chat_supervisor_mode_trace(client):
     resp = client.post(
         "/api/chat",
-        json={"message": "客服电话多少", "mcp_mode": True},
+        json={"message": "客服电话多少", "supervisor_mode": True},
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("mcp_trace")
-    assert body.get("mcp_tools")
-    assert body["kind"] == "mcp"
+    assert body.get("supervisor_trace")
+    assert body.get("delegated_agents")
+    assert body["kind"] == "supervisor"
 
 
-def test_chat_mcp_mode_off_unchanged(client):
+def test_chat_supervisor_mode_off_unchanged(client):
     resp = client.post("/api/chat", json={"message": "投资有风险吗"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("mcp_trace") is None
+    assert body.get("supervisor_trace") is None
     assert body["kind"] == "faq"
 
 
-def test_invalid_mcp_max_tool_calls_422(client):
+def test_invalid_supervisor_max_delegations_422(client):
     resp = client.put(
-        "/api/agent/mcp-config",
+        "/api/agent/supervisor-config",
         json={
             "enabled": True,
-            "server_name": "nexus-tools",
-            "expose_external_tools": True,
-            "mock_routing": True,
+            "max_delegations": 99,
             "use_session_history": True,
-            "return_mcp_trace": True,
-            "max_tool_calls": 99,
+            "return_delegation_trace": True,
+            "mock_routing": True,
         },
     )
     assert resp.status_code == 422
 ```
 
 
-`test_health_version` 锁版本 `v0.44.0`；`test_chat_includes_citations` 端到端。
+`test_health_version` 锁版本 `v0.43.0`；`test_chat_includes_citations` 端到端。
 
 ---
 
@@ -1244,7 +1212,15 @@ HybridRetriever 仍是 inner；关 rewrite 即回 Day33 行为。retrieval_confi
 ## 十六、knowledge_store rewrite 方法
 
 ```python
-def get_mcp_config(self) -> McpConfig:
+def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
         return McpConfig.from_dict(self.mcp_config.to_dict())
 
     def set_mcp_config(self, config: McpConfig) -> McpConfig:
@@ -1283,66 +1259,71 @@ def get_mcp_config(self) -> McpConfig:
 
 ## 二十、结课陈述
 
-读罢 22 精读，你应能**逐行**解释 `RuleBasedQueryRouter.route` 与 `RoutingRetriever.search`，并映射到 ZL-NA-REQ-044 的 FR-001–FR-003。
+读罢 22 精读，你应能**逐行**解释 `RuleBasedQueryRouter.route` 与 `RoutingRetriever.search`，并映射到 ZL-NA-REQ-043 的 FR-001–FR-003。
 
 ---
 
-## 二十一、mcp_runner 完整源码（重复嵌入便于打印）
+## 二十一、supervisor_graph 完整源码（重复嵌入便于打印）
 
 ```python
 """
-McpRunner — MCP 工具发现 → 路由 → 调用 → 汇总
+SupervisorGraph — Supervisor 路由 + 子 Agent 委派 + 汇总
 
-需求：ZL-NA-REQ-044
+LangGraph 风格多 Agent 编排（无 langgraph 依赖）。
+
+需求：ZL-NA-REQ-043
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
-from agent.mcp_client import McpClient
-from agent.mcp_config import McpConfig
-from agent.mcp_protocol import MCP_METHOD_CALL, MCP_METHOD_LIST
-from agent.mcp_server import NexusMcpServer
+from agent.state_graph import END
+from agent.structured_tool import StructuredTool
+from agent.sub_agent import SUB_AGENTS, SubAgentRunner
+from agent.supervisor_config import SupervisorConfig
+from agent.supervisor_state import SupervisorState
+from agent.tool_adapter import tools_from_executor
 from tools.executor import ToolExecutor
+
+NodeFn = Callable[[SupervisorState], SupervisorState]
 
 
 @dataclass(frozen=True)
-class McpStep:
-    """MCP 级 trace — 对齐 mcp_trace 并扩展 mcp_method"""
+class SupervisorStep:
+    """委派级 trace — 与 supervisor_trace 字段对齐并扩展 delegated_agent"""
 
     step: int
-    phase: str
+    node: str
     thought: str
-    mcp_method: str | None = None
+    delegated_agent: str | None = None
     tool: str | None = None
-    arguments: dict[str, Any] | None = None
     observation: str | None = None
     final_answer: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "step": self.step,
-            "phase": self.phase,
+            "node": self.node,
             "thought": self.thought,
-            "mcp_method": self.mcp_method,
+            "delegated_agent": self.delegated_agent,
             "tool": self.tool,
-            "arguments": dict(self.arguments or {}),
             "observation": self.observation,
             "final_answer": self.final_answer,
         }
 
 
 @dataclass(frozen=True)
-class McpRunOutcome:
+class SupervisorRunOutcome:
     query: str
     reply: str
-    steps: tuple[McpStep, ...]
+    steps: tuple[SupervisorStep, ...]
     tools_used: tuple[str, ...]
-    mcp_tools: tuple[str, ...]
-    server_name: str
+    delegated_agents: tuple[str, ...]
+    node_path: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1350,155 +1331,233 @@ class McpRunOutcome:
             "reply": self.reply,
             "steps": [s.to_dict() for s in self.steps],
             "tools_used": list(self.tools_used),
-            "mcp_tools": list(self.mcp_tools),
-            "server_name": self.server_name,
+            "delegated_agents": list(self.delegated_agents),
+            "node_path": list(self.node_path),
         }
 
 
-class McpRunner:
-    """MCP 协议驱动的工具调用编排"""
+class _SupervisorStateGraph:
+    """轻量状态图 — 专用于 SupervisorState"""
+
+    def __init__(self) -> None:
+        self._nodes: dict[str, NodeFn] = {}
+        self._edges: dict[str, str] = {}
+        self._conditional: dict[str, tuple[Callable[[SupervisorState], str], dict[str, str]]] = {}
+        self._entry: str | None = None
+
+    def add_node(self, name: str, fn: NodeFn) -> _SupervisorStateGraph:
+        self._nodes[name] = fn
+        return self
+
+    def set_entry_point(self, name: str) -> _SupervisorStateGraph:
+        self._entry = name
+        return self
+
+    def add_edge(self, start: str, end: str) -> _SupervisorStateGraph:
+        self._edges[start] = end
+        return self
+
+    def add_conditional_edges(
+        self,
+        start: str,
+        router: Callable[[SupervisorState], str],
+        mapping: dict[str, str],
+    ) -> _SupervisorStateGraph:
+        self._conditional[start] = (router, mapping)
+        return self
+
+    def invoke(
+        self,
+        state: SupervisorState,
+        *,
+        step_recorder: list[SupervisorStep] | None = None,
+    ) -> SupervisorState:
+        steps = step_recorder if step_recorder is not None else []
+        current = state
+        node = self._entry or ""
+        guard = 0
+        while node != END and guard < 12:
+            guard += 1
+            if node not in self._nodes:
+                break
+            before = current.to_dict()
+            current = self._nodes[node](current)
+            steps.append(
+                SupervisorStep(
+                    step=len(steps) + 1,
+                    node=node,
+                    thought=current.routing_reason or f"节点 {node} 完成",
+                    delegated_agent=before.get("delegated_agent") or current.delegated_agent,
+                    tool=current.worker_tool,
+                    observation=current.worker_output,
+                    final_answer=current.reply if current.done else None,
+                )
+            )
+            if current.done:
+                break
+            if node in self._conditional:
+                router, mapping = self._conditional[node]
+                node = mapping.get(router(current), END)
+            else:
+                node = self._edges.get(node, END)
+        return current
+
+
+class SupervisorGraph:
+    """Supervisor 协调多个 SubAgent 完成用户请求"""
 
     def __init__(
         self,
-        executor: ToolExecutor,
+        tools: list[StructuredTool],
         *,
-        config: McpConfig | None = None,
+        config: SupervisorConfig | None = None,
     ) -> None:
-        self._config = config or McpConfig()
-        self._server = NexusMcpServer(executor, config=self._config)
-        self._client = McpClient(self._server)
+        self._tools = tools
+        self._tool_names = {t.name for t in tools}
+        self._runner = SubAgentRunner(tools)
+        self._config = config or SupervisorConfig()
+        self._graph = self._build_graph()
 
     @classmethod
     def from_executor(
         cls,
         executor: ToolExecutor,
         *,
-        config: McpConfig | None = None,
-    ) -> McpRunner:
-        return cls(executor, config=config)
+        config: SupervisorConfig | None = None,
+    ) -> SupervisorGraph:
+        return cls(tools_from_executor(executor), config=config)
 
     @property
-    def config(self) -> McpConfig:
+    def config(self) -> SupervisorConfig:
         return self._config
-
-    def list_tools(self) -> list[str]:
-        return [t.name for t in self._client.list_tools()]
-
-    def list_tool_descriptors(self) -> list[dict]:
-        return [t.to_dict() for t in self._client.list_tools()]
 
     def invoke(
         self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> McpRunOutcome:
+    ) -> SupervisorRunOutcome:
         query = (query or "").strip()
         cfg = self._config
         if not query:
             return self._empty_outcome("", "请输入有效问题。")
         if not cfg.enabled:
-            return self._empty_outcome(query, "MCP 工具桥接已关闭。")
+            return self._empty_outcome(query, "Supervisor 多 Agent 已关闭。")
 
-        steps: list[McpStep] = []
-        hist_note = ""
-        if history and cfg.use_session_history:
-            hist_note = f"（结合 {len(history)} 条会话记忆）"
-
-        descriptors = self._client.list_tools()
-        mcp_tools = tuple(t.name for t in descriptors)
-        steps.append(
-            McpStep(
-                step=1,
-                phase="discover",
-                thought=f"通过 MCP tools/list 发现 {len(descriptors)} 个工具{hist_note}。",
-                mcp_method=MCP_METHOD_LIST,
-            )
-        )
-
-        tool_name, arguments, reason = self._route_tool(query, mcp_tools)
-        steps.append(
-            McpStep(
-                step=2,
-                phase="route",
-                thought=reason,
-                tool=tool_name,
-                arguments=arguments,
-            )
-        )
-
-        observation = self._client.call_tool(tool_name, arguments)
-        steps.append(
-            McpStep(
-                step=3,
-                phase="call",
-                thought=f"经 MCP tools/call 执行 {tool_name}。",
-                mcp_method=MCP_METHOD_CALL,
-                tool=tool_name,
-                arguments=arguments,
-                observation=observation,
-            )
-        )
-
-        reply = self._synthesize(query, observation, tool_name)
-        steps.append(
-            McpStep(
-                step=4,
-                phase="answer",
-                thought="汇总 MCP 工具 Observation 生成回复。",
-                final_answer=reply,
-            )
-        )
-
-        trace = tuple(steps) if cfg.return_mcp_trace else ()
-        return McpRunOutcome(
+        state = SupervisorState(query=query, history=list(history or []))
+        steps: list[SupervisorStep] = []
+        final = self._graph.invoke(state, step_recorder=steps)
+        return SupervisorRunOutcome(
             query=query,
-            reply=reply,
-            steps=trace,
-            tools_used=(tool_name,),
-            mcp_tools=mcp_tools,
-            server_name=cfg.server_name,
+            reply=final.reply or "未得到答案。",
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(final.tools_used)),
+            delegated_agents=tuple(dict.fromkeys(final.delegated_agents)),
+            node_path=tuple(s.node for s in steps),
         )
 
-    def _empty_outcome(self, query: str, reply: str) -> McpRunOutcome:
-        return McpRunOutcome(
+    def _empty_outcome(self, query: str, reply: str) -> SupervisorRunOutcome:
+        return SupervisorRunOutcome(
             query=query,
             reply=reply,
             steps=(),
             tools_used=(),
-            mcp_tools=(),
-            server_name=self._config.server_name,
+            delegated_agents=(),
+            node_path=(),
         )
 
-    def _route_tool(
-        self,
-        query: str,
-        available: tuple[str, ...],
-    ) -> tuple[str, dict[str, Any], str]:
-        q = query.lower()
-        if self._config.mock_routing:
-            if any(k in q for k in ("总结", "归纳", "概括", "分类")):
-                tool = "intent_classify" if "intent_classify" in available else available[0]
-                return tool, {"query": query}, "路由到意图 MCP 工具 intent_classify。"
-            if any(k in q for k in ("电话", "客服", "139", "联系")):
-                tool = "faq_lookup" if "faq_lookup" in available else available[0]
-                return tool, {"query": query}, "路由到 FAQ MCP 工具 faq_lookup。"
-            if any(k in q for k in ("收益", "年化", "风险", "理财", "产品")):
-                tool = "rag_search" if "rag_search" in available else available[0]
-                return tool, {"query": query}, "路由到 RAG MCP 工具 rag_search。"
-        if re.search(r"\d{7,}", q):
-            tool = "faq_lookup" if "faq_lookup" in available else available[0]
-            return tool, {"query": query}, "检测到号码模式，路由 faq_lookup。"
-        tool = "rag_search" if "rag_search" in available else available[0]
-        return tool, {"query": query}, "默认路由到 rag_search。"
+    def _build_graph(self) -> _SupervisorStateGraph:
+        g = _SupervisorStateGraph()
+        g.add_node("supervisor_route", self._node_supervisor_route)
+        for spec in SUB_AGENTS:
+            g.add_node(spec.name, self._make_worker_node(spec))
+        g.add_node("synthesize", self._node_synthesize)
+        g.set_entry_point("supervisor_route")
+        g.add_conditional_edges(
+            "supervisor_route",
+            lambda s: s.delegated_agent or "faq_worker",
+            {spec.name: spec.name for spec in SUB_AGENTS},
+        )
+        for spec in SUB_AGENTS:
+            g.add_edge(spec.name, "synthesize")
+        g.add_edge("synthesize", END)
+        return g
 
-    def _synthesize(self, query: str, observation: str, tool: str) -> str:
-        obs = (observation or "").strip()
-        if not obs:
-            return f"已通过 MCP 调用 {tool}，但未获得有效结果。"
-        if len(obs) > 280:
-            obs = obs[:277] + "..."
-        return f"【MCP:{tool}】{obs}"
+    def _make_worker_node(self, spec):
+        def _node(state: SupervisorState) -> SupervisorState:
+            tool_name, output = self._runner.run(spec, state.query)
+            state.worker_tool = tool_name
+            state.worker_output = output
+            if output and not output.strip().endswith("失败:"):
+                state.tools_used.append(tool_name)
+            if spec.name not in state.delegated_agents:
+                state.delegated_agents.append(spec.name)
+            state.routing_reason = f"{spec.label} 已执行 {tool_name}"
+            return state
+
+        return _node
+
+    def _node_supervisor_route(self, state: SupervisorState) -> SupervisorState:
+        agent_name, reason = self._route_query(state)
+        state.delegated_agent = agent_name
+        state.routing_reason = reason
+        if agent_name not in state.delegated_agents:
+            state.delegated_agents.append(agent_name)
+        return state
+
+    def _node_synthesize(self, state: SupervisorState) -> SupervisorState:
+        if state.worker_output:
+            state.reply = self._output_to_answer(state.worker_output, state.query)
+        else:
+            state.reply = "子 Agent 未返回有效结果。"
+        state.done = True
+        state.routing_reason = "Supervisor 汇总子 Agent 输出"
+        return state
+
+    def _route_query(self, state: SupervisorState) -> tuple[str, str]:
+        query = state.query
+        q = query.lower()
+        hist_ctx = ""
+        if state.history:
+            last_user = [h["content"] for h in state.history if h.get("role") == "user"]
+            if last_user:
+                hist_ctx = f"（结合 {len(last_user)} 条会话记忆）"
+
+        if "intent_classify" in self._tool_names and "总结" in q:
+            return (
+                "intent_worker",
+                f"Supervisor 委派意图分析专员{hist_ctx}",
+            )
+        if "faq_lookup" in self._tool_names and re.search(
+            r"电话|客服|400|热线|联系", q
+        ):
+            return (
+                "faq_worker",
+                f"Supervisor 委派 FAQ 专员{hist_ctx}",
+            )
+        if "rag_search" in self._tool_names:
+            return (
+                "rag_worker",
+                f"Supervisor 委派知识库专员{hist_ctx}",
+            )
+        if "faq_lookup" in self._tool_names:
+            return ("faq_worker", f"Supervisor 回退 FAQ 专员{hist_ctx}")
+        return ("faq_worker", "Supervisor：无匹配专员，回退 FAQ")
+
+    @staticmethod
+    def _output_to_answer(output: str, query: str) -> str:
+        text = output.strip()
+        if text.startswith("[faq_lookup]"):
+            body = text.split("]", 1)[-1].strip()
+            return body.split("\n")[-1].strip() if "\n" in body else body
+        if text.startswith("[rag_search]"):
+            body = text.split("]", 1)[-1].strip()
+            lines = [ln for ln in body.splitlines() if ln.strip()]
+            if lines:
+                return f"根据知识库：{lines[0][:200]}"
+        if text.startswith("[intent_classify]"):
+            return f"根据意图分析：{text.split(']', 1)[-1].strip()}"
+        return f"根据子 Agent 结果：{text[:300]}"
 ```
 
 
@@ -1756,7 +1815,7 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 17. 能解释 MODEL_MOCK  
 18. 能解释 max_citations 上限 10  
 19. 能解释 platform_version  
-20. 能复述 ZL-NA-REQ-044 目标  
+20. 能复述 ZL-NA-REQ-043 目标  
 
 ---
 
@@ -1769,7 +1828,7 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 ## 三十、完整测试文件（API）
 
 ```python
-"""Day 44 MCP API 测试。"""
+"""Day 43 Supervisor API 测试。"""
 
 from __future__ import annotations
 
@@ -1804,52 +1863,41 @@ def test_health_version(client):
     assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
-def test_get_mcp_config_default(client):
-    data = client.get("/api/agent/mcp-config").json()
+def test_get_supervisor_config_default(client):
+    data = client.get("/api/agent/supervisor-config").json()
     assert data["enabled"] is True
-    assert data["server_name"] == "nexus-tools"
+    assert data["max_delegations"] == 1
 
 
-def test_put_mcp_config(client):
+def test_put_supervisor_config(client):
     resp = client.put(
-        "/api/agent/mcp-config",
+        "/api/agent/supervisor-config",
         json={
             "enabled": True,
-            "server_name": "nexus-tools",
-            "expose_external_tools": True,
-            "mock_routing": True,
+            "max_delegations": 2,
             "use_session_history": True,
-            "return_mcp_trace": True,
-            "max_tool_calls": 3,
+            "return_delegation_trace": True,
+            "mock_routing": True,
         },
     )
     assert resp.status_code == 200
-    assert resp.json()["max_tool_calls"] == 3
+    assert resp.json()["max_delegations"] == 2
 
 
-def test_mcp_list_tools(client):
-    resp = client.post("/api/agent/mcp-list-tools", json={})
-    assert resp.status_code == 200
-    data = resp.json()
-    names = {t["name"] for t in data["tools"]}
-    assert "faq_lookup" in names
-    assert data["server_name"] == "nexus-tools"
-
-
-def test_mcp_preview_rag(client):
+def test_supervisor_preview_rag(client):
     resp = client.post(
-        "/api/agent/mcp-preview",
+        "/api/agent/supervisor-preview",
         json={"query": "年化收益怎么样"},
     )
     assert resp.status_code == 200
     data = resp.json()
+    assert "rag_worker" in data["delegated_agents"]
     assert "rag_search" in data["tools_used"]
-    assert "rag_search" in data["mcp_tools"]
 
 
-def test_mcp_preview_with_history(client):
+def test_supervisor_preview_with_history(client):
     resp = client.post(
-        "/api/agent/mcp-preview",
+        "/api/agent/supervisor-preview",
         json={
             "query": "年化收益",
             "history": ["理财产品风险大吗"],
@@ -1859,43 +1907,41 @@ def test_mcp_preview_with_history(client):
     assert resp.json()["reply"]
 
 
-def test_status_includes_mcp_config(client):
+def test_status_includes_supervisor_config(client):
     status = client.get("/api/knowledge/status").json()
     assert status["platform_version"] == "0.44.0"
-    assert status["mcp_config"]["enabled"] is True
+    assert status["supervisor_config"]["enabled"] is True
 
 
-def test_chat_mcp_mode_trace(client):
+def test_chat_supervisor_mode_trace(client):
     resp = client.post(
         "/api/chat",
-        json={"message": "客服电话多少", "mcp_mode": True},
+        json={"message": "客服电话多少", "supervisor_mode": True},
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("mcp_trace")
-    assert body.get("mcp_tools")
-    assert body["kind"] == "mcp"
+    assert body.get("supervisor_trace")
+    assert body.get("delegated_agents")
+    assert body["kind"] == "supervisor"
 
 
-def test_chat_mcp_mode_off_unchanged(client):
+def test_chat_supervisor_mode_off_unchanged(client):
     resp = client.post("/api/chat", json={"message": "投资有风险吗"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("mcp_trace") is None
+    assert body.get("supervisor_trace") is None
     assert body["kind"] == "faq"
 
 
-def test_invalid_mcp_max_tool_calls_422(client):
+def test_invalid_supervisor_max_delegations_422(client):
     resp = client.put(
-        "/api/agent/mcp-config",
+        "/api/agent/supervisor-config",
         json={
             "enabled": True,
-            "server_name": "nexus-tools",
-            "expose_external_tools": True,
-            "mock_routing": True,
+            "max_delegations": 99,
             "use_session_history": True,
-            "return_mcp_trace": True,
-            "max_tool_calls": 99,
+            "return_delegation_trace": True,
+            "mock_routing": True,
         },
     )
     assert resp.status_code == 422
@@ -1906,7 +1952,7 @@ def test_invalid_mcp_max_tool_calls_422(client):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 context，找 search。先看 enabled：关了就 hybrid。开则 pool=max(20,top_k)。inner 召回，citation_builder 逐对 rewrite，截断 top_k。这就是 ZL-NA-REQ-032 的读取路径。」
+「打开 supervisor_graph，看委派路由。先看 supervisor_route；按关键词委派给 faq_worker/rag_worker/intent_worker 之一，synthesize 汇总。这就是 ZL-NA-REQ-043 的执行路径。」
 
 ---
 
@@ -2168,9 +2214,9 @@ def _find_last_route(retriever: Retriever) -> RouteResult | None:
 
 ```python
 """
-MCP 工具桥接演示
+Supervisor 多 Agent 演示
 
-运行：PYTHONPATH=src python3 src/day44/mcp_demo.py
+运行：PYTHONPATH=src python3 src/day43/supervisor_demo.py
 """
 
 from __future__ import annotations
@@ -2182,34 +2228,35 @@ _SRC = Path(__file__).resolve().parent.parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from agent.mcp_config import McpConfig
-from agent.mcp_runner import McpRunner
+from agent.sub_agent import SUB_AGENTS
+from agent.supervisor_config import SupervisorConfig
+from agent.supervisor_graph import SupervisorGraph
 from api.factory import create_orchestrator
-from day44.constants import MCP_CASES
+from day43.constants import SUPERVISOR_CASES
 
 
 def main() -> int:
     print("=" * 60)
-    print("  Day 44 MCP 工具桥接演示")
+    print("  Day 43 Supervisor 多 Agent 演示")
     print("=" * 60)
 
     orchestrator = create_orchestrator()
-    runner = McpRunner.from_executor(
+    graph = SupervisorGraph.from_executor(
         orchestrator.tool_executor,
-        config=McpConfig(enabled=True),
+        config=SupervisorConfig(enabled=True),
     )
 
-    tools = runner.list_tools()
-    print(f"\n  MCP Server 工具: {tools}")
-    for item in MCP_CASES:
-        outcome = runner.invoke(item["query"])
+    print(f"\n  子 Agent: {[s.name for s in SUB_AGENTS]}")
+    for item in SUPERVISOR_CASES:
+        outcome = graph.invoke(item["query"])
+        agent = outcome.delegated_agents[-1] if outcome.delegated_agents else "none"
         tool = outcome.tools_used[0] if outcome.tools_used else "none"
-        flag = "✅" if tool == item["expect_tool"] else "⚠️"
+        flag = "✅" if agent == item["expect_agent"] else "⚠️"
         print(f"\n  Q: {item['query']}")
-        print(f"    mcp_tools={list(outcome.mcp_tools)} tools_used={list(outcome.tools_used)} {flag}")
-        print(f"    reply: {outcome.reply[:70]}...")
+        print(f"    delegated={list(outcome.delegated_agents)} node_path={list(outcome.node_path)} {flag}")
+        print(f"    tools={list(outcome.tools_used)} reply: {outcome.reply[:70]}...")
 
-    print("\n  ✅ MCP 演示完成")
+    print("\n  ✅ Supervisor 演示完成")
     print("=" * 60)
     return 0
 
@@ -2258,62 +2305,67 @@ ColBERT late interaction 介于 bi 与 cross；本课不展开。
 
 ---
 
-## 四十、mcp_runner 全文嵌入
+## 四十、supervisor_graph 全文嵌入
 
 ```python
 """
-McpRunner — MCP 工具发现 → 路由 → 调用 → 汇总
+SupervisorGraph — Supervisor 路由 + 子 Agent 委派 + 汇总
 
-需求：ZL-NA-REQ-044
+LangGraph 风格多 Agent 编排（无 langgraph 依赖）。
+
+需求：ZL-NA-REQ-043
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
-from agent.mcp_client import McpClient
-from agent.mcp_config import McpConfig
-from agent.mcp_protocol import MCP_METHOD_CALL, MCP_METHOD_LIST
-from agent.mcp_server import NexusMcpServer
+from agent.state_graph import END
+from agent.structured_tool import StructuredTool
+from agent.sub_agent import SUB_AGENTS, SubAgentRunner
+from agent.supervisor_config import SupervisorConfig
+from agent.supervisor_state import SupervisorState
+from agent.tool_adapter import tools_from_executor
 from tools.executor import ToolExecutor
+
+NodeFn = Callable[[SupervisorState], SupervisorState]
 
 
 @dataclass(frozen=True)
-class McpStep:
-    """MCP 级 trace — 对齐 mcp_trace 并扩展 mcp_method"""
+class SupervisorStep:
+    """委派级 trace — 与 supervisor_trace 字段对齐并扩展 delegated_agent"""
 
     step: int
-    phase: str
+    node: str
     thought: str
-    mcp_method: str | None = None
+    delegated_agent: str | None = None
     tool: str | None = None
-    arguments: dict[str, Any] | None = None
     observation: str | None = None
     final_answer: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "step": self.step,
-            "phase": self.phase,
+            "node": self.node,
             "thought": self.thought,
-            "mcp_method": self.mcp_method,
+            "delegated_agent": self.delegated_agent,
             "tool": self.tool,
-            "arguments": dict(self.arguments or {}),
             "observation": self.observation,
             "final_answer": self.final_answer,
         }
 
 
 @dataclass(frozen=True)
-class McpRunOutcome:
+class SupervisorRunOutcome:
     query: str
     reply: str
-    steps: tuple[McpStep, ...]
+    steps: tuple[SupervisorStep, ...]
     tools_used: tuple[str, ...]
-    mcp_tools: tuple[str, ...]
-    server_name: str
+    delegated_agents: tuple[str, ...]
+    node_path: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -2321,155 +2373,233 @@ class McpRunOutcome:
             "reply": self.reply,
             "steps": [s.to_dict() for s in self.steps],
             "tools_used": list(self.tools_used),
-            "mcp_tools": list(self.mcp_tools),
-            "server_name": self.server_name,
+            "delegated_agents": list(self.delegated_agents),
+            "node_path": list(self.node_path),
         }
 
 
-class McpRunner:
-    """MCP 协议驱动的工具调用编排"""
+class _SupervisorStateGraph:
+    """轻量状态图 — 专用于 SupervisorState"""
+
+    def __init__(self) -> None:
+        self._nodes: dict[str, NodeFn] = {}
+        self._edges: dict[str, str] = {}
+        self._conditional: dict[str, tuple[Callable[[SupervisorState], str], dict[str, str]]] = {}
+        self._entry: str | None = None
+
+    def add_node(self, name: str, fn: NodeFn) -> _SupervisorStateGraph:
+        self._nodes[name] = fn
+        return self
+
+    def set_entry_point(self, name: str) -> _SupervisorStateGraph:
+        self._entry = name
+        return self
+
+    def add_edge(self, start: str, end: str) -> _SupervisorStateGraph:
+        self._edges[start] = end
+        return self
+
+    def add_conditional_edges(
+        self,
+        start: str,
+        router: Callable[[SupervisorState], str],
+        mapping: dict[str, str],
+    ) -> _SupervisorStateGraph:
+        self._conditional[start] = (router, mapping)
+        return self
+
+    def invoke(
+        self,
+        state: SupervisorState,
+        *,
+        step_recorder: list[SupervisorStep] | None = None,
+    ) -> SupervisorState:
+        steps = step_recorder if step_recorder is not None else []
+        current = state
+        node = self._entry or ""
+        guard = 0
+        while node != END and guard < 12:
+            guard += 1
+            if node not in self._nodes:
+                break
+            before = current.to_dict()
+            current = self._nodes[node](current)
+            steps.append(
+                SupervisorStep(
+                    step=len(steps) + 1,
+                    node=node,
+                    thought=current.routing_reason or f"节点 {node} 完成",
+                    delegated_agent=before.get("delegated_agent") or current.delegated_agent,
+                    tool=current.worker_tool,
+                    observation=current.worker_output,
+                    final_answer=current.reply if current.done else None,
+                )
+            )
+            if current.done:
+                break
+            if node in self._conditional:
+                router, mapping = self._conditional[node]
+                node = mapping.get(router(current), END)
+            else:
+                node = self._edges.get(node, END)
+        return current
+
+
+class SupervisorGraph:
+    """Supervisor 协调多个 SubAgent 完成用户请求"""
 
     def __init__(
         self,
-        executor: ToolExecutor,
+        tools: list[StructuredTool],
         *,
-        config: McpConfig | None = None,
+        config: SupervisorConfig | None = None,
     ) -> None:
-        self._config = config or McpConfig()
-        self._server = NexusMcpServer(executor, config=self._config)
-        self._client = McpClient(self._server)
+        self._tools = tools
+        self._tool_names = {t.name for t in tools}
+        self._runner = SubAgentRunner(tools)
+        self._config = config or SupervisorConfig()
+        self._graph = self._build_graph()
 
     @classmethod
     def from_executor(
         cls,
         executor: ToolExecutor,
         *,
-        config: McpConfig | None = None,
-    ) -> McpRunner:
-        return cls(executor, config=config)
+        config: SupervisorConfig | None = None,
+    ) -> SupervisorGraph:
+        return cls(tools_from_executor(executor), config=config)
 
     @property
-    def config(self) -> McpConfig:
+    def config(self) -> SupervisorConfig:
         return self._config
-
-    def list_tools(self) -> list[str]:
-        return [t.name for t in self._client.list_tools()]
-
-    def list_tool_descriptors(self) -> list[dict]:
-        return [t.to_dict() for t in self._client.list_tools()]
 
     def invoke(
         self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> McpRunOutcome:
+    ) -> SupervisorRunOutcome:
         query = (query or "").strip()
         cfg = self._config
         if not query:
             return self._empty_outcome("", "请输入有效问题。")
         if not cfg.enabled:
-            return self._empty_outcome(query, "MCP 工具桥接已关闭。")
+            return self._empty_outcome(query, "Supervisor 多 Agent 已关闭。")
 
-        steps: list[McpStep] = []
-        hist_note = ""
-        if history and cfg.use_session_history:
-            hist_note = f"（结合 {len(history)} 条会话记忆）"
-
-        descriptors = self._client.list_tools()
-        mcp_tools = tuple(t.name for t in descriptors)
-        steps.append(
-            McpStep(
-                step=1,
-                phase="discover",
-                thought=f"通过 MCP tools/list 发现 {len(descriptors)} 个工具{hist_note}。",
-                mcp_method=MCP_METHOD_LIST,
-            )
-        )
-
-        tool_name, arguments, reason = self._route_tool(query, mcp_tools)
-        steps.append(
-            McpStep(
-                step=2,
-                phase="route",
-                thought=reason,
-                tool=tool_name,
-                arguments=arguments,
-            )
-        )
-
-        observation = self._client.call_tool(tool_name, arguments)
-        steps.append(
-            McpStep(
-                step=3,
-                phase="call",
-                thought=f"经 MCP tools/call 执行 {tool_name}。",
-                mcp_method=MCP_METHOD_CALL,
-                tool=tool_name,
-                arguments=arguments,
-                observation=observation,
-            )
-        )
-
-        reply = self._synthesize(query, observation, tool_name)
-        steps.append(
-            McpStep(
-                step=4,
-                phase="answer",
-                thought="汇总 MCP 工具 Observation 生成回复。",
-                final_answer=reply,
-            )
-        )
-
-        trace = tuple(steps) if cfg.return_mcp_trace else ()
-        return McpRunOutcome(
+        state = SupervisorState(query=query, history=list(history or []))
+        steps: list[SupervisorStep] = []
+        final = self._graph.invoke(state, step_recorder=steps)
+        return SupervisorRunOutcome(
             query=query,
-            reply=reply,
-            steps=trace,
-            tools_used=(tool_name,),
-            mcp_tools=mcp_tools,
-            server_name=cfg.server_name,
+            reply=final.reply or "未得到答案。",
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(final.tools_used)),
+            delegated_agents=tuple(dict.fromkeys(final.delegated_agents)),
+            node_path=tuple(s.node for s in steps),
         )
 
-    def _empty_outcome(self, query: str, reply: str) -> McpRunOutcome:
-        return McpRunOutcome(
+    def _empty_outcome(self, query: str, reply: str) -> SupervisorRunOutcome:
+        return SupervisorRunOutcome(
             query=query,
             reply=reply,
             steps=(),
             tools_used=(),
-            mcp_tools=(),
-            server_name=self._config.server_name,
+            delegated_agents=(),
+            node_path=(),
         )
 
-    def _route_tool(
-        self,
-        query: str,
-        available: tuple[str, ...],
-    ) -> tuple[str, dict[str, Any], str]:
-        q = query.lower()
-        if self._config.mock_routing:
-            if any(k in q for k in ("总结", "归纳", "概括", "分类")):
-                tool = "intent_classify" if "intent_classify" in available else available[0]
-                return tool, {"query": query}, "路由到意图 MCP 工具 intent_classify。"
-            if any(k in q for k in ("电话", "客服", "139", "联系")):
-                tool = "faq_lookup" if "faq_lookup" in available else available[0]
-                return tool, {"query": query}, "路由到 FAQ MCP 工具 faq_lookup。"
-            if any(k in q for k in ("收益", "年化", "风险", "理财", "产品")):
-                tool = "rag_search" if "rag_search" in available else available[0]
-                return tool, {"query": query}, "路由到 RAG MCP 工具 rag_search。"
-        if re.search(r"\d{7,}", q):
-            tool = "faq_lookup" if "faq_lookup" in available else available[0]
-            return tool, {"query": query}, "检测到号码模式，路由 faq_lookup。"
-        tool = "rag_search" if "rag_search" in available else available[0]
-        return tool, {"query": query}, "默认路由到 rag_search。"
+    def _build_graph(self) -> _SupervisorStateGraph:
+        g = _SupervisorStateGraph()
+        g.add_node("supervisor_route", self._node_supervisor_route)
+        for spec in SUB_AGENTS:
+            g.add_node(spec.name, self._make_worker_node(spec))
+        g.add_node("synthesize", self._node_synthesize)
+        g.set_entry_point("supervisor_route")
+        g.add_conditional_edges(
+            "supervisor_route",
+            lambda s: s.delegated_agent or "faq_worker",
+            {spec.name: spec.name for spec in SUB_AGENTS},
+        )
+        for spec in SUB_AGENTS:
+            g.add_edge(spec.name, "synthesize")
+        g.add_edge("synthesize", END)
+        return g
 
-    def _synthesize(self, query: str, observation: str, tool: str) -> str:
-        obs = (observation or "").strip()
-        if not obs:
-            return f"已通过 MCP 调用 {tool}，但未获得有效结果。"
-        if len(obs) > 280:
-            obs = obs[:277] + "..."
-        return f"【MCP:{tool}】{obs}"
+    def _make_worker_node(self, spec):
+        def _node(state: SupervisorState) -> SupervisorState:
+            tool_name, output = self._runner.run(spec, state.query)
+            state.worker_tool = tool_name
+            state.worker_output = output
+            if output and not output.strip().endswith("失败:"):
+                state.tools_used.append(tool_name)
+            if spec.name not in state.delegated_agents:
+                state.delegated_agents.append(spec.name)
+            state.routing_reason = f"{spec.label} 已执行 {tool_name}"
+            return state
+
+        return _node
+
+    def _node_supervisor_route(self, state: SupervisorState) -> SupervisorState:
+        agent_name, reason = self._route_query(state)
+        state.delegated_agent = agent_name
+        state.routing_reason = reason
+        if agent_name not in state.delegated_agents:
+            state.delegated_agents.append(agent_name)
+        return state
+
+    def _node_synthesize(self, state: SupervisorState) -> SupervisorState:
+        if state.worker_output:
+            state.reply = self._output_to_answer(state.worker_output, state.query)
+        else:
+            state.reply = "子 Agent 未返回有效结果。"
+        state.done = True
+        state.routing_reason = "Supervisor 汇总子 Agent 输出"
+        return state
+
+    def _route_query(self, state: SupervisorState) -> tuple[str, str]:
+        query = state.query
+        q = query.lower()
+        hist_ctx = ""
+        if state.history:
+            last_user = [h["content"] for h in state.history if h.get("role") == "user"]
+            if last_user:
+                hist_ctx = f"（结合 {len(last_user)} 条会话记忆）"
+
+        if "intent_classify" in self._tool_names and "总结" in q:
+            return (
+                "intent_worker",
+                f"Supervisor 委派意图分析专员{hist_ctx}",
+            )
+        if "faq_lookup" in self._tool_names and re.search(
+            r"电话|客服|400|热线|联系", q
+        ):
+            return (
+                "faq_worker",
+                f"Supervisor 委派 FAQ 专员{hist_ctx}",
+            )
+        if "rag_search" in self._tool_names:
+            return (
+                "rag_worker",
+                f"Supervisor 委派知识库专员{hist_ctx}",
+            )
+        if "faq_lookup" in self._tool_names:
+            return ("faq_worker", f"Supervisor 回退 FAQ 专员{hist_ctx}")
+        return ("faq_worker", "Supervisor：无匹配专员，回退 FAQ")
+
+    @staticmethod
+    def _output_to_answer(output: str, query: str) -> str:
+        text = output.strip()
+        if text.startswith("[faq_lookup]"):
+            body = text.split("]", 1)[-1].strip()
+            return body.split("\n")[-1].strip() if "\n" in body else body
+        if text.startswith("[rag_search]"):
+            body = text.split("]", 1)[-1].strip()
+            lines = [ln for ln in body.splitlines() if ln.strip()]
+            if lines:
+                return f"根据知识库：{lines[0][:200]}"
+        if text.startswith("[intent_classify]"):
+            return f"根据意图分析：{text.split(']', 1)[-1].strip()}"
+        return f"根据子 Agent 结果：{text[:300]}"
 ```
 
 
@@ -2478,38 +2608,24 @@ class McpRunner:
 ## 四十一、chat citations 代码
 
 ```python
-if body.mcp_mode and store.get_mcp_config().enabled:
-            mcfg = store.get_mcp_config()
-            runner = McpRunner.from_executor(
-                orchestrator.tool_executor,
-                config=mcfg,
-            )
-            history = _session_history(orchestrator, enabled=mcfg.use_session_history)
-            mcp_outcome = runner.invoke(message, history=history)
-            reply = mcp_outcome.reply
-            mcp_trace = [s.to_dict() for s in mcp_outcome.steps]
-            mcp_tools = list(mcp_outcome.mcp_tools)
-            tools_used = list(mcp_outcome.tools_used)
-            orchestrator.assistant.history.add_user(message)
-            orchestrator.assistant.history.add_assistant(reply)
-        elif body.mcp_mode and store.get_supervisor_config().enabled:
+if body.supervisor_mode and store.get_supervisor_config().enabled:
             scfg = store.get_supervisor_config()
-            supervisor = McpRunner.from_executor(
+            supervisor = SupervisorGraph.from_executor(
                 orchestrator.tool_executor,
                 config=scfg,
             )
             history = _session_history(orchestrator, enabled=scfg.use_session_history)
             sup_outcome = supervisor.invoke(message, history=history)
             reply = sup_outcome.reply
-            mcp_trace = [s.to_dict() for s in sup_outcome.steps]
-            mcp_tools = list(sup_outcome.mcp_tools)
+            supervisor_trace = [s.to_dict() for s in sup_outcome.steps]
+            delegated_agents = list(sup_outcome.delegated_agents)
             tools_used = list(sup_outcome.tools_used)
             orchestrator.assistant.history.add_user(message)
             orchestrator.assistant.history.add_assistant(reply)
-        elif body.approval_mode and store.get_approval_config().enabled:
+        elif body.supervisor_mode and store.get_approval_config().enabled:
             gcfg = store.get_graph_config()
             acfg = store.get_approval_config()
-            workflow = ApprovalWorkflowGraph.from_executor(
+            workflow = SupervisorGraph.from_executor(
                 orchestrator.tool_executor,
                 graph_config=gcfg,
                 approval_config=acfg,
@@ -2517,7 +2633,7 @@ if body.mcp_mode and store.get_mcp_config().enabled:
             history = _session_history(orchestrator, enabled=gcfg.use_session_history)
             approval_outcome = workflow.invoke(message, history=history)
             reply = approval_outcome.reply
-            graph_trace = [s.to_dict() for s in approval_outcome.steps]
+            supervisor_trace = [s.to_dict() for s in approval_outcome.steps]
             tools_used = list(approval_outcome.tools_used)
             approval_payload = approval_outcome.approval
             orchestrator.assistant.history.add_user(message)
@@ -2529,7 +2645,7 @@ if body.mcp_mode and store.get_mcp_config().enabled:
             history = _session_history(orchestrator, enabled=cfg.use_session_history)
             graph_outcome = graph.invoke(message, history=history)
             reply = graph_outcome.reply
-            graph_trace = [s.to_dict() for s in graph_outcome.steps]
+            supervisor_trace = [s.to_dict() for s in graph_outcome.steps]
             tools_used = list(graph_outcome.tools_used)
             orchestrator.assistant.history.add_user(message)
             orchestrator.assistant.history.add_assistant(reply)
@@ -2566,13 +2682,13 @@ if body.mcp_mode and store.get_mcp_config().enabled:
     if mcp_trace is not None:
         kind = "mcp"
         meta = "MCP Tool Bridge"
-    elif mcp_trace is not None:
+    elif supervisor_trace is not None:
         kind = "supervisor"
         meta = "Supervisor Multi-Agent"
     elif approval_payload is not None:
         kind = "approval"
         meta = "Approval Workflow"
-    elif graph_trace and kind != "approval":
+    elif supervisor_trace and kind != "approval":
         kind = "graph"
         meta = "StateGraph"
     elif executor_trace:
@@ -2591,75 +2707,92 @@ if body.mcp_mode and store.get_mcp_config().enabled:
 ```python
 def invoke(
         self,
+        state: SupervisorState,
+        *,
+        step_recorder: list[SupervisorStep] | None = None,
+    ) -> SupervisorState:
+        steps = step_recorder if step_recorder is not None else []
+        current = state
+        node = self._entry or ""
+        guard = 0
+        while node != END and guard < 12:
+            guard += 1
+            if node not in self._nodes:
+                break
+            before = current.to_dict()
+            current = self._nodes[node](current)
+            steps.append(
+                SupervisorStep(
+                    step=len(steps) + 1,
+                    node=node,
+                    thought=current.routing_reason or f"节点 {node} 完成",
+                    delegated_agent=before.get("delegated_agent") or current.delegated_agent,
+                    tool=current.worker_tool,
+                    observation=current.worker_output,
+                    final_answer=current.reply if current.done else None,
+                )
+            )
+            if current.done:
+                break
+            if node in self._conditional:
+                router, mapping = self._conditional[node]
+                node = mapping.get(router(current), END)
+            else:
+                node = self._edges.get(node, END)
+        return current
+
+
+class SupervisorGraph:
+    """Supervisor 协调多个 SubAgent 完成用户请求"""
+
+    def __init__(
+        self,
+        tools: list[StructuredTool],
+        *,
+        config: SupervisorConfig | None = None,
+    ) -> None:
+        self._tools = tools
+        self._tool_names = {t.name for t in tools}
+        self._runner = SubAgentRunner(tools)
+        self._config = config or SupervisorConfig()
+        self._graph = self._build_graph()
+
+    @classmethod
+    def from_executor(
+        cls,
+        executor: ToolExecutor,
+        *,
+        config: SupervisorConfig | None = None,
+    ) -> SupervisorGraph:
+        return cls(tools_from_executor(executor), config=config)
+
+    @property
+    def config(self) -> SupervisorConfig:
+        return self._config
+
+    def invoke(
+        self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> McpRunOutcome:
+    ) -> SupervisorRunOutcome:
         query = (query or "").strip()
         cfg = self._config
         if not query:
             return self._empty_outcome("", "请输入有效问题。")
         if not cfg.enabled:
-            return self._empty_outcome(query, "MCP 工具桥接已关闭。")
+            return self._empty_outcome(query, "Supervisor 多 Agent 已关闭。")
 
-        steps: list[McpStep] = []
-        hist_note = ""
-        if history and cfg.use_session_history:
-            hist_note = f"（结合 {len(history)} 条会话记忆）"
-
-        descriptors = self._client.list_tools()
-        mcp_tools = tuple(t.name for t in descriptors)
-        steps.append(
-            McpStep(
-                step=1,
-                phase="discover",
-                thought=f"通过 MCP tools/list 发现 {len(descriptors)} 个工具{hist_note}。",
-                mcp_method=MCP_METHOD_LIST,
-            )
-        )
-
-        tool_name, arguments, reason = self._route_tool(query, mcp_tools)
-        steps.append(
-            McpStep(
-                step=2,
-                phase="route",
-                thought=reason,
-                tool=tool_name,
-                arguments=arguments,
-            )
-        )
-
-        observation = self._client.call_tool(tool_name, arguments)
-        steps.append(
-            McpStep(
-                step=3,
-                phase="call",
-                thought=f"经 MCP tools/call 执行 {tool_name}。",
-                mcp_method=MCP_METHOD_CALL,
-                tool=tool_name,
-                arguments=arguments,
-                observation=observation,
-            )
-        )
-
-        reply = self._synthesize(query, observation, tool_name)
-        steps.append(
-            McpStep(
-                step=4,
-                phase="answer",
-                thought="汇总 MCP 工具 Observation 生成回复。",
-                final_answer=reply,
-            )
-        )
-
-        trace = tuple(steps) if cfg.return_mcp_trace else ()
-        return McpRunOutcome(
+        state = SupervisorState(query=query, history=list(history or []))
+        steps: list[SupervisorStep] = []
+        final = self._graph.invoke(state, step_recorder=steps)
+        return SupervisorRunOutcome(
             query=query,
-            reply=reply,
-            steps=trace,
-            tools_used=(tool_name,),
-            mcp_tools=mcp_tools,
-            server_name=cfg.server_name,
+            reply=final.reply or "未得到答案。",
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(final.tools_used)),
+            delegated_agents=tuple(dict.fromkeys(final.delegated_agents)),
+            node_path=tuple(s.node for s in steps),
         )
 ```
 
@@ -2694,75 +2827,92 @@ def invoke(
 ```python
 def invoke(
         self,
+        state: SupervisorState,
+        *,
+        step_recorder: list[SupervisorStep] | None = None,
+    ) -> SupervisorState:
+        steps = step_recorder if step_recorder is not None else []
+        current = state
+        node = self._entry or ""
+        guard = 0
+        while node != END and guard < 12:
+            guard += 1
+            if node not in self._nodes:
+                break
+            before = current.to_dict()
+            current = self._nodes[node](current)
+            steps.append(
+                SupervisorStep(
+                    step=len(steps) + 1,
+                    node=node,
+                    thought=current.routing_reason or f"节点 {node} 完成",
+                    delegated_agent=before.get("delegated_agent") or current.delegated_agent,
+                    tool=current.worker_tool,
+                    observation=current.worker_output,
+                    final_answer=current.reply if current.done else None,
+                )
+            )
+            if current.done:
+                break
+            if node in self._conditional:
+                router, mapping = self._conditional[node]
+                node = mapping.get(router(current), END)
+            else:
+                node = self._edges.get(node, END)
+        return current
+
+
+class SupervisorGraph:
+    """Supervisor 协调多个 SubAgent 完成用户请求"""
+
+    def __init__(
+        self,
+        tools: list[StructuredTool],
+        *,
+        config: SupervisorConfig | None = None,
+    ) -> None:
+        self._tools = tools
+        self._tool_names = {t.name for t in tools}
+        self._runner = SubAgentRunner(tools)
+        self._config = config or SupervisorConfig()
+        self._graph = self._build_graph()
+
+    @classmethod
+    def from_executor(
+        cls,
+        executor: ToolExecutor,
+        *,
+        config: SupervisorConfig | None = None,
+    ) -> SupervisorGraph:
+        return cls(tools_from_executor(executor), config=config)
+
+    @property
+    def config(self) -> SupervisorConfig:
+        return self._config
+
+    def invoke(
+        self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> McpRunOutcome:
+    ) -> SupervisorRunOutcome:
         query = (query or "").strip()
         cfg = self._config
         if not query:
             return self._empty_outcome("", "请输入有效问题。")
         if not cfg.enabled:
-            return self._empty_outcome(query, "MCP 工具桥接已关闭。")
+            return self._empty_outcome(query, "Supervisor 多 Agent 已关闭。")
 
-        steps: list[McpStep] = []
-        hist_note = ""
-        if history and cfg.use_session_history:
-            hist_note = f"（结合 {len(history)} 条会话记忆）"
-
-        descriptors = self._client.list_tools()
-        mcp_tools = tuple(t.name for t in descriptors)
-        steps.append(
-            McpStep(
-                step=1,
-                phase="discover",
-                thought=f"通过 MCP tools/list 发现 {len(descriptors)} 个工具{hist_note}。",
-                mcp_method=MCP_METHOD_LIST,
-            )
-        )
-
-        tool_name, arguments, reason = self._route_tool(query, mcp_tools)
-        steps.append(
-            McpStep(
-                step=2,
-                phase="route",
-                thought=reason,
-                tool=tool_name,
-                arguments=arguments,
-            )
-        )
-
-        observation = self._client.call_tool(tool_name, arguments)
-        steps.append(
-            McpStep(
-                step=3,
-                phase="call",
-                thought=f"经 MCP tools/call 执行 {tool_name}。",
-                mcp_method=MCP_METHOD_CALL,
-                tool=tool_name,
-                arguments=arguments,
-                observation=observation,
-            )
-        )
-
-        reply = self._synthesize(query, observation, tool_name)
-        steps.append(
-            McpStep(
-                step=4,
-                phase="answer",
-                thought="汇总 MCP 工具 Observation 生成回复。",
-                final_answer=reply,
-            )
-        )
-
-        trace = tuple(steps) if cfg.return_mcp_trace else ()
-        return McpRunOutcome(
+        state = SupervisorState(query=query, history=list(history or []))
+        steps: list[SupervisorStep] = []
+        final = self._graph.invoke(state, step_recorder=steps)
+        return SupervisorRunOutcome(
             query=query,
-            reply=reply,
-            steps=trace,
-            tools_used=(tool_name,),
-            mcp_tools=mcp_tools,
-            server_name=cfg.server_name,
+            reply=final.reply or "未得到答案。",
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(final.tools_used)),
+            delegated_agents=tuple(dict.fromkeys(final.delegated_agents)),
+            node_path=tuple(s.node for s in steps),
         )
 ```
 
@@ -2772,7 +2922,7 @@ def invoke(
 ## 四十七、完整测试文件
 
 ```python
-"""Day 44 MCP Server/Runner 单元测试。"""
+"""Day 43 SupervisorGraph 单元测试。"""
 
 from __future__ import annotations
 
@@ -2785,102 +2935,75 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from agent.mcp_bridge import structured_tools_from_mcp
-from agent.mcp_client import McpClient
-from agent.mcp_config import McpConfig
-from agent.mcp_protocol import MCP_METHOD_CALL, MCP_METHOD_LIST, McpJsonRpcRequest
-from agent.mcp_runner import McpRunner
-from agent.mcp_server import NexusMcpServer
+from agent.sub_agent import SUB_AGENTS
+from agent.supervisor_config import SupervisorConfig
+from agent.supervisor_graph import SupervisorGraph
+from agent.supervisor_state import SupervisorState
 from api.factory import create_orchestrator
 
 
 @pytest.fixture
-def runner():
+def graph():
     orch = create_orchestrator()
-    return McpRunner.from_executor(orch.tool_executor, config=McpConfig())
-
-
-def test_mcp_config_validate():
-    McpConfig().validate()
-    with pytest.raises(ValueError):
-        McpConfig(max_tool_calls=0).validate()
-    with pytest.raises(ValueError):
-        McpConfig(server_name="  ").validate()
-
-
-def test_mcp_server_list_tools(runner):
-    server = runner._server  # noqa: SLF001
-    tools = server.list_tools()
-    names = {t.name for t in tools}
-    assert "faq_lookup" in names
-    assert "rag_search" in names
-
-
-def test_mcp_server_handle_list(runner):
-    server = runner._server  # noqa: SLF001
-    resp = server.handle(McpJsonRpcRequest(method=MCP_METHOD_LIST))
-    assert resp.ok
-    assert len(resp.result["tools"]) >= 3
-
-
-def test_mcp_server_handle_call_faq(runner):
-    server = runner._server  # noqa: SLF001
-    resp = server.handle(
-        McpJsonRpcRequest(
-            method=MCP_METHOD_CALL,
-            params={"name": "faq_lookup", "arguments": {"query": "客服电话"}},
-        )
+    return SupervisorGraph.from_executor(
+        orch.tool_executor,
+        config=SupervisorConfig(max_delegations=2),
     )
-    assert resp.ok
-    text = resp.result["content"][0]["text"]
-    assert text
 
 
-def test_mcp_client_list_and_call(runner):
-    client = McpClient(runner._server)  # noqa: SLF001
-    tools = client.list_tools()
-    assert any(t.name == "rag_search" for t in tools)
-    obs = client.call_tool("rag_search", {"query": "年化收益"})
-    assert obs
+def test_supervisor_config_validate():
+    SupervisorConfig().validate()
+    with pytest.raises(ValueError):
+        SupervisorConfig(max_delegations=0).validate()
 
 
-def test_mcp_bridge_structured_tools(runner):
-    client = McpClient(runner._server)  # noqa: SLF001
-    structured = structured_tools_from_mcp(client)
-    names = {t.name for t in structured}
-    assert "intent_classify" in names
-    out = structured[0].run({"query": "测试"})
-    assert isinstance(out, str)
+def test_sub_agents_registry():
+    names = {s.name for s in SUB_AGENTS}
+    assert names == {"faq_worker", "rag_worker", "intent_worker"}
 
 
-def test_mcp_runner_faq_delegation(runner):
-    outcome = runner.invoke("客服电话多少")
+def test_supervisor_faq_delegation(graph):
+    outcome = graph.invoke("客服电话多少")
+    assert "faq_worker" in outcome.delegated_agents
     assert "faq_lookup" in outcome.tools_used
-    assert "faq_lookup" in outcome.mcp_tools
-    assert any(s.phase == "call" for s in outcome.steps)
+    assert "supervisor_route" in outcome.node_path
 
 
-def test_mcp_runner_rag_delegation(runner):
-    outcome = runner.invoke("年化收益怎么样")
+def test_supervisor_rag_delegation(graph):
+    outcome = graph.invoke("年化收益怎么样")
+    assert "rag_worker" in outcome.delegated_agents
     assert "rag_search" in outcome.tools_used
 
 
-def test_mcp_runner_intent_delegation(runner):
-    outcome = runner.invoke("帮我总结一下理财产品")
+def test_supervisor_intent_delegation(graph):
+    outcome = graph.invoke("帮我总结一下理财产品")
+    assert "intent_worker" in outcome.delegated_agents
     assert "intent_classify" in outcome.tools_used
 
 
-def test_mcp_config_persists_in_store(tmp_path):
+def test_supervisor_uses_history(graph):
+    history = [{"role": "user", "content": "之前问过理财产品"}]
+    outcome = graph.invoke("再查一下年化收益", history=history)
+    assert outcome.reply
+    assert any("supervisor_route" in n for n in outcome.node_path)
+
+
+def test_supervisor_config_persists_in_store(tmp_path):
     from rag.knowledge_store import KnowledgeStore
 
     path = tmp_path / "store.json"
     store = KnowledgeStore.bootstrap_from_sample_docs(store_path=path)
-    store.set_mcp_config(McpConfig(server_name="custom-mcp", max_tool_calls=3))
+    store.set_supervisor_config(SupervisorConfig(max_delegations=2))
     store.save(path)
     loaded = KnowledgeStore.load(path)
-    cfg = loaded.get_mcp_config()
-    assert cfg.server_name == "custom-mcp"
-    assert cfg.max_tool_calls == 3
+    cfg = loaded.get_supervisor_config()
+    assert cfg.max_delegations == 2
+
+
+def test_supervisor_state_roundtrip():
+    state = SupervisorState(query="q", delegated_agent="faq_worker")
+    restored = SupervisorState.from_dict(state.to_dict())
+    assert restored.delegated_agent == "faq_worker"
 ```
 
 
@@ -2889,7 +3012,7 @@ def test_mcp_config_persists_in_store(tmp_path):
 ## 四十八、完整 API 测试
 
 ```python
-"""Day 44 MCP API 测试。"""
+"""Day 43 Supervisor API 测试。"""
 
 from __future__ import annotations
 
@@ -2924,52 +3047,41 @@ def test_health_version(client):
     assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
-def test_get_mcp_config_default(client):
-    data = client.get("/api/agent/mcp-config").json()
+def test_get_supervisor_config_default(client):
+    data = client.get("/api/agent/supervisor-config").json()
     assert data["enabled"] is True
-    assert data["server_name"] == "nexus-tools"
+    assert data["max_delegations"] == 1
 
 
-def test_put_mcp_config(client):
+def test_put_supervisor_config(client):
     resp = client.put(
-        "/api/agent/mcp-config",
+        "/api/agent/supervisor-config",
         json={
             "enabled": True,
-            "server_name": "nexus-tools",
-            "expose_external_tools": True,
-            "mock_routing": True,
+            "max_delegations": 2,
             "use_session_history": True,
-            "return_mcp_trace": True,
-            "max_tool_calls": 3,
+            "return_delegation_trace": True,
+            "mock_routing": True,
         },
     )
     assert resp.status_code == 200
-    assert resp.json()["max_tool_calls"] == 3
+    assert resp.json()["max_delegations"] == 2
 
 
-def test_mcp_list_tools(client):
-    resp = client.post("/api/agent/mcp-list-tools", json={})
-    assert resp.status_code == 200
-    data = resp.json()
-    names = {t["name"] for t in data["tools"]}
-    assert "faq_lookup" in names
-    assert data["server_name"] == "nexus-tools"
-
-
-def test_mcp_preview_rag(client):
+def test_supervisor_preview_rag(client):
     resp = client.post(
-        "/api/agent/mcp-preview",
+        "/api/agent/supervisor-preview",
         json={"query": "年化收益怎么样"},
     )
     assert resp.status_code == 200
     data = resp.json()
+    assert "rag_worker" in data["delegated_agents"]
     assert "rag_search" in data["tools_used"]
-    assert "rag_search" in data["mcp_tools"]
 
 
-def test_mcp_preview_with_history(client):
+def test_supervisor_preview_with_history(client):
     resp = client.post(
-        "/api/agent/mcp-preview",
+        "/api/agent/supervisor-preview",
         json={
             "query": "年化收益",
             "history": ["理财产品风险大吗"],
@@ -2979,43 +3091,41 @@ def test_mcp_preview_with_history(client):
     assert resp.json()["reply"]
 
 
-def test_status_includes_mcp_config(client):
+def test_status_includes_supervisor_config(client):
     status = client.get("/api/knowledge/status").json()
     assert status["platform_version"] == "0.44.0"
-    assert status["mcp_config"]["enabled"] is True
+    assert status["supervisor_config"]["enabled"] is True
 
 
-def test_chat_mcp_mode_trace(client):
+def test_chat_supervisor_mode_trace(client):
     resp = client.post(
         "/api/chat",
-        json={"message": "客服电话多少", "mcp_mode": True},
+        json={"message": "客服电话多少", "supervisor_mode": True},
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("mcp_trace")
-    assert body.get("mcp_tools")
-    assert body["kind"] == "mcp"
+    assert body.get("supervisor_trace")
+    assert body.get("delegated_agents")
+    assert body["kind"] == "supervisor"
 
 
-def test_chat_mcp_mode_off_unchanged(client):
+def test_chat_supervisor_mode_off_unchanged(client):
     resp = client.post("/api/chat", json={"message": "投资有风险吗"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("mcp_trace") is None
+    assert body.get("supervisor_trace") is None
     assert body["kind"] == "faq"
 
 
-def test_invalid_mcp_max_tool_calls_422(client):
+def test_invalid_supervisor_max_delegations_422(client):
     resp = client.put(
-        "/api/agent/mcp-config",
+        "/api/agent/supervisor-config",
         json={
             "enabled": True,
-            "server_name": "nexus-tools",
-            "expose_external_tools": True,
-            "mock_routing": True,
+            "max_delegations": 99,
             "use_session_history": True,
-            "return_mcp_trace": True,
-            "max_tool_calls": 99,
+            "return_delegation_trace": True,
+            "mock_routing": True,
         },
     )
     assert resp.status_code == 422
@@ -3026,10 +3136,10 @@ def test_invalid_mcp_max_tool_calls_422(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 citation_builder，Citation 有 rank chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 supervisor_graph，SupervisorStep 记录 delegated_agent。chat 里 supervisor_trace 挂在 reply 后面。这就是 ZL-NA-REQ-043。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 37 · Citation · ZL-NA-REQ-044 · citation_builder 精读完**
+**NexusAgent 课程 · Phase 4 · Day 43 · Supervisor · ZL-NA-REQ-043 · supervisor_graph 精读完**

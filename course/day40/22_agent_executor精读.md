@@ -1,232 +1,280 @@
-# Day 41 精读：answer_validator 与 Self-RAG 校验管线
+# Day 40 精读：agent_executor 与框架工具注册管线
 
-**需求**：ZL-NA-REQ-041 | **学时**：120 min
+**需求**：ZL-NA-REQ-040 | **学时**：120 min
 
 ---
 
-## 一、rag_agent_graph.py 全文
+## 一、agent_executor.py 全文
 
 ```python
 """
-RAG Agent StateGraph — planner → tool → answer 三节点编排
+AgentExecutor — LangChain 风格 invoke 循环，trace 与 Day 39 ReAct 对齐
 
-复用 Day 40 StructuredTool，将 RAGAgentGraph 线性循环升级为显式状态图。
+复用 StructuredTool + mock planner，保证教学环境可测。
 
-需求：ZL-NA-REQ-041
+需求：ZL-NA-REQ-040
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
-from agent.graph_config import GraphConfig
-from agent.graph_state import AgentGraphState
-from agent.state_graph import END, CompiledStateGraph, GraphRunOutcome, GraphStep, StateGraph
+from agent.executor_config import ExecutorConfig
 from agent.structured_tool import StructuredTool
 from agent.tool_adapter import tool_map, tools_from_executor
 from tools.executor import ToolExecutor
 
 
-class RAGAgentGraph:
-    """Nexus RAG Agent 预置状态图"""
+@dataclass(frozen=True)
+class ExecutorStep:
+    """与 ReAct ReactStep 字段对齐，便于 executor_trace / executor_trace 互通"""
+
+    step: int
+    thought: str
+    action: str | None = None
+    action_input: dict[str, Any] = field(default_factory=dict)
+    observation: str | None = None
+    final_answer: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "step": self.step,
+            "thought": self.thought,
+            "action": self.action,
+            "action_input": dict(self.action_input),
+            "observation": self.observation,
+            "final_answer": self.final_answer,
+        }
+
+
+@dataclass(frozen=True)
+class ExecutorRunOutcome:
+    query: str
+    reply: str
+    steps: tuple[ExecutorStep, ...]
+    tools_used: tuple[str, ...]
+    intermediate_steps: tuple[tuple[str, str], ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "query": self.query,
+            "reply": self.reply,
+            "steps": [s.to_dict() for s in self.steps],
+            "tools_used": list(self.tools_used),
+            "intermediate_steps": [
+                {"action": a, "observation": o} for a, o in self.intermediate_steps
+            ],
+        }
+
+
+class AgentExecutor:
+    """框架式 Agent — tools + invoke，内部 mock planner 与 ReAct 规则一致"""
 
     def __init__(
         self,
         tools: list[StructuredTool],
         *,
-        config: GraphConfig | None = None,
+        config: ExecutorConfig | None = None,
     ) -> None:
         self._tools = tools
         self._tool_by_name = tool_map(tools)
         self._tool_names = set(self._tool_by_name)
-        self._config = config or GraphConfig()
-        self._graph = self._build_graph().compile()
+        self._config = config or ExecutorConfig()
 
     @classmethod
     def from_executor(
         cls,
         executor: ToolExecutor,
         *,
-        config: GraphConfig | None = None,
-    ) -> RAGAgentGraph:
+        config: ExecutorConfig | None = None,
+    ) -> AgentExecutor:
         return cls(tools_from_executor(executor), config=config)
 
     @property
-    def config(self) -> GraphConfig:
+    def config(self) -> ExecutorConfig:
         return self._config
 
     @property
-    def compiled(self) -> CompiledStateGraph:
-        return self._graph
+    def tools(self) -> list[StructuredTool]:
+        return list(self._tools)
 
     def invoke(
         self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> GraphRunOutcome:
+    ) -> ExecutorRunOutcome:
+        """LangChain 风格入口 — 返回 reply + intermediate_steps"""
+        return self.run(query, history=history)
+
+    def run(
+        self,
+        query: str,
+        *,
+        history: list[dict[str, str]] | None = None,
+    ) -> ExecutorRunOutcome:
         query = (query or "").strip()
-        cfg = self._config
         if not query:
-            return GraphRunOutcome(
+            return ExecutorRunOutcome(
                 query="",
                 reply="请输入有效问题。",
                 steps=(),
                 tools_used=(),
-                node_path=(),
+                intermediate_steps=(),
             )
+
+        cfg = self._config
         if not cfg.enabled:
-            return GraphRunOutcome(
+            return ExecutorRunOutcome(
                 query=query,
-                reply="StateGraph 已关闭。",
+                reply="AgentExecutor 已关闭。",
                 steps=(),
                 tools_used=(),
-                node_path=(),
+                intermediate_steps=(),
             )
 
-        state = AgentGraphState(
-            query=query,
-            history=list(history or []),
-        )
-        steps: list[GraphStep] = []
-        final = self._graph.invoke(
-            state,
-            max_iterations=cfg.max_iterations,
-            step_recorder=steps,
-        )
-        node_path = tuple(s.node for s in steps)
-        return GraphRunOutcome(
-            query=query,
-            reply=final.reply or "未得到答案。",
-            steps=tuple(steps),
-            tools_used=tuple(dict.fromkeys(final.tools_used)),
-            node_path=node_path,
-        )
+        steps: list[ExecutorStep] = []
+        intermediate: list[tuple[str, str]] = []
+        tools_used: list[str] = []
+        last_observation: str | None = None
+        reply = ""
 
-    def _build_graph(self) -> StateGraph:
-        g = StateGraph()
-        g.add_node("planner", self._node_planner)
-        g.add_node("tool_runner", self._node_tool_runner)
-        g.add_node("answer", self._node_answer)
-        g.set_entry_point("planner")
-        g.add_conditional_edges(
-            "planner",
-            self._route_after_planner,
-            {"tool": "tool_runner", "answer": "answer"},
-        )
-        g.add_conditional_edges(
-            "tool_runner",
-            self._route_after_tool,
-            {"planner": "planner", "answer": "answer"},
-        )
-        g.add_edge("answer", END)
-        return g
+        for step_idx in range(1, cfg.max_iterations + 1):
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+                hist_note = ""
+                if history:
+                    hist_note = f"（结合 {len(history)} 条会话记忆）"
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=f"工具已返回，生成 Final Answer{hist_note}。",
+                        final_answer=reply,
+                    )
+                )
+                break
 
-    def _node_planner(self, state: AgentGraphState) -> AgentGraphState:
-        state.iteration += 1
-        thought, action, action_input, final = self._mock_plan(state)
-        if final:
-            state.reply = final
-            state.done = True
-            state.pending_action = None
-            state.pending_input = {}
-            return state
-        state.pending_action = action
-        state.pending_input = dict(action_input or {})
-        return state
+            thought, action, action_input, final = self._plan_step(
+                query, step_idx, None, history=history
+            )
+            if final:
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=thought,
+                        final_answer=final,
+                    )
+                )
+                reply = final
+                break
 
-    def _node_tool_runner(self, state: AgentGraphState) -> AgentGraphState:
-        action = state.pending_action
-        if not action or action not in self._tool_by_name:
-            state.reply = "状态图未能执行有效工具。"
-            state.done = True
-            return state
-        observation = self._tool_by_name[action].run(state.pending_input)
-        state.last_observation = observation
-        if not observation.strip().endswith("失败:"):
-            state.tools_used.append(action)
-        state.pending_action = None
-        state.pending_input = {}
-        return state
+            if not action or action not in self._tool_by_name:
+                reply = "AgentExecutor 未能规划有效工具。"
+                break
 
-    def _node_answer(self, state: AgentGraphState) -> AgentGraphState:
-        if state.reply:
-            state.done = True
-            return state
-        if state.last_observation:
-            state.reply = self._observation_to_answer(state.last_observation, state.query)
+            observation = self._tool_by_name[action].run(action_input)
+            last_observation = observation
+            intermediate.append((action, observation))
+            if not observation.strip().endswith("失败:"):
+                tools_used.append(action)
+
+            steps.append(
+                ExecutorStep(
+                    step=step_idx,
+                    thought=thought,
+                    action=action,
+                    action_input=dict(action_input or {}),
+                    observation=observation,
+                )
+            )
         else:
-            state.reply = "未在迭代上限内得到答案，请换个问法。"
-        state.done = True
-        return state
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+            else:
+                reply = "未在迭代上限内得到答案，请换个问法。"
 
-    def _route_after_planner(self, state: AgentGraphState) -> str:
-        if state.done:
-            return "answer"
-        return "tool"
+        return ExecutorRunOutcome(
+            query=query,
+            reply=reply,
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(tools_used)),
+            intermediate_steps=tuple(intermediate),
+        )
 
-    def _route_after_tool(self, state: AgentGraphState) -> str:
-        if state.iteration >= self._config.max_iterations:
-            return "answer"
-        if state.last_observation:
-            return "answer"
-        return "planner"
+    def _plan_step(
+        self,
+        query: str,
+        step: int,
+        observation: str | None,
+        *,
+        history: list[dict[str, str]] | None,
+    ) -> tuple[str, str | None, dict[str, Any], str | None]:
+        return self._mock_plan(query, step, observation, history=history)
 
     def _mock_plan(
-        self, state: AgentGraphState
+        self,
+        query: str,
+        step: int,
+        observation: str | None,
+        *,
+        history: list[dict[str, str]] | None,
     ) -> tuple[str, str | None, dict[str, Any], str | None]:
-        if state.last_observation:
-            answer = self._observation_to_answer(state.last_observation, state.query)
+        if observation:
+            answer = self._observation_to_answer(observation, query)
             hist_note = ""
-            if state.history:
-                hist_note = f"（结合 {len(state.history)} 条会话记忆）"
+            if history:
+                hist_note = f"（结合 {len(history)} 条会话记忆）"
             return (
-                f"图节点 planner：整理 Final Answer{hist_note}。",
+                f"StructuredTool 已返回，整理 Final Answer{hist_note}。",
                 None,
                 {},
                 answer,
             )
 
-        query = state.query
         q = query.lower()
         hist_ctx = ""
-        if state.history:
-            last_user = [h["content"] for h in state.history if h.get("role") == "user"]
+        if history:
+            last_user = [h["content"] for h in history if h.get("role") == "user"]
             if last_user:
                 hist_ctx = f" 上文：{last_user[-1][:40]}"
 
-        if "intent_classify" in self._tool_names and state.iteration == 1 and "总结" in q:
+        if "intent_classify" in self._tool_names and step == 1 and "总结" in q:
             return (
-                f"planner 节点路由 intent_classify。{hist_ctx}",
+                f"Executor 选择 intent_classify StructuredTool。{hist_ctx}",
                 "intent_classify",
                 {"text": query},
                 None,
             )
+
         if "faq_lookup" in self._tool_names and re.search(
             r"电话|客服|400|热线|联系", q
         ):
             return (
-                f"planner 节点路由 faq_lookup。{hist_ctx}",
+                f"Executor 选择 faq_lookup StructuredTool。{hist_ctx}",
                 "faq_lookup",
                 {"query": query},
                 None,
             )
+
         if "rag_search" in self._tool_names:
             return (
-                f"planner 节点路由 rag_search。{hist_ctx}",
+                f"Executor 选择 rag_search StructuredTool。{hist_ctx}",
                 "rag_search",
                 {"query": query, "top_k": 3},
                 None,
             )
+
         if "faq_lookup" in self._tool_names:
             return (
-                f"planner 回退 faq_lookup。{hist_ctx}",
+                f"Executor 回退 faq_lookup。{hist_ctx}",
                 "faq_lookup",
                 {"query": query},
                 None,
             )
-        return ("planner：无可用工具。", None, {}, "暂无法处理该问题。")
+
+        return ("无可用 StructuredTool。", None, {}, "暂无法处理该问题。")
 
     @staticmethod
     def _observation_to_answer(observation: str, query: str) -> str:
@@ -260,9 +308,9 @@ class RAGAgentGraph:
 
 ```python
 """
-StateGraph 配置 — 迭代上限与节点 trace 开关
+AgentExecutor 配置 — 迭代上限与中间步骤开关
 
-需求：ZL-NA-REQ-041
+需求：ZL-NA-REQ-040
 """
 
 from __future__ import annotations
@@ -272,13 +320,13 @@ from typing import Any
 
 
 @dataclass
-class GraphConfig:
-    """LangGraph 风格状态图策略"""
+class ExecutorConfig:
+    """框架式 AgentExecutor 策略"""
 
     enabled: bool = True
     max_iterations: int = 3
     use_session_history: bool = True
-    return_node_trace: bool = True
+    return_intermediate_steps: bool = True
     mock_planner: bool = True
 
     def validate(self) -> None:
@@ -290,19 +338,19 @@ class GraphConfig:
             "enabled": self.enabled,
             "max_iterations": self.max_iterations,
             "use_session_history": self.use_session_history,
-            "return_node_trace": self.return_node_trace,
+            "return_intermediate_steps": self.return_intermediate_steps,
             "mock_planner": self.mock_planner,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> GraphConfig:
+    def from_dict(cls, data: dict[str, Any] | None) -> ExecutorConfig:
         if not data:
             return cls()
         return cls(
             enabled=bool(data.get("enabled", True)),
             max_iterations=int(data.get("max_iterations", 3)),
             use_session_history=bool(data.get("use_session_history", True)),
-            return_node_trace=bool(data.get("return_node_trace", True)),
+            return_intermediate_steps=bool(data.get("return_intermediate_steps", True)),
             mock_planner=bool(data.get("mock_planner", True)),
         )
 ```
@@ -319,81 +367,45 @@ class GraphConfig:
 ## 四、rewrite 全文
 
 ```python
-class RAGAgentGraph:
-    """Nexus RAG Agent 预置状态图"""
+class ExecutorStep:
+    """与 ReAct ReactStep 字段对齐，便于 executor_trace / executor_trace 互通"""
 
-    def __init__(
-        self,
-        tools: list[StructuredTool],
-        *,
-        config: GraphConfig | None = None,
-    ) -> None:
-        self._tools = tools
-        self._tool_by_name = tool_map(tools)
-        self._tool_names = set(self._tool_by_name)
-        self._config = config or GraphConfig()
-        self._graph = self._build_graph().compile()
+    step: int
+    thought: str
+    action: str | None = None
+    action_input: dict[str, Any] = field(default_factory=dict)
+    observation: str | None = None
+    final_answer: str | None = None
 
-    @classmethod
-    def from_executor(
-        cls,
-        executor: ToolExecutor,
-        *,
-        config: GraphConfig | None = None,
-    ) -> RAGAgentGraph:
-        return cls(tools_from_executor(executor), config=config)
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "step": self.step,
+            "thought": self.thought,
+            "action": self.action,
+            "action_input": dict(self.action_input),
+            "observation": self.observation,
+            "final_answer": self.final_answer,
+        }
 
-    @property
-    def config(self) -> GraphConfig:
-        return self._config
 
-    @property
-    def compiled(self) -> CompiledStateGraph:
-        return self._graph
+@dataclass(frozen=True)
+class ExecutorRunOutcome:
+    query: str
+    reply: str
+    steps: tuple[ExecutorStep, ...]
+    tools_used: tuple[str, ...]
+    intermediate_steps: tuple[tuple[str, str], ...]
 
-    def invoke(
-        self,
-        query: str,
-        *,
-        history: list[dict[str, str]] | None = None,
-    ) -> GraphRunOutcome:
-        query = (query or "").strip()
-        cfg = self._config
-        if not query:
-            return GraphRunOutcome(
-                query="",
-                reply="请输入有效问题。",
-                steps=(),
-                tools_used=(),
-                node_path=(),
-            )
-        if not cfg.enabled:
-            return GraphRunOutcome(
-                query=query,
-                reply="StateGraph 已关闭。",
-                steps=(),
-                tools_used=(),
-                node_path=(),
-            )
-
-        state = AgentGraphState(
-            query=query,
-            history=list(history or []),
-        )
-        steps: list[GraphStep] = []
-        final = self._graph.invoke(
-            state,
-            max_iterations=cfg.max_iterations,
-            step_recorder=steps,
-        )
-        node_path = tuple(s.node for s in steps)
-        return GraphRunOutcome(
-            query=query,
-            reply=final.reply or "未得到答案。",
-            steps=tuple(steps),
-            tools_used=tuple(dict.fromkeys(final.tools_used)),
-            node_path=node_path,
-        )
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "query": self.query,
+            "reply": self.reply,
+            "steps": [s.to_dict() for s in self.steps],
+            "tools_used": list(self.tools_used),
+            "intermediate_steps": [
+                {"action": a, "observation": o} for a, o in self.intermediate_steps
+            ],
+        }
 ```
 
 
@@ -410,81 +422,45 @@ class RAGAgentGraph:
 ## 五、_bigram_overlap
 
 ```python
-class RAGAgentGraph:
-    """Nexus RAG Agent 预置状态图"""
+class ExecutorStep:
+    """与 ReAct ReactStep 字段对齐，便于 executor_trace / executor_trace 互通"""
 
-    def __init__(
-        self,
-        tools: list[StructuredTool],
-        *,
-        config: GraphConfig | None = None,
-    ) -> None:
-        self._tools = tools
-        self._tool_by_name = tool_map(tools)
-        self._tool_names = set(self._tool_by_name)
-        self._config = config or GraphConfig()
-        self._graph = self._build_graph().compile()
+    step: int
+    thought: str
+    action: str | None = None
+    action_input: dict[str, Any] = field(default_factory=dict)
+    observation: str | None = None
+    final_answer: str | None = None
 
-    @classmethod
-    def from_executor(
-        cls,
-        executor: ToolExecutor,
-        *,
-        config: GraphConfig | None = None,
-    ) -> RAGAgentGraph:
-        return cls(tools_from_executor(executor), config=config)
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "step": self.step,
+            "thought": self.thought,
+            "action": self.action,
+            "action_input": dict(self.action_input),
+            "observation": self.observation,
+            "final_answer": self.final_answer,
+        }
 
-    @property
-    def config(self) -> GraphConfig:
-        return self._config
 
-    @property
-    def compiled(self) -> CompiledStateGraph:
-        return self._graph
+@dataclass(frozen=True)
+class ExecutorRunOutcome:
+    query: str
+    reply: str
+    steps: tuple[ExecutorStep, ...]
+    tools_used: tuple[str, ...]
+    intermediate_steps: tuple[tuple[str, str], ...]
 
-    def invoke(
-        self,
-        query: str,
-        *,
-        history: list[dict[str, str]] | None = None,
-    ) -> GraphRunOutcome:
-        query = (query or "").strip()
-        cfg = self._config
-        if not query:
-            return GraphRunOutcome(
-                query="",
-                reply="请输入有效问题。",
-                steps=(),
-                tools_used=(),
-                node_path=(),
-            )
-        if not cfg.enabled:
-            return GraphRunOutcome(
-                query=query,
-                reply="StateGraph 已关闭。",
-                steps=(),
-                tools_used=(),
-                node_path=(),
-            )
-
-        state = AgentGraphState(
-            query=query,
-            history=list(history or []),
-        )
-        steps: list[GraphStep] = []
-        final = self._graph.invoke(
-            state,
-            max_iterations=cfg.max_iterations,
-            step_recorder=steps,
-        )
-        node_path = tuple(s.node for s in steps)
-        return GraphRunOutcome(
-            query=query,
-            reply=final.reply or "未得到答案。",
-            steps=tuple(steps),
-            tools_used=tuple(dict.fromkeys(final.tools_used)),
-            node_path=node_path,
-        )
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "query": self.query,
+            "reply": self.reply,
+            "steps": [s.to_dict() for s in self.steps],
+            "tools_used": list(self.tools_used),
+            "intermediate_steps": [
+                {"action": a, "observation": o} for a, o in self.intermediate_steps
+            ],
+        }
 ```
 
 
@@ -742,43 +718,102 @@ def invoke(
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> GraphRunOutcome:
+    ) -> ExecutorRunOutcome:
+        """LangChain 风格入口 — 返回 reply + intermediate_steps"""
+        return self.run(query, history=history)
+
+    def run(
+        self,
+        query: str,
+        *,
+        history: list[dict[str, str]] | None = None,
+    ) -> ExecutorRunOutcome:
         query = (query or "").strip()
-        cfg = self._config
         if not query:
-            return GraphRunOutcome(
+            return ExecutorRunOutcome(
                 query="",
                 reply="请输入有效问题。",
                 steps=(),
                 tools_used=(),
-                node_path=(),
-            )
-        if not cfg.enabled:
-            return GraphRunOutcome(
-                query=query,
-                reply="StateGraph 已关闭。",
-                steps=(),
-                tools_used=(),
-                node_path=(),
+                intermediate_steps=(),
             )
 
-        state = AgentGraphState(
+        cfg = self._config
+        if not cfg.enabled:
+            return ExecutorRunOutcome(
+                query=query,
+                reply="AgentExecutor 已关闭。",
+                steps=(),
+                tools_used=(),
+                intermediate_steps=(),
+            )
+
+        steps: list[ExecutorStep] = []
+        intermediate: list[tuple[str, str]] = []
+        tools_used: list[str] = []
+        last_observation: str | None = None
+        reply = ""
+
+        for step_idx in range(1, cfg.max_iterations + 1):
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+                hist_note = ""
+                if history:
+                    hist_note = f"（结合 {len(history)} 条会话记忆）"
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=f"工具已返回，生成 Final Answer{hist_note}。",
+                        final_answer=reply,
+                    )
+                )
+                break
+
+            thought, action, action_input, final = self._plan_step(
+                query, step_idx, None, history=history
+            )
+            if final:
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=thought,
+                        final_answer=final,
+                    )
+                )
+                reply = final
+                break
+
+            if not action or action not in self._tool_by_name:
+                reply = "AgentExecutor 未能规划有效工具。"
+                break
+
+            observation = self._tool_by_name[action].run(action_input)
+            last_observation = observation
+            intermediate.append((action, observation))
+            if not observation.strip().endswith("失败:"):
+                tools_used.append(action)
+
+            steps.append(
+                ExecutorStep(
+                    step=step_idx,
+                    thought=thought,
+                    action=action,
+                    action_input=dict(action_input or {}),
+                    observation=observation,
+                )
+            )
+        else:
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+            else:
+                reply = "未在迭代上限内得到答案，请换个问法。"
+
+        return ExecutorRunOutcome(
             query=query,
-            history=list(history or []),
-        )
-        steps: list[GraphStep] = []
-        final = self._graph.invoke(
-            state,
-            max_iterations=cfg.max_iterations,
-            step_recorder=steps,
-        )
-        node_path = tuple(s.node for s in steps)
-        return GraphRunOutcome(
-            query=query,
-            reply=final.reply or "未得到答案。",
+            reply=reply,
             steps=tuple(steps),
-            tools_used=tuple(dict.fromkeys(final.tools_used)),
-            node_path=node_path,
+            tools_used=tuple(dict.fromkeys(tools_used)),
+            intermediate_steps=tuple(intermediate),
         )
 ```
 
@@ -796,9 +831,9 @@ def invoke(
 
 ```python
 """
-StateGraph 配置 — 迭代上限与节点 trace 开关
+AgentExecutor 配置 — 迭代上限与中间步骤开关
 
-需求：ZL-NA-REQ-041
+需求：ZL-NA-REQ-040
 """
 
 from __future__ import annotations
@@ -808,13 +843,13 @@ from typing import Any
 
 
 @dataclass
-class GraphConfig:
-    """LangGraph 风格状态图策略"""
+class ExecutorConfig:
+    """框架式 AgentExecutor 策略"""
 
     enabled: bool = True
     max_iterations: int = 3
     use_session_history: bool = True
-    return_node_trace: bool = True
+    return_intermediate_steps: bool = True
     mock_planner: bool = True
 
     def validate(self) -> None:
@@ -826,19 +861,19 @@ class GraphConfig:
             "enabled": self.enabled,
             "max_iterations": self.max_iterations,
             "use_session_history": self.use_session_history,
-            "return_node_trace": self.return_node_trace,
+            "return_intermediate_steps": self.return_intermediate_steps,
             "mock_planner": self.mock_planner,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> GraphConfig:
+    def from_dict(cls, data: dict[str, Any] | None) -> ExecutorConfig:
         if not data:
             return cls()
         return cls(
             enabled=bool(data.get("enabled", True)),
             max_iterations=int(data.get("max_iterations", 3)),
             use_session_history=bool(data.get("use_session_history", True)),
-            return_node_trace=bool(data.get("return_node_trace", True)),
+            return_intermediate_steps=bool(data.get("return_intermediate_steps", True)),
             mock_planner=bool(data.get("mock_planner", True)),
         )
 ```
@@ -851,13 +886,45 @@ class GraphConfig:
 ## 九、_build_rag_service 装配
 
 ```python
-def get_graph_config(self) -> GraphConfig:
+def get_executor_config(self) -> ExecutorConfig:
+        return ExecutorConfig.from_dict(self.executor_config.to_dict())
+
+    def set_executor_config(self, config: ExecutorConfig) -> ExecutorConfig:
+        config.validate()
+        self.executor_config = ExecutorConfig.from_dict(config.to_dict())
+        return self.executor_config
+
+    def get_graph_config(self) -> GraphConfig:
         return GraphConfig.from_dict(self.graph_config.to_dict())
 
     def set_graph_config(self, config: GraphConfig) -> GraphConfig:
         config.validate()
         self.graph_config = GraphConfig.from_dict(config.to_dict())
         return self.graph_config
+
+    def get_approval_config(self) -> ApprovalConfig:
+        return ApprovalConfig.from_dict(self.approval_config.to_dict())
+
+    def set_approval_config(self, config: ApprovalConfig) -> ApprovalConfig:
+        config.validate()
+        self.approval_config = ApprovalConfig.from_dict(config.to_dict())
+        return self.approval_config
+
+    def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
+        return McpConfig.from_dict(self.mcp_config.to_dict())
+
+    def set_mcp_config(self, config: McpConfig) -> McpConfig:
+        config.validate()
+        self.mcp_config = McpConfig.from_dict(config.to_dict())
+        return self.mcp_config
 ```
 
 
@@ -868,7 +935,7 @@ def get_graph_config(self) -> GraphConfig:
 ## 十、测试精读 test_query_router.py
 
 ```python
-"""Day 41 StateGraph 单元测试。"""
+"""Day 40 StructuredTool + AgentExecutor 单元测试。"""
 
 from __future__ import annotations
 
@@ -881,86 +948,92 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from agent.graph_config import GraphConfig
-from agent.graph_state import AgentGraphState
-from agent.rag_agent_graph import RAGAgentGraph
-from agent.state_graph import END, StateGraph
+from agent.agent_executor import AgentExecutor
+from agent.executor_config import ExecutorConfig
+from agent.structured_tool import StructuredTool, tool, tools_to_openai_schema
+from agent.tool_adapter import tools_from_executor
 from api.factory import create_orchestrator
 
 
+@tool(name="add_nums", description="两数相加")
+def add_nums(a: int, b: int) -> str:
+    return str(a + b)
+
+
 @pytest.fixture
-def graph():
+def executor():
     orch = create_orchestrator()
-    return RAGAgentGraph.from_executor(
+    return AgentExecutor.from_executor(
         orch.tool_executor,
-        config=GraphConfig(max_iterations=4),
+        config=ExecutorConfig(max_iterations=4),
     )
 
 
-def test_graph_config_validate():
-    GraphConfig().validate()
+def test_executor_config_validate():
+    ExecutorConfig().validate()
     with pytest.raises(ValueError):
-        GraphConfig(max_iterations=0).validate()
+        ExecutorConfig(max_iterations=0).validate()
 
 
-def test_state_graph_compile_invoke():
-    g = StateGraph()
-    g.add_node("start", lambda s: AgentGraphState(query=s.query, reply="ok", done=True))
-    g.set_entry_point("start")
-    g.add_edge("start", END)
-    compiled = g.compile()
-    out = compiled.invoke(AgentGraphState(query="hi"))
-    assert out.reply == "ok"
-    assert out.done is True
+def test_tool_decorator_and_schema():
+    assert isinstance(add_nums, StructuredTool)
+    assert add_nums.run({"a": 2, "b": 3}) == "5"
+    schema = add_nums.to_openai_tool()
+    assert schema["function"]["name"] == "add_nums"
+    assert schema["function"]["parameters"]["properties"]["a"]["type"] == "integer"
 
 
-def test_graph_faq_lookup(graph):
-    outcome = graph.invoke("客服电话多少")
+def test_tools_from_executor():
+    orch = create_orchestrator()
+    tools = tools_from_executor(orch.tool_executor)
+    names = {t.name for t in tools}
+    assert "faq_lookup" in names
+    assert "rag_search" in names
+    openai = tools_to_openai_schema(tools)
+    assert all(item["type"] == "function" for item in openai)
+
+
+def test_executor_faq_lookup(executor):
+    outcome = executor.invoke("客服电话多少")
     assert "faq_lookup" in outcome.tools_used
     assert outcome.reply
-    assert "planner" in outcome.node_path
+    assert len(outcome.steps) >= 2
+    assert outcome.intermediate_steps
 
 
-def test_graph_rag_search(graph):
-    outcome = graph.invoke("年化收益怎么样")
+def test_executor_rag_search(executor):
+    outcome = executor.invoke("年化收益怎么样")
     assert "rag_search" in outcome.tools_used
     assert outcome.reply
 
 
-def test_graph_respects_max_iterations():
+def test_executor_respects_max_iterations():
     orch = create_orchestrator()
-    agent = RAGAgentGraph.from_executor(
+    agent = AgentExecutor.from_executor(
         orch.tool_executor,
-        config=GraphConfig(max_iterations=1),
+        config=ExecutorConfig(max_iterations=1),
     )
     outcome = agent.invoke("年化收益怎么样")
-    assert len(outcome.steps) >= 1
+    assert len([s for s in outcome.steps if s.action]) <= 1
 
 
-def test_graph_uses_history(graph):
+def test_executor_uses_history(executor):
     history = [{"role": "user", "content": "之前问过理财产品"}]
-    outcome = graph.invoke("再查一下年化收益", history=history)
+    outcome = executor.invoke("再查一下年化收益", history=history)
     assert outcome.reply
-    assert any("planner" in s.node for s in outcome.steps)
+    assert any("会话记忆" in (s.thought or "") for s in outcome.steps)
 
 
-def test_graph_config_persists_in_store(tmp_path):
+def test_executor_config_persists_in_store(tmp_path):
     from rag.knowledge_store import KnowledgeStore
 
     path = tmp_path / "store.json"
     store = KnowledgeStore.bootstrap_from_sample_docs(store_path=path)
-    store.set_graph_config(GraphConfig(max_iterations=5, mock_planner=True))
+    store.set_executor_config(ExecutorConfig(max_iterations=5, mock_planner=True))
     store.save(path)
     loaded = KnowledgeStore.load(path)
-    cfg = loaded.get_graph_config()
+    cfg = loaded.get_executor_config()
     assert cfg.max_iterations == 5
-
-
-def test_graph_state_roundtrip():
-    state = AgentGraphState(query="q", tools_used=["faq_lookup"])
-    restored = AgentGraphState.from_dict(state.to_dict())
-    assert restored.query == "q"
-    assert restored.tools_used == ["faq_lookup"]
 ```
 
 
@@ -978,7 +1051,7 @@ def test_graph_state_roundtrip():
 ## 十一、API 测试 test_route_api.py
 
 ```python
-"""Day 41 StateGraph API 测试。"""
+"""Day 40 AgentExecutor API 测试。"""
 
 from __future__ import annotations
 
@@ -1010,23 +1083,23 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.41.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
-def test_get_graph_config_default(client):
-    data = client.get("/api/agent/graph-config").json()
+def test_get_executor_config_default(client):
+    data = client.get("/api/agent/executor-config").json()
     assert data["enabled"] is True
     assert data["max_iterations"] == 3
 
 
-def test_put_graph_config(client):
+def test_put_executor_config(client):
     resp = client.put(
-        "/api/agent/graph-config",
+        "/api/agent/executor-config",
         json={
             "enabled": True,
             "max_iterations": 4,
             "use_session_history": True,
-            "return_node_trace": True,
+            "return_intermediate_steps": True,
             "mock_planner": True,
         },
     )
@@ -1034,20 +1107,21 @@ def test_put_graph_config(client):
     assert resp.json()["max_iterations"] == 4
 
 
-def test_graph_preview_faq(client):
+def test_executor_preview_faq(client):
     resp = client.post(
-        "/api/agent/graph-preview",
+        "/api/agent/executor-preview",
         json={"query": "客服热线是多少"},
     )
     assert resp.status_code == 200
     data = resp.json()
     assert "faq_lookup" in data["tools_used"]
-    assert "planner" in data["node_path"]
+    assert len(data["steps"]) >= 2
+    assert data["intermediate_steps"]
 
 
-def test_graph_preview_with_history(client):
+def test_executor_preview_with_history(client):
     resp = client.post(
-        "/api/agent/graph-preview",
+        "/api/agent/executor-preview",
         json={
             "query": "年化收益",
             "history": ["理财产品风险大吗"],
@@ -1057,40 +1131,40 @@ def test_graph_preview_with_history(client):
     assert resp.json()["reply"]
 
 
-def test_status_includes_graph_config(client):
+def test_status_includes_executor_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.41.0"
-    assert status["graph_config"]["enabled"] is True
+    assert status["platform_version"] == "0.44.0"
+    assert status["executor_config"]["enabled"] is True
 
 
-def test_chat_graph_mode_trace(client):
+def test_chat_executor_mode_trace(client):
     resp = client.post(
         "/api/chat",
-        json={"message": "客服电话多少", "graph_mode": True},
+        json={"message": "客服电话多少", "executor_mode": True},
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("graph_trace")
+    assert body.get("executor_trace")
     assert body.get("tools_used")
-    assert body["kind"] == "graph"
+    assert body["kind"] == "executor"
 
 
-def test_chat_graph_mode_off_unchanged(client):
+def test_chat_executor_mode_off_unchanged(client):
     resp = client.post("/api/chat", json={"message": "投资有风险吗"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("graph_trace") is None
+    assert body.get("executor_trace") is None
     assert body["kind"] == "faq"
 
 
-def test_invalid_graph_max_iterations_422(client):
+def test_invalid_executor_max_iterations_422(client):
     resp = client.put(
-        "/api/agent/graph-config",
+        "/api/agent/executor-config",
         json={
             "enabled": True,
             "max_iterations": 99,
             "use_session_history": True,
-            "return_node_trace": True,
+            "return_intermediate_steps": True,
             "mock_planner": True,
         },
     )
@@ -1098,7 +1172,7 @@ def test_invalid_graph_max_iterations_422(client):
 ```
 
 
-`test_health_version` 锁版本 `v0.41.0`；`test_chat_includes_citations` 端到端。
+`test_health_version` 锁版本 `v0.40.0`；`test_chat_includes_citations` 端到端。
 
 ---
 
@@ -1138,13 +1212,45 @@ HybridRetriever 仍是 inner；关 rewrite 即回 Day33 行为。retrieval_confi
 ## 十六、knowledge_store rewrite 方法
 
 ```python
-def get_graph_config(self) -> GraphConfig:
+def get_executor_config(self) -> ExecutorConfig:
+        return ExecutorConfig.from_dict(self.executor_config.to_dict())
+
+    def set_executor_config(self, config: ExecutorConfig) -> ExecutorConfig:
+        config.validate()
+        self.executor_config = ExecutorConfig.from_dict(config.to_dict())
+        return self.executor_config
+
+    def get_graph_config(self) -> GraphConfig:
         return GraphConfig.from_dict(self.graph_config.to_dict())
 
     def set_graph_config(self, config: GraphConfig) -> GraphConfig:
         config.validate()
         self.graph_config = GraphConfig.from_dict(config.to_dict())
         return self.graph_config
+
+    def get_approval_config(self) -> ApprovalConfig:
+        return ApprovalConfig.from_dict(self.approval_config.to_dict())
+
+    def set_approval_config(self, config: ApprovalConfig) -> ApprovalConfig:
+        config.validate()
+        self.approval_config = ApprovalConfig.from_dict(config.to_dict())
+        return self.approval_config
+
+    def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
+        return McpConfig.from_dict(self.mcp_config.to_dict())
+
+    def set_mcp_config(self, config: McpConfig) -> McpConfig:
+        config.validate()
+        self.mcp_config = McpConfig.from_dict(config.to_dict())
+        return self.mcp_config
 ```
 
 
@@ -1177,233 +1283,281 @@ def get_graph_config(self) -> GraphConfig:
 
 ## 二十、结课陈述
 
-读罢 22 精读，你应能**逐行**解释 `RuleBasedQueryRouter.route` 与 `RoutingRetriever.search`，并映射到 ZL-NA-REQ-041 的 FR-001–FR-003。
+读罢 22 精读，你应能**逐行**解释 `RuleBasedQueryRouter.route` 与 `RoutingRetriever.search`，并映射到 ZL-NA-REQ-040 的 FR-001–FR-003。
 
 ---
 
-## 二十一、rag_agent_graph 完整源码（重复嵌入便于打印）
+## 二十一、agent_executor 完整源码（重复嵌入便于打印）
 
 ```python
 """
-RAG Agent StateGraph — planner → tool → answer 三节点编排
+AgentExecutor — LangChain 风格 invoke 循环，trace 与 Day 39 ReAct 对齐
 
-复用 Day 40 StructuredTool，将 RAGAgentGraph 线性循环升级为显式状态图。
+复用 StructuredTool + mock planner，保证教学环境可测。
 
-需求：ZL-NA-REQ-041
+需求：ZL-NA-REQ-040
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
-from agent.graph_config import GraphConfig
-from agent.graph_state import AgentGraphState
-from agent.state_graph import END, CompiledStateGraph, GraphRunOutcome, GraphStep, StateGraph
+from agent.executor_config import ExecutorConfig
 from agent.structured_tool import StructuredTool
 from agent.tool_adapter import tool_map, tools_from_executor
 from tools.executor import ToolExecutor
 
 
-class RAGAgentGraph:
-    """Nexus RAG Agent 预置状态图"""
+@dataclass(frozen=True)
+class ExecutorStep:
+    """与 ReAct ReactStep 字段对齐，便于 executor_trace / executor_trace 互通"""
+
+    step: int
+    thought: str
+    action: str | None = None
+    action_input: dict[str, Any] = field(default_factory=dict)
+    observation: str | None = None
+    final_answer: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "step": self.step,
+            "thought": self.thought,
+            "action": self.action,
+            "action_input": dict(self.action_input),
+            "observation": self.observation,
+            "final_answer": self.final_answer,
+        }
+
+
+@dataclass(frozen=True)
+class ExecutorRunOutcome:
+    query: str
+    reply: str
+    steps: tuple[ExecutorStep, ...]
+    tools_used: tuple[str, ...]
+    intermediate_steps: tuple[tuple[str, str], ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "query": self.query,
+            "reply": self.reply,
+            "steps": [s.to_dict() for s in self.steps],
+            "tools_used": list(self.tools_used),
+            "intermediate_steps": [
+                {"action": a, "observation": o} for a, o in self.intermediate_steps
+            ],
+        }
+
+
+class AgentExecutor:
+    """框架式 Agent — tools + invoke，内部 mock planner 与 ReAct 规则一致"""
 
     def __init__(
         self,
         tools: list[StructuredTool],
         *,
-        config: GraphConfig | None = None,
+        config: ExecutorConfig | None = None,
     ) -> None:
         self._tools = tools
         self._tool_by_name = tool_map(tools)
         self._tool_names = set(self._tool_by_name)
-        self._config = config or GraphConfig()
-        self._graph = self._build_graph().compile()
+        self._config = config or ExecutorConfig()
 
     @classmethod
     def from_executor(
         cls,
         executor: ToolExecutor,
         *,
-        config: GraphConfig | None = None,
-    ) -> RAGAgentGraph:
+        config: ExecutorConfig | None = None,
+    ) -> AgentExecutor:
         return cls(tools_from_executor(executor), config=config)
 
     @property
-    def config(self) -> GraphConfig:
+    def config(self) -> ExecutorConfig:
         return self._config
 
     @property
-    def compiled(self) -> CompiledStateGraph:
-        return self._graph
+    def tools(self) -> list[StructuredTool]:
+        return list(self._tools)
 
     def invoke(
         self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> GraphRunOutcome:
+    ) -> ExecutorRunOutcome:
+        """LangChain 风格入口 — 返回 reply + intermediate_steps"""
+        return self.run(query, history=history)
+
+    def run(
+        self,
+        query: str,
+        *,
+        history: list[dict[str, str]] | None = None,
+    ) -> ExecutorRunOutcome:
         query = (query or "").strip()
-        cfg = self._config
         if not query:
-            return GraphRunOutcome(
+            return ExecutorRunOutcome(
                 query="",
                 reply="请输入有效问题。",
                 steps=(),
                 tools_used=(),
-                node_path=(),
+                intermediate_steps=(),
             )
+
+        cfg = self._config
         if not cfg.enabled:
-            return GraphRunOutcome(
+            return ExecutorRunOutcome(
                 query=query,
-                reply="StateGraph 已关闭。",
+                reply="AgentExecutor 已关闭。",
                 steps=(),
                 tools_used=(),
-                node_path=(),
+                intermediate_steps=(),
             )
 
-        state = AgentGraphState(
-            query=query,
-            history=list(history or []),
-        )
-        steps: list[GraphStep] = []
-        final = self._graph.invoke(
-            state,
-            max_iterations=cfg.max_iterations,
-            step_recorder=steps,
-        )
-        node_path = tuple(s.node for s in steps)
-        return GraphRunOutcome(
-            query=query,
-            reply=final.reply or "未得到答案。",
-            steps=tuple(steps),
-            tools_used=tuple(dict.fromkeys(final.tools_used)),
-            node_path=node_path,
-        )
+        steps: list[ExecutorStep] = []
+        intermediate: list[tuple[str, str]] = []
+        tools_used: list[str] = []
+        last_observation: str | None = None
+        reply = ""
 
-    def _build_graph(self) -> StateGraph:
-        g = StateGraph()
-        g.add_node("planner", self._node_planner)
-        g.add_node("tool_runner", self._node_tool_runner)
-        g.add_node("answer", self._node_answer)
-        g.set_entry_point("planner")
-        g.add_conditional_edges(
-            "planner",
-            self._route_after_planner,
-            {"tool": "tool_runner", "answer": "answer"},
-        )
-        g.add_conditional_edges(
-            "tool_runner",
-            self._route_after_tool,
-            {"planner": "planner", "answer": "answer"},
-        )
-        g.add_edge("answer", END)
-        return g
+        for step_idx in range(1, cfg.max_iterations + 1):
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+                hist_note = ""
+                if history:
+                    hist_note = f"（结合 {len(history)} 条会话记忆）"
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=f"工具已返回，生成 Final Answer{hist_note}。",
+                        final_answer=reply,
+                    )
+                )
+                break
 
-    def _node_planner(self, state: AgentGraphState) -> AgentGraphState:
-        state.iteration += 1
-        thought, action, action_input, final = self._mock_plan(state)
-        if final:
-            state.reply = final
-            state.done = True
-            state.pending_action = None
-            state.pending_input = {}
-            return state
-        state.pending_action = action
-        state.pending_input = dict(action_input or {})
-        return state
+            thought, action, action_input, final = self._plan_step(
+                query, step_idx, None, history=history
+            )
+            if final:
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=thought,
+                        final_answer=final,
+                    )
+                )
+                reply = final
+                break
 
-    def _node_tool_runner(self, state: AgentGraphState) -> AgentGraphState:
-        action = state.pending_action
-        if not action or action not in self._tool_by_name:
-            state.reply = "状态图未能执行有效工具。"
-            state.done = True
-            return state
-        observation = self._tool_by_name[action].run(state.pending_input)
-        state.last_observation = observation
-        if not observation.strip().endswith("失败:"):
-            state.tools_used.append(action)
-        state.pending_action = None
-        state.pending_input = {}
-        return state
+            if not action or action not in self._tool_by_name:
+                reply = "AgentExecutor 未能规划有效工具。"
+                break
 
-    def _node_answer(self, state: AgentGraphState) -> AgentGraphState:
-        if state.reply:
-            state.done = True
-            return state
-        if state.last_observation:
-            state.reply = self._observation_to_answer(state.last_observation, state.query)
+            observation = self._tool_by_name[action].run(action_input)
+            last_observation = observation
+            intermediate.append((action, observation))
+            if not observation.strip().endswith("失败:"):
+                tools_used.append(action)
+
+            steps.append(
+                ExecutorStep(
+                    step=step_idx,
+                    thought=thought,
+                    action=action,
+                    action_input=dict(action_input or {}),
+                    observation=observation,
+                )
+            )
         else:
-            state.reply = "未在迭代上限内得到答案，请换个问法。"
-        state.done = True
-        return state
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+            else:
+                reply = "未在迭代上限内得到答案，请换个问法。"
 
-    def _route_after_planner(self, state: AgentGraphState) -> str:
-        if state.done:
-            return "answer"
-        return "tool"
+        return ExecutorRunOutcome(
+            query=query,
+            reply=reply,
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(tools_used)),
+            intermediate_steps=tuple(intermediate),
+        )
 
-    def _route_after_tool(self, state: AgentGraphState) -> str:
-        if state.iteration >= self._config.max_iterations:
-            return "answer"
-        if state.last_observation:
-            return "answer"
-        return "planner"
+    def _plan_step(
+        self,
+        query: str,
+        step: int,
+        observation: str | None,
+        *,
+        history: list[dict[str, str]] | None,
+    ) -> tuple[str, str | None, dict[str, Any], str | None]:
+        return self._mock_plan(query, step, observation, history=history)
 
     def _mock_plan(
-        self, state: AgentGraphState
+        self,
+        query: str,
+        step: int,
+        observation: str | None,
+        *,
+        history: list[dict[str, str]] | None,
     ) -> tuple[str, str | None, dict[str, Any], str | None]:
-        if state.last_observation:
-            answer = self._observation_to_answer(state.last_observation, state.query)
+        if observation:
+            answer = self._observation_to_answer(observation, query)
             hist_note = ""
-            if state.history:
-                hist_note = f"（结合 {len(state.history)} 条会话记忆）"
+            if history:
+                hist_note = f"（结合 {len(history)} 条会话记忆）"
             return (
-                f"图节点 planner：整理 Final Answer{hist_note}。",
+                f"StructuredTool 已返回，整理 Final Answer{hist_note}。",
                 None,
                 {},
                 answer,
             )
 
-        query = state.query
         q = query.lower()
         hist_ctx = ""
-        if state.history:
-            last_user = [h["content"] for h in state.history if h.get("role") == "user"]
+        if history:
+            last_user = [h["content"] for h in history if h.get("role") == "user"]
             if last_user:
                 hist_ctx = f" 上文：{last_user[-1][:40]}"
 
-        if "intent_classify" in self._tool_names and state.iteration == 1 and "总结" in q:
+        if "intent_classify" in self._tool_names and step == 1 and "总结" in q:
             return (
-                f"planner 节点路由 intent_classify。{hist_ctx}",
+                f"Executor 选择 intent_classify StructuredTool。{hist_ctx}",
                 "intent_classify",
                 {"text": query},
                 None,
             )
+
         if "faq_lookup" in self._tool_names and re.search(
             r"电话|客服|400|热线|联系", q
         ):
             return (
-                f"planner 节点路由 faq_lookup。{hist_ctx}",
+                f"Executor 选择 faq_lookup StructuredTool。{hist_ctx}",
                 "faq_lookup",
                 {"query": query},
                 None,
             )
+
         if "rag_search" in self._tool_names:
             return (
-                f"planner 节点路由 rag_search。{hist_ctx}",
+                f"Executor 选择 rag_search StructuredTool。{hist_ctx}",
                 "rag_search",
                 {"query": query, "top_k": 3},
                 None,
             )
+
         if "faq_lookup" in self._tool_names:
             return (
-                f"planner 回退 faq_lookup。{hist_ctx}",
+                f"Executor 回退 faq_lookup。{hist_ctx}",
                 "faq_lookup",
                 {"query": query},
                 None,
             )
-        return ("planner：无可用工具。", None, {}, "暂无法处理该问题。")
+
+        return ("无可用 StructuredTool。", None, {}, "暂无法处理该问题。")
 
     @staticmethod
     def _observation_to_answer(observation: str, query: str) -> str:
@@ -1676,7 +1830,7 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 17. 能解释 MODEL_MOCK  
 18. 能解释 max_citations 上限 10  
 19. 能解释 platform_version  
-20. 能复述 ZL-NA-REQ-041 目标  
+20. 能复述 ZL-NA-REQ-040 目标  
 
 ---
 
@@ -1689,7 +1843,7 @@ def update_citation_config(body: CitationConfigRequest) -> CitationConfigRespons
 ## 三十、完整测试文件（API）
 
 ```python
-"""Day 41 StateGraph API 测试。"""
+"""Day 40 AgentExecutor API 测试。"""
 
 from __future__ import annotations
 
@@ -1721,23 +1875,23 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.41.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
-def test_get_graph_config_default(client):
-    data = client.get("/api/agent/graph-config").json()
+def test_get_executor_config_default(client):
+    data = client.get("/api/agent/executor-config").json()
     assert data["enabled"] is True
     assert data["max_iterations"] == 3
 
 
-def test_put_graph_config(client):
+def test_put_executor_config(client):
     resp = client.put(
-        "/api/agent/graph-config",
+        "/api/agent/executor-config",
         json={
             "enabled": True,
             "max_iterations": 4,
             "use_session_history": True,
-            "return_node_trace": True,
+            "return_intermediate_steps": True,
             "mock_planner": True,
         },
     )
@@ -1745,20 +1899,21 @@ def test_put_graph_config(client):
     assert resp.json()["max_iterations"] == 4
 
 
-def test_graph_preview_faq(client):
+def test_executor_preview_faq(client):
     resp = client.post(
-        "/api/agent/graph-preview",
+        "/api/agent/executor-preview",
         json={"query": "客服热线是多少"},
     )
     assert resp.status_code == 200
     data = resp.json()
     assert "faq_lookup" in data["tools_used"]
-    assert "planner" in data["node_path"]
+    assert len(data["steps"]) >= 2
+    assert data["intermediate_steps"]
 
 
-def test_graph_preview_with_history(client):
+def test_executor_preview_with_history(client):
     resp = client.post(
-        "/api/agent/graph-preview",
+        "/api/agent/executor-preview",
         json={
             "query": "年化收益",
             "history": ["理财产品风险大吗"],
@@ -1768,40 +1923,40 @@ def test_graph_preview_with_history(client):
     assert resp.json()["reply"]
 
 
-def test_status_includes_graph_config(client):
+def test_status_includes_executor_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.41.0"
-    assert status["graph_config"]["enabled"] is True
+    assert status["platform_version"] == "0.44.0"
+    assert status["executor_config"]["enabled"] is True
 
 
-def test_chat_graph_mode_trace(client):
+def test_chat_executor_mode_trace(client):
     resp = client.post(
         "/api/chat",
-        json={"message": "客服电话多少", "graph_mode": True},
+        json={"message": "客服电话多少", "executor_mode": True},
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("graph_trace")
+    assert body.get("executor_trace")
     assert body.get("tools_used")
-    assert body["kind"] == "graph"
+    assert body["kind"] == "executor"
 
 
-def test_chat_graph_mode_off_unchanged(client):
+def test_chat_executor_mode_off_unchanged(client):
     resp = client.post("/api/chat", json={"message": "投资有风险吗"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("graph_trace") is None
+    assert body.get("executor_trace") is None
     assert body["kind"] == "faq"
 
 
-def test_invalid_graph_max_iterations_422(client):
+def test_invalid_executor_max_iterations_422(client):
     resp = client.put(
-        "/api/agent/graph-config",
+        "/api/agent/executor-config",
         json={
             "enabled": True,
             "max_iterations": 99,
             "use_session_history": True,
-            "return_node_trace": True,
+            "return_intermediate_steps": True,
             "mock_planner": True,
         },
     )
@@ -1813,7 +1968,7 @@ def test_invalid_graph_max_iterations_422(client):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 context，找 search。先看 enabled：关了就 hybrid。开则 pool=max(20,top_k)。inner 召回，citation_builder 逐对 rewrite，截断 top_k。这就是 ZL-NA-REQ-032 的读取路径。」
+「打开 agent_executor，看主循环。先看 enabled 分支；开则用 StructuredTool 调工具，intermediate_steps 记录每一步，截断 max_iterations。这就是 ZL-NA-REQ-040 的执行路径。」
 
 ---
 
@@ -2075,9 +2230,9 @@ def _find_last_route(retriever: Retriever) -> RouteResult | None:
 
 ```python
 """
-StateGraph RAG Agent 演示
+AgentExecutor + StructuredTool 演示
 
-运行：PYTHONPATH=src python3 src/day41/graph_demo.py
+运行：PYTHONPATH=src python3 src/day40/executor_demo.py
 """
 
 from __future__ import annotations
@@ -2089,40 +2244,51 @@ _SRC = Path(__file__).resolve().parent.parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from agent.graph_config import GraphConfig
-from agent.rag_agent_graph import RAGAgentGraph
-from agent.state_graph import StateGraph
+from agent.agent_executor import AgentExecutor
+from agent.executor_config import ExecutorConfig
+from agent.structured_tool import StructuredTool, tool, tools_to_openai_schema
 from api.factory import create_orchestrator
-from day41.constants import GRAPH_CASES
+from day40.constants import EXECUTOR_CASES
+
+
+@tool(name="echo_ping", description="回显测试输入")
+def echo_ping(text: str) -> str:
+    return f"echo: {text}"
 
 
 def main() -> int:
     print("=" * 60)
-    print("  Day 41 StateGraph RAG Agent 演示")
+    print("  Day 40 AgentExecutor + StructuredTool 演示")
     print("=" * 60)
 
     orchestrator = create_orchestrator()
-    graph = RAGAgentGraph.from_executor(
+    executor = AgentExecutor.from_executor(
         orchestrator.tool_executor,
-        config=GraphConfig(enabled=True, max_iterations=3),
+        config=ExecutorConfig(enabled=True, max_iterations=3),
     )
 
-    print(f"\n  编译图节点: planner → tool_runner → answer")
-    print(f"  StateGraph API: add_node / add_edge / add_conditional_edges / compile")
+    print(f"\n  已注册 StructuredTool: {len(executor.tools)} 个")
+    schemas = tools_to_openai_schema(executor.tools[:3])
+    print(f"  OpenAI schema 样例: {schemas[0]['function']['name']}")
 
-    for item in GRAPH_CASES:
+    demo_tool = echo_ping
+    assert isinstance(demo_tool, StructuredTool)
+    print(f"  @tool 装饰器: {demo_tool.run({'text': 'hello'})}")
+
+    for item in EXECUTOR_CASES:
         q = item["query"]
-        outcome = graph.invoke(q)
+        outcome = executor.invoke(q)
         tool = outcome.tools_used[0] if outcome.tools_used else "none"
         flag = "✅" if tool == item["expect_tool"] else "⚠️"
         print(f"\n  Q: {q}")
-        print(f"    node_path={list(outcome.node_path)} tools={list(outcome.tools_used)} {flag}")
+        print(f"    tools={list(outcome.tools_used)} steps={len(outcome.steps)} {flag}")
         print(f"    reply: {outcome.reply[:80]}...")
         for step in outcome.steps:
-            if step.node:
-                print(f"      step{step.step} [{step.node}]: {step.thought[:50]}...")
+            if step.action:
+                obs = (step.observation or "")[:60]
+                print(f"      step{step.step}: {step.action} → {obs}...")
 
-    print("\n  ✅ StateGraph 演示完成")
+    print("\n  ✅ AgentExecutor 演示完成")
     print("=" * 60)
     return 0
 
@@ -2171,229 +2337,277 @@ ColBERT late interaction 介于 bi 与 cross；本课不展开。
 
 ---
 
-## 四十、rag_agent_graph 全文嵌入
+## 四十、agent_executor 全文嵌入
 
 ```python
 """
-RAG Agent StateGraph — planner → tool → answer 三节点编排
+AgentExecutor — LangChain 风格 invoke 循环，trace 与 Day 39 ReAct 对齐
 
-复用 Day 40 StructuredTool，将 RAGAgentGraph 线性循环升级为显式状态图。
+复用 StructuredTool + mock planner，保证教学环境可测。
 
-需求：ZL-NA-REQ-041
+需求：ZL-NA-REQ-040
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
-from agent.graph_config import GraphConfig
-from agent.graph_state import AgentGraphState
-from agent.state_graph import END, CompiledStateGraph, GraphRunOutcome, GraphStep, StateGraph
+from agent.executor_config import ExecutorConfig
 from agent.structured_tool import StructuredTool
 from agent.tool_adapter import tool_map, tools_from_executor
 from tools.executor import ToolExecutor
 
 
-class RAGAgentGraph:
-    """Nexus RAG Agent 预置状态图"""
+@dataclass(frozen=True)
+class ExecutorStep:
+    """与 ReAct ReactStep 字段对齐，便于 executor_trace / executor_trace 互通"""
+
+    step: int
+    thought: str
+    action: str | None = None
+    action_input: dict[str, Any] = field(default_factory=dict)
+    observation: str | None = None
+    final_answer: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "step": self.step,
+            "thought": self.thought,
+            "action": self.action,
+            "action_input": dict(self.action_input),
+            "observation": self.observation,
+            "final_answer": self.final_answer,
+        }
+
+
+@dataclass(frozen=True)
+class ExecutorRunOutcome:
+    query: str
+    reply: str
+    steps: tuple[ExecutorStep, ...]
+    tools_used: tuple[str, ...]
+    intermediate_steps: tuple[tuple[str, str], ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "query": self.query,
+            "reply": self.reply,
+            "steps": [s.to_dict() for s in self.steps],
+            "tools_used": list(self.tools_used),
+            "intermediate_steps": [
+                {"action": a, "observation": o} for a, o in self.intermediate_steps
+            ],
+        }
+
+
+class AgentExecutor:
+    """框架式 Agent — tools + invoke，内部 mock planner 与 ReAct 规则一致"""
 
     def __init__(
         self,
         tools: list[StructuredTool],
         *,
-        config: GraphConfig | None = None,
+        config: ExecutorConfig | None = None,
     ) -> None:
         self._tools = tools
         self._tool_by_name = tool_map(tools)
         self._tool_names = set(self._tool_by_name)
-        self._config = config or GraphConfig()
-        self._graph = self._build_graph().compile()
+        self._config = config or ExecutorConfig()
 
     @classmethod
     def from_executor(
         cls,
         executor: ToolExecutor,
         *,
-        config: GraphConfig | None = None,
-    ) -> RAGAgentGraph:
+        config: ExecutorConfig | None = None,
+    ) -> AgentExecutor:
         return cls(tools_from_executor(executor), config=config)
 
     @property
-    def config(self) -> GraphConfig:
+    def config(self) -> ExecutorConfig:
         return self._config
 
     @property
-    def compiled(self) -> CompiledStateGraph:
-        return self._graph
+    def tools(self) -> list[StructuredTool]:
+        return list(self._tools)
 
     def invoke(
         self,
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> GraphRunOutcome:
+    ) -> ExecutorRunOutcome:
+        """LangChain 风格入口 — 返回 reply + intermediate_steps"""
+        return self.run(query, history=history)
+
+    def run(
+        self,
+        query: str,
+        *,
+        history: list[dict[str, str]] | None = None,
+    ) -> ExecutorRunOutcome:
         query = (query or "").strip()
-        cfg = self._config
         if not query:
-            return GraphRunOutcome(
+            return ExecutorRunOutcome(
                 query="",
                 reply="请输入有效问题。",
                 steps=(),
                 tools_used=(),
-                node_path=(),
+                intermediate_steps=(),
             )
+
+        cfg = self._config
         if not cfg.enabled:
-            return GraphRunOutcome(
+            return ExecutorRunOutcome(
                 query=query,
-                reply="StateGraph 已关闭。",
+                reply="AgentExecutor 已关闭。",
                 steps=(),
                 tools_used=(),
-                node_path=(),
+                intermediate_steps=(),
             )
 
-        state = AgentGraphState(
-            query=query,
-            history=list(history or []),
-        )
-        steps: list[GraphStep] = []
-        final = self._graph.invoke(
-            state,
-            max_iterations=cfg.max_iterations,
-            step_recorder=steps,
-        )
-        node_path = tuple(s.node for s in steps)
-        return GraphRunOutcome(
-            query=query,
-            reply=final.reply or "未得到答案。",
-            steps=tuple(steps),
-            tools_used=tuple(dict.fromkeys(final.tools_used)),
-            node_path=node_path,
-        )
+        steps: list[ExecutorStep] = []
+        intermediate: list[tuple[str, str]] = []
+        tools_used: list[str] = []
+        last_observation: str | None = None
+        reply = ""
 
-    def _build_graph(self) -> StateGraph:
-        g = StateGraph()
-        g.add_node("planner", self._node_planner)
-        g.add_node("tool_runner", self._node_tool_runner)
-        g.add_node("answer", self._node_answer)
-        g.set_entry_point("planner")
-        g.add_conditional_edges(
-            "planner",
-            self._route_after_planner,
-            {"tool": "tool_runner", "answer": "answer"},
-        )
-        g.add_conditional_edges(
-            "tool_runner",
-            self._route_after_tool,
-            {"planner": "planner", "answer": "answer"},
-        )
-        g.add_edge("answer", END)
-        return g
+        for step_idx in range(1, cfg.max_iterations + 1):
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+                hist_note = ""
+                if history:
+                    hist_note = f"（结合 {len(history)} 条会话记忆）"
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=f"工具已返回，生成 Final Answer{hist_note}。",
+                        final_answer=reply,
+                    )
+                )
+                break
 
-    def _node_planner(self, state: AgentGraphState) -> AgentGraphState:
-        state.iteration += 1
-        thought, action, action_input, final = self._mock_plan(state)
-        if final:
-            state.reply = final
-            state.done = True
-            state.pending_action = None
-            state.pending_input = {}
-            return state
-        state.pending_action = action
-        state.pending_input = dict(action_input or {})
-        return state
+            thought, action, action_input, final = self._plan_step(
+                query, step_idx, None, history=history
+            )
+            if final:
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=thought,
+                        final_answer=final,
+                    )
+                )
+                reply = final
+                break
 
-    def _node_tool_runner(self, state: AgentGraphState) -> AgentGraphState:
-        action = state.pending_action
-        if not action or action not in self._tool_by_name:
-            state.reply = "状态图未能执行有效工具。"
-            state.done = True
-            return state
-        observation = self._tool_by_name[action].run(state.pending_input)
-        state.last_observation = observation
-        if not observation.strip().endswith("失败:"):
-            state.tools_used.append(action)
-        state.pending_action = None
-        state.pending_input = {}
-        return state
+            if not action or action not in self._tool_by_name:
+                reply = "AgentExecutor 未能规划有效工具。"
+                break
 
-    def _node_answer(self, state: AgentGraphState) -> AgentGraphState:
-        if state.reply:
-            state.done = True
-            return state
-        if state.last_observation:
-            state.reply = self._observation_to_answer(state.last_observation, state.query)
+            observation = self._tool_by_name[action].run(action_input)
+            last_observation = observation
+            intermediate.append((action, observation))
+            if not observation.strip().endswith("失败:"):
+                tools_used.append(action)
+
+            steps.append(
+                ExecutorStep(
+                    step=step_idx,
+                    thought=thought,
+                    action=action,
+                    action_input=dict(action_input or {}),
+                    observation=observation,
+                )
+            )
         else:
-            state.reply = "未在迭代上限内得到答案，请换个问法。"
-        state.done = True
-        return state
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+            else:
+                reply = "未在迭代上限内得到答案，请换个问法。"
 
-    def _route_after_planner(self, state: AgentGraphState) -> str:
-        if state.done:
-            return "answer"
-        return "tool"
+        return ExecutorRunOutcome(
+            query=query,
+            reply=reply,
+            steps=tuple(steps),
+            tools_used=tuple(dict.fromkeys(tools_used)),
+            intermediate_steps=tuple(intermediate),
+        )
 
-    def _route_after_tool(self, state: AgentGraphState) -> str:
-        if state.iteration >= self._config.max_iterations:
-            return "answer"
-        if state.last_observation:
-            return "answer"
-        return "planner"
+    def _plan_step(
+        self,
+        query: str,
+        step: int,
+        observation: str | None,
+        *,
+        history: list[dict[str, str]] | None,
+    ) -> tuple[str, str | None, dict[str, Any], str | None]:
+        return self._mock_plan(query, step, observation, history=history)
 
     def _mock_plan(
-        self, state: AgentGraphState
+        self,
+        query: str,
+        step: int,
+        observation: str | None,
+        *,
+        history: list[dict[str, str]] | None,
     ) -> tuple[str, str | None, dict[str, Any], str | None]:
-        if state.last_observation:
-            answer = self._observation_to_answer(state.last_observation, state.query)
+        if observation:
+            answer = self._observation_to_answer(observation, query)
             hist_note = ""
-            if state.history:
-                hist_note = f"（结合 {len(state.history)} 条会话记忆）"
+            if history:
+                hist_note = f"（结合 {len(history)} 条会话记忆）"
             return (
-                f"图节点 planner：整理 Final Answer{hist_note}。",
+                f"StructuredTool 已返回，整理 Final Answer{hist_note}。",
                 None,
                 {},
                 answer,
             )
 
-        query = state.query
         q = query.lower()
         hist_ctx = ""
-        if state.history:
-            last_user = [h["content"] for h in state.history if h.get("role") == "user"]
+        if history:
+            last_user = [h["content"] for h in history if h.get("role") == "user"]
             if last_user:
                 hist_ctx = f" 上文：{last_user[-1][:40]}"
 
-        if "intent_classify" in self._tool_names and state.iteration == 1 and "总结" in q:
+        if "intent_classify" in self._tool_names and step == 1 and "总结" in q:
             return (
-                f"planner 节点路由 intent_classify。{hist_ctx}",
+                f"Executor 选择 intent_classify StructuredTool。{hist_ctx}",
                 "intent_classify",
                 {"text": query},
                 None,
             )
+
         if "faq_lookup" in self._tool_names and re.search(
             r"电话|客服|400|热线|联系", q
         ):
             return (
-                f"planner 节点路由 faq_lookup。{hist_ctx}",
+                f"Executor 选择 faq_lookup StructuredTool。{hist_ctx}",
                 "faq_lookup",
                 {"query": query},
                 None,
             )
+
         if "rag_search" in self._tool_names:
             return (
-                f"planner 节点路由 rag_search。{hist_ctx}",
+                f"Executor 选择 rag_search StructuredTool。{hist_ctx}",
                 "rag_search",
                 {"query": query, "top_k": 3},
                 None,
             )
+
         if "faq_lookup" in self._tool_names:
             return (
-                f"planner 回退 faq_lookup。{hist_ctx}",
+                f"Executor 回退 faq_lookup。{hist_ctx}",
                 "faq_lookup",
                 {"query": query},
                 None,
             )
-        return ("planner：无可用工具。", None, {}, "暂无法处理该问题。")
+
+        return ("无可用 StructuredTool。", None, {}, "暂无法处理该问题。")
 
     @staticmethod
     def _observation_to_answer(observation: str, query: str) -> str:
@@ -2417,33 +2631,23 @@ class RAGAgentGraph:
 ## 四十一、chat citations 代码
 
 ```python
-if body.graph_mode and store.get_graph_config().enabled:
-            cfg = store.get_graph_config()
-            graph = RAGAgentGraph.from_executor(orchestrator.tool_executor, config=cfg)
-            history = _session_history(orchestrator, enabled=cfg.use_session_history)
-            graph_outcome = graph.invoke(message, history=history)
-            reply = graph_outcome.reply
-            graph_trace = [s.to_dict() for s in graph_outcome.steps]
-            tools_used = list(graph_outcome.tools_used)
-            orchestrator.assistant.history.add_user(message)
-            orchestrator.assistant.history.add_assistant(reply)
-        elif body.graph_mode and store.get_executor_config().enabled:
+if body.executor_mode and store.get_executor_config().enabled:
             cfg = store.get_executor_config()
-            agent = RAGAgentGraph.from_executor(orchestrator.tool_executor, config=cfg)
+            agent = AgentExecutor.from_executor(orchestrator.tool_executor, config=cfg)
             history = _session_history(orchestrator, enabled=cfg.use_session_history)
             exec_outcome = agent.invoke(message, history=history)
             reply = exec_outcome.reply
-            graph_trace = [s.to_dict() for s in exec_outcome.steps]
+            executor_trace = [s.to_dict() for s in exec_outcome.steps]
             tools_used = list(exec_outcome.tools_used)
             orchestrator.assistant.history.add_user(message)
             orchestrator.assistant.history.add_assistant(reply)
-        elif body.agent_mode and store.get_react_config().enabled:
+        elif body.executor_mode and store.get_react_config().enabled:
             cfg = store.get_react_config()
-            agent = ReActAgent(orchestrator.tool_executor, config=cfg)
+            agent = AgentExecutor(orchestrator.tool_executor, config=cfg)
             history = _session_history(orchestrator, enabled=cfg.use_session_history)
             react_outcome = agent.run(message, history=history)
             reply = react_outcome.reply
-            agent_trace = [s.to_dict() for s in react_outcome.steps]
+            executor_trace = [s.to_dict() for s in react_outcome.steps]
             tools_used = list(react_outcome.tools_used)
             orchestrator.assistant.history.add_user(message)
             orchestrator.assistant.history.add_assistant(reply)
@@ -2457,13 +2661,22 @@ if body.graph_mode and store.get_graph_config().enabled:
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
-    if graph_trace:
+    if mcp_trace is not None:
+        kind = "mcp"
+        meta = "MCP Tool Bridge"
+    elif supervisor_trace is not None:
+        kind = "supervisor"
+        meta = "Supervisor Multi-Agent"
+    elif approval_payload is not None:
+        kind = "approval"
+        meta = "Approval Workflow"
+    elif graph_trace and kind != "approval":
         kind = "graph"
         meta = "StateGraph"
-    elif graph_trace:
+    elif executor_trace:
         kind = "executor"
-        meta = "RAGAgentGraph"
-    elif agent_trace:
+        meta = "AgentExecutor"
+    elif executor_trace:
         kind = "agent"
         meta = "ReAct Agent"
 ```
@@ -2479,43 +2692,102 @@ def invoke(
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> GraphRunOutcome:
+    ) -> ExecutorRunOutcome:
+        """LangChain 风格入口 — 返回 reply + intermediate_steps"""
+        return self.run(query, history=history)
+
+    def run(
+        self,
+        query: str,
+        *,
+        history: list[dict[str, str]] | None = None,
+    ) -> ExecutorRunOutcome:
         query = (query or "").strip()
-        cfg = self._config
         if not query:
-            return GraphRunOutcome(
+            return ExecutorRunOutcome(
                 query="",
                 reply="请输入有效问题。",
                 steps=(),
                 tools_used=(),
-                node_path=(),
-            )
-        if not cfg.enabled:
-            return GraphRunOutcome(
-                query=query,
-                reply="StateGraph 已关闭。",
-                steps=(),
-                tools_used=(),
-                node_path=(),
+                intermediate_steps=(),
             )
 
-        state = AgentGraphState(
+        cfg = self._config
+        if not cfg.enabled:
+            return ExecutorRunOutcome(
+                query=query,
+                reply="AgentExecutor 已关闭。",
+                steps=(),
+                tools_used=(),
+                intermediate_steps=(),
+            )
+
+        steps: list[ExecutorStep] = []
+        intermediate: list[tuple[str, str]] = []
+        tools_used: list[str] = []
+        last_observation: str | None = None
+        reply = ""
+
+        for step_idx in range(1, cfg.max_iterations + 1):
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+                hist_note = ""
+                if history:
+                    hist_note = f"（结合 {len(history)} 条会话记忆）"
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=f"工具已返回，生成 Final Answer{hist_note}。",
+                        final_answer=reply,
+                    )
+                )
+                break
+
+            thought, action, action_input, final = self._plan_step(
+                query, step_idx, None, history=history
+            )
+            if final:
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=thought,
+                        final_answer=final,
+                    )
+                )
+                reply = final
+                break
+
+            if not action or action not in self._tool_by_name:
+                reply = "AgentExecutor 未能规划有效工具。"
+                break
+
+            observation = self._tool_by_name[action].run(action_input)
+            last_observation = observation
+            intermediate.append((action, observation))
+            if not observation.strip().endswith("失败:"):
+                tools_used.append(action)
+
+            steps.append(
+                ExecutorStep(
+                    step=step_idx,
+                    thought=thought,
+                    action=action,
+                    action_input=dict(action_input or {}),
+                    observation=observation,
+                )
+            )
+        else:
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+            else:
+                reply = "未在迭代上限内得到答案，请换个问法。"
+
+        return ExecutorRunOutcome(
             query=query,
-            history=list(history or []),
-        )
-        steps: list[GraphStep] = []
-        final = self._graph.invoke(
-            state,
-            max_iterations=cfg.max_iterations,
-            step_recorder=steps,
-        )
-        node_path = tuple(s.node for s in steps)
-        return GraphRunOutcome(
-            query=query,
-            reply=final.reply or "未得到答案。",
+            reply=reply,
             steps=tuple(steps),
-            tools_used=tuple(dict.fromkeys(final.tools_used)),
-            node_path=node_path,
+            tools_used=tuple(dict.fromkeys(tools_used)),
+            intermediate_steps=tuple(intermediate),
         )
 ```
 
@@ -2553,43 +2825,102 @@ def invoke(
         query: str,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> GraphRunOutcome:
+    ) -> ExecutorRunOutcome:
+        """LangChain 风格入口 — 返回 reply + intermediate_steps"""
+        return self.run(query, history=history)
+
+    def run(
+        self,
+        query: str,
+        *,
+        history: list[dict[str, str]] | None = None,
+    ) -> ExecutorRunOutcome:
         query = (query or "").strip()
-        cfg = self._config
         if not query:
-            return GraphRunOutcome(
+            return ExecutorRunOutcome(
                 query="",
                 reply="请输入有效问题。",
                 steps=(),
                 tools_used=(),
-                node_path=(),
-            )
-        if not cfg.enabled:
-            return GraphRunOutcome(
-                query=query,
-                reply="StateGraph 已关闭。",
-                steps=(),
-                tools_used=(),
-                node_path=(),
+                intermediate_steps=(),
             )
 
-        state = AgentGraphState(
+        cfg = self._config
+        if not cfg.enabled:
+            return ExecutorRunOutcome(
+                query=query,
+                reply="AgentExecutor 已关闭。",
+                steps=(),
+                tools_used=(),
+                intermediate_steps=(),
+            )
+
+        steps: list[ExecutorStep] = []
+        intermediate: list[tuple[str, str]] = []
+        tools_used: list[str] = []
+        last_observation: str | None = None
+        reply = ""
+
+        for step_idx in range(1, cfg.max_iterations + 1):
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+                hist_note = ""
+                if history:
+                    hist_note = f"（结合 {len(history)} 条会话记忆）"
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=f"工具已返回，生成 Final Answer{hist_note}。",
+                        final_answer=reply,
+                    )
+                )
+                break
+
+            thought, action, action_input, final = self._plan_step(
+                query, step_idx, None, history=history
+            )
+            if final:
+                steps.append(
+                    ExecutorStep(
+                        step=step_idx,
+                        thought=thought,
+                        final_answer=final,
+                    )
+                )
+                reply = final
+                break
+
+            if not action or action not in self._tool_by_name:
+                reply = "AgentExecutor 未能规划有效工具。"
+                break
+
+            observation = self._tool_by_name[action].run(action_input)
+            last_observation = observation
+            intermediate.append((action, observation))
+            if not observation.strip().endswith("失败:"):
+                tools_used.append(action)
+
+            steps.append(
+                ExecutorStep(
+                    step=step_idx,
+                    thought=thought,
+                    action=action,
+                    action_input=dict(action_input or {}),
+                    observation=observation,
+                )
+            )
+        else:
+            if last_observation:
+                reply = self._observation_to_answer(last_observation, query)
+            else:
+                reply = "未在迭代上限内得到答案，请换个问法。"
+
+        return ExecutorRunOutcome(
             query=query,
-            history=list(history or []),
-        )
-        steps: list[GraphStep] = []
-        final = self._graph.invoke(
-            state,
-            max_iterations=cfg.max_iterations,
-            step_recorder=steps,
-        )
-        node_path = tuple(s.node for s in steps)
-        return GraphRunOutcome(
-            query=query,
-            reply=final.reply or "未得到答案。",
+            reply=reply,
             steps=tuple(steps),
-            tools_used=tuple(dict.fromkeys(final.tools_used)),
-            node_path=node_path,
+            tools_used=tuple(dict.fromkeys(tools_used)),
+            intermediate_steps=tuple(intermediate),
         )
 ```
 
@@ -2599,7 +2930,7 @@ def invoke(
 ## 四十七、完整测试文件
 
 ```python
-"""Day 41 StateGraph 单元测试。"""
+"""Day 40 StructuredTool + AgentExecutor 单元测试。"""
 
 from __future__ import annotations
 
@@ -2612,86 +2943,92 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from agent.graph_config import GraphConfig
-from agent.graph_state import AgentGraphState
-from agent.rag_agent_graph import RAGAgentGraph
-from agent.state_graph import END, StateGraph
+from agent.agent_executor import AgentExecutor
+from agent.executor_config import ExecutorConfig
+from agent.structured_tool import StructuredTool, tool, tools_to_openai_schema
+from agent.tool_adapter import tools_from_executor
 from api.factory import create_orchestrator
 
 
+@tool(name="add_nums", description="两数相加")
+def add_nums(a: int, b: int) -> str:
+    return str(a + b)
+
+
 @pytest.fixture
-def graph():
+def executor():
     orch = create_orchestrator()
-    return RAGAgentGraph.from_executor(
+    return AgentExecutor.from_executor(
         orch.tool_executor,
-        config=GraphConfig(max_iterations=4),
+        config=ExecutorConfig(max_iterations=4),
     )
 
 
-def test_graph_config_validate():
-    GraphConfig().validate()
+def test_executor_config_validate():
+    ExecutorConfig().validate()
     with pytest.raises(ValueError):
-        GraphConfig(max_iterations=0).validate()
+        ExecutorConfig(max_iterations=0).validate()
 
 
-def test_state_graph_compile_invoke():
-    g = StateGraph()
-    g.add_node("start", lambda s: AgentGraphState(query=s.query, reply="ok", done=True))
-    g.set_entry_point("start")
-    g.add_edge("start", END)
-    compiled = g.compile()
-    out = compiled.invoke(AgentGraphState(query="hi"))
-    assert out.reply == "ok"
-    assert out.done is True
+def test_tool_decorator_and_schema():
+    assert isinstance(add_nums, StructuredTool)
+    assert add_nums.run({"a": 2, "b": 3}) == "5"
+    schema = add_nums.to_openai_tool()
+    assert schema["function"]["name"] == "add_nums"
+    assert schema["function"]["parameters"]["properties"]["a"]["type"] == "integer"
 
 
-def test_graph_faq_lookup(graph):
-    outcome = graph.invoke("客服电话多少")
+def test_tools_from_executor():
+    orch = create_orchestrator()
+    tools = tools_from_executor(orch.tool_executor)
+    names = {t.name for t in tools}
+    assert "faq_lookup" in names
+    assert "rag_search" in names
+    openai = tools_to_openai_schema(tools)
+    assert all(item["type"] == "function" for item in openai)
+
+
+def test_executor_faq_lookup(executor):
+    outcome = executor.invoke("客服电话多少")
     assert "faq_lookup" in outcome.tools_used
     assert outcome.reply
-    assert "planner" in outcome.node_path
+    assert len(outcome.steps) >= 2
+    assert outcome.intermediate_steps
 
 
-def test_graph_rag_search(graph):
-    outcome = graph.invoke("年化收益怎么样")
+def test_executor_rag_search(executor):
+    outcome = executor.invoke("年化收益怎么样")
     assert "rag_search" in outcome.tools_used
     assert outcome.reply
 
 
-def test_graph_respects_max_iterations():
+def test_executor_respects_max_iterations():
     orch = create_orchestrator()
-    agent = RAGAgentGraph.from_executor(
+    agent = AgentExecutor.from_executor(
         orch.tool_executor,
-        config=GraphConfig(max_iterations=1),
+        config=ExecutorConfig(max_iterations=1),
     )
     outcome = agent.invoke("年化收益怎么样")
-    assert len(outcome.steps) >= 1
+    assert len([s for s in outcome.steps if s.action]) <= 1
 
 
-def test_graph_uses_history(graph):
+def test_executor_uses_history(executor):
     history = [{"role": "user", "content": "之前问过理财产品"}]
-    outcome = graph.invoke("再查一下年化收益", history=history)
+    outcome = executor.invoke("再查一下年化收益", history=history)
     assert outcome.reply
-    assert any("planner" in s.node for s in outcome.steps)
+    assert any("会话记忆" in (s.thought or "") for s in outcome.steps)
 
 
-def test_graph_config_persists_in_store(tmp_path):
+def test_executor_config_persists_in_store(tmp_path):
     from rag.knowledge_store import KnowledgeStore
 
     path = tmp_path / "store.json"
     store = KnowledgeStore.bootstrap_from_sample_docs(store_path=path)
-    store.set_graph_config(GraphConfig(max_iterations=5, mock_planner=True))
+    store.set_executor_config(ExecutorConfig(max_iterations=5, mock_planner=True))
     store.save(path)
     loaded = KnowledgeStore.load(path)
-    cfg = loaded.get_graph_config()
+    cfg = loaded.get_executor_config()
     assert cfg.max_iterations == 5
-
-
-def test_graph_state_roundtrip():
-    state = AgentGraphState(query="q", tools_used=["faq_lookup"])
-    restored = AgentGraphState.from_dict(state.to_dict())
-    assert restored.query == "q"
-    assert restored.tools_used == ["faq_lookup"]
 ```
 
 
@@ -2700,7 +3037,7 @@ def test_graph_state_roundtrip():
 ## 四十八、完整 API 测试
 
 ```python
-"""Day 41 StateGraph API 测试。"""
+"""Day 40 AgentExecutor API 测试。"""
 
 from __future__ import annotations
 
@@ -2732,23 +3069,23 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.41.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
-def test_get_graph_config_default(client):
-    data = client.get("/api/agent/graph-config").json()
+def test_get_executor_config_default(client):
+    data = client.get("/api/agent/executor-config").json()
     assert data["enabled"] is True
     assert data["max_iterations"] == 3
 
 
-def test_put_graph_config(client):
+def test_put_executor_config(client):
     resp = client.put(
-        "/api/agent/graph-config",
+        "/api/agent/executor-config",
         json={
             "enabled": True,
             "max_iterations": 4,
             "use_session_history": True,
-            "return_node_trace": True,
+            "return_intermediate_steps": True,
             "mock_planner": True,
         },
     )
@@ -2756,20 +3093,21 @@ def test_put_graph_config(client):
     assert resp.json()["max_iterations"] == 4
 
 
-def test_graph_preview_faq(client):
+def test_executor_preview_faq(client):
     resp = client.post(
-        "/api/agent/graph-preview",
+        "/api/agent/executor-preview",
         json={"query": "客服热线是多少"},
     )
     assert resp.status_code == 200
     data = resp.json()
     assert "faq_lookup" in data["tools_used"]
-    assert "planner" in data["node_path"]
+    assert len(data["steps"]) >= 2
+    assert data["intermediate_steps"]
 
 
-def test_graph_preview_with_history(client):
+def test_executor_preview_with_history(client):
     resp = client.post(
-        "/api/agent/graph-preview",
+        "/api/agent/executor-preview",
         json={
             "query": "年化收益",
             "history": ["理财产品风险大吗"],
@@ -2779,40 +3117,40 @@ def test_graph_preview_with_history(client):
     assert resp.json()["reply"]
 
 
-def test_status_includes_graph_config(client):
+def test_status_includes_executor_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.41.0"
-    assert status["graph_config"]["enabled"] is True
+    assert status["platform_version"] == "0.44.0"
+    assert status["executor_config"]["enabled"] is True
 
 
-def test_chat_graph_mode_trace(client):
+def test_chat_executor_mode_trace(client):
     resp = client.post(
         "/api/chat",
-        json={"message": "客服电话多少", "graph_mode": True},
+        json={"message": "客服电话多少", "executor_mode": True},
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("graph_trace")
+    assert body.get("executor_trace")
     assert body.get("tools_used")
-    assert body["kind"] == "graph"
+    assert body["kind"] == "executor"
 
 
-def test_chat_graph_mode_off_unchanged(client):
+def test_chat_executor_mode_off_unchanged(client):
     resp = client.post("/api/chat", json={"message": "投资有风险吗"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body.get("graph_trace") is None
+    assert body.get("executor_trace") is None
     assert body["kind"] == "faq"
 
 
-def test_invalid_graph_max_iterations_422(client):
+def test_invalid_executor_max_iterations_422(client):
     resp = client.put(
-        "/api/agent/graph-config",
+        "/api/agent/executor-config",
         json={
             "enabled": True,
             "max_iterations": 99,
             "use_session_history": True,
-            "return_node_trace": True,
+            "return_intermediate_steps": True,
             "mock_planner": True,
         },
     )
@@ -2824,10 +3162,10 @@ def test_invalid_graph_max_iterations_422(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 citation_builder，Citation 有 rank chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 agent_executor，ExecutorStep 记录 intermediate_steps。chat 里 executor_trace 挂在 reply 后面。这就是 ZL-NA-REQ-040。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 37 · Citation · ZL-NA-REQ-041 · citation_builder 精读完**
+**NexusAgent 课程 · Phase 4 · Day 40 · AgentExecutor · ZL-NA-REQ-040 · agent_executor 精读完**

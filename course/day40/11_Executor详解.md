@@ -12,4 +12,4 @@ plan → tool.run → observation → … → Final Answer
 
 ## 3. 与 ReAct 对齐
 
-`ExecutorStep` 字段与 Day 39 `ReactStep` 一致；`executor_trace` 可对照 `executor_trace`。
+`ExecutorStep` 字段与 Day 39 `ReactStep` 一致；`executor_trace` 可对照 `agent_trace`。

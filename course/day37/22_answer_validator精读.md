@@ -789,6 +789,46 @@ def get_validation_config(self) -> ValidationConfig:
         self.react_config = ReactConfig.from_dict(config.to_dict())
         return self.react_config
 
+    def get_executor_config(self) -> ExecutorConfig:
+        return ExecutorConfig.from_dict(self.executor_config.to_dict())
+
+    def set_executor_config(self, config: ExecutorConfig) -> ExecutorConfig:
+        config.validate()
+        self.executor_config = ExecutorConfig.from_dict(config.to_dict())
+        return self.executor_config
+
+    def get_graph_config(self) -> GraphConfig:
+        return GraphConfig.from_dict(self.graph_config.to_dict())
+
+    def set_graph_config(self, config: GraphConfig) -> GraphConfig:
+        config.validate()
+        self.graph_config = GraphConfig.from_dict(config.to_dict())
+        return self.graph_config
+
+    def get_approval_config(self) -> ApprovalConfig:
+        return ApprovalConfig.from_dict(self.approval_config.to_dict())
+
+    def set_approval_config(self, config: ApprovalConfig) -> ApprovalConfig:
+        config.validate()
+        self.approval_config = ApprovalConfig.from_dict(config.to_dict())
+        return self.approval_config
+
+    def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
+        return McpConfig.from_dict(self.mcp_config.to_dict())
+
+    def set_mcp_config(self, config: McpConfig) -> McpConfig:
+        config.validate()
+        self.mcp_config = McpConfig.from_dict(config.to_dict())
+        return self.mcp_config
+
     def validate_answer(
         self,
         query: str,
@@ -969,7 +1009,7 @@ def test_knowledge_store_persists_validation_config(tmp_path):
 def test_status_includes_validation_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.39.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["validation_config"]["enabled"] is True
 
 
@@ -1036,7 +1076,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.39.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_get_validation_config_default(client):
@@ -1088,7 +1128,7 @@ def test_validation_preview_pass(client):
 
 def test_status_includes_validation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.39.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["validation_config"]["enabled"] is True
 
 
@@ -1215,6 +1255,46 @@ def get_validation_config(self) -> ValidationConfig:
         config.validate()
         self.react_config = ReactConfig.from_dict(config.to_dict())
         return self.react_config
+
+    def get_executor_config(self) -> ExecutorConfig:
+        return ExecutorConfig.from_dict(self.executor_config.to_dict())
+
+    def set_executor_config(self, config: ExecutorConfig) -> ExecutorConfig:
+        config.validate()
+        self.executor_config = ExecutorConfig.from_dict(config.to_dict())
+        return self.executor_config
+
+    def get_graph_config(self) -> GraphConfig:
+        return GraphConfig.from_dict(self.graph_config.to_dict())
+
+    def set_graph_config(self, config: GraphConfig) -> GraphConfig:
+        config.validate()
+        self.graph_config = GraphConfig.from_dict(config.to_dict())
+        return self.graph_config
+
+    def get_approval_config(self) -> ApprovalConfig:
+        return ApprovalConfig.from_dict(self.approval_config.to_dict())
+
+    def set_approval_config(self, config: ApprovalConfig) -> ApprovalConfig:
+        config.validate()
+        self.approval_config = ApprovalConfig.from_dict(config.to_dict())
+        return self.approval_config
+
+    def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
+        return McpConfig.from_dict(self.mcp_config.to_dict())
+
+    def set_mcp_config(self, config: McpConfig) -> McpConfig:
+        config.validate()
+        self.mcp_config = McpConfig.from_dict(config.to_dict())
+        return self.mcp_config
 
     def validate_answer(
         self,
@@ -1774,7 +1854,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.39.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_get_validation_config_default(client):
@@ -1826,7 +1906,7 @@ def test_validation_preview_pass(client):
 
 def test_status_includes_validation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.39.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["validation_config"]["enabled"] is True
 
 
@@ -2724,7 +2804,7 @@ def test_knowledge_store_persists_validation_config(tmp_path):
 def test_status_includes_validation_config(tmp_path):
     store = _store(tmp_path)
     status = store.status_dict()
-    assert status["platform_version"] == "0.39.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["validation_config"]["enabled"] is True
 
 
@@ -2782,7 +2862,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.39.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_get_validation_config_default(client):
@@ -2834,7 +2914,7 @@ def test_validation_preview_pass(client):
 
 def test_status_includes_validation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.39.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["validation_config"]["enabled"] is True
 
 
