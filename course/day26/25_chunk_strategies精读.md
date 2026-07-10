@@ -162,35 +162,35 @@ if strategy == "auto":
 ## ingest_parsed 衔接
 
 ```python
-def validate_answer(
-        self,
-        query: str,
-        reply: str,
-        citations: list[dict[str, Any]],
-    ) -> ValidationResult | None:
-        """按当前 validation_config 校验 reply 与 citations 一致性"""
-        cfg = self.get_validation_config()
-        if not cfg.enabled:
-            return None
-        validator = RuleBasedAnswerValidator(config=cfg)
-        return validator.validate(query, reply, citations)
+self.validation_config = ValidationConfig.from_dict(config.to_dict())
+        return self.validation_config
 
-    def fetch_citations(self, query: str) -> dict[str, Any]:
-        """按当前 citation_config 检索并返回引用包 dict"""
-        cfg = self.get_citation_config()
-        if not cfg.enabled:
-            return {
-                "query": query.strip(),
-                "citations": [],
-                "rewrite": None,
-                "expansion": None,
-                "route": None,
-            }
-        rag = self.as_rag_service()
-        bundle = rag.retrieve_citation_bundle(query, config=cfg)
-        return bundle.to_dict()
+    def get_react_config(self) -> ReactConfig:
+        return ReactConfig.from_dict(self.react_config.to_dict())
 
-    def fetch_citations_retry(self, query: str, *, attempt: int = 1) -> dict[str, Any]:
+    def set_react_config(self, config: ReactConfig) -> ReactConfig:
+        config.validate()
+        self.react_config = ReactConfig.from_dict(config.to_dict())
+        return self.react_config
+
+    def get_executor_config(self) -> ExecutorConfig:
+        return ExecutorConfig.from_dict(self.executor_config.to_dict())
+
+    def set_executor_config(self, config: ExecutorConfig) -> ExecutorConfig:
+        config.validate()
+        self.executor_config = ExecutorConfig.from_dict(config.to_dict())
+        return self.executor_config
+
+    def get_graph_config(self) -> GraphConfig:
+        return GraphConfig.from_dict(self.graph_config.to_dict())
+
+    def set_graph_config(self, config: GraphConfig) -> GraphConfig:
+        config.validate()
+        self.graph_config = GraphConfig.from_dict(config.to_dict())
+        return self.graph_config
+
+    def get_approval_config(self) -> ApprovalConfig:
+        return ApprovalConfig.from_dict(self.approval_config.to_dict())
 ```
 
 
@@ -201,56 +201,56 @@ def validate_answer(
 ## 附录：KnowledgeStore.ingest_parsed 全文节选
 
 ```python
-def validate_answer(
-        self,
-        query: str,
-        reply: str,
-        citations: list[dict[str, Any]],
-    ) -> ValidationResult | None:
-        """按当前 validation_config 校验 reply 与 citations 一致性"""
-        cfg = self.get_validation_config()
-        if not cfg.enabled:
-            return None
-        validator = RuleBasedAnswerValidator(config=cfg)
-        return validator.validate(query, reply, citations)
+self.validation_config = ValidationConfig.from_dict(config.to_dict())
+        return self.validation_config
 
-    def fetch_citations(self, query: str) -> dict[str, Any]:
-        """按当前 citation_config 检索并返回引用包 dict"""
-        cfg = self.get_citation_config()
-        if not cfg.enabled:
-            return {
-                "query": query.strip(),
-                "citations": [],
-                "rewrite": None,
-                "expansion": None,
-                "route": None,
-            }
-        rag = self.as_rag_service()
-        bundle = rag.retrieve_citation_bundle(query, config=cfg)
-        return bundle.to_dict()
+    def get_react_config(self) -> ReactConfig:
+        return ReactConfig.from_dict(self.react_config.to_dict())
 
-    def fetch_citations_retry(self, query: str, *, attempt: int = 1) -> dict[str, Any]:
-        """Self-RAG 重试 — 强制 rag_wide 并放大 citation pool"""
-        from rag.citation_config import CitationConfig
-        from rag.route_config import INTENT_RAG_WIDE
+    def set_react_config(self, config: ReactConfig) -> ReactConfig:
+        config.validate()
+        self.react_config = ReactConfig.from_dict(config.to_dict())
+        return self.react_config
 
-        cfg = self.get_citation_config()
-        if not cfg.enabled:
-            return self.fetch_citations(query)
+    def get_executor_config(self) -> ExecutorConfig:
+        return ExecutorConfig.from_dict(self.executor_config.to_dict())
 
-        boosted = CitationConfig.from_dict(
-            {
-                **cfg.to_dict(),
-                "max_citations": min(100, max(cfg.max_citations, 20) + attempt * 10),
-            }
-        )
-        rag = self.as_rag_service()
-        bundle = rag.retrieve_citation_bundle(
-            query,
-            config=boosted,
-            intent_override=INTENT_RAG_WIDE,
-        )
-        data = bundle.to_dict()
+    def set_executor_config(self, config: ExecutorConfig) -> ExecutorConfig:
+        config.validate()
+        self.executor_config = ExecutorConfig.from_dict(config.to_dict())
+        return self.executor_config
+
+    def get_graph_config(self) -> GraphConfig:
+        return GraphConfig.from_dict(self.graph_config.to_dict())
+
+    def set_graph_config(self, config: GraphConfig) -> GraphConfig:
+        config.validate()
+        self.graph_config = GraphConfig.from_dict(config.to_dict())
+        return self.graph_config
+
+    def get_approval_config(self) -> ApprovalConfig:
+        return ApprovalConfig.from_dict(self.approval_config.to_dict())
+
+    def set_approval_config(self, config: ApprovalConfig) -> ApprovalConfig:
+        config.validate()
+        self.approval_config = ApprovalConfig.from_dict(config.to_dict())
+        return self.approval_config
+
+    def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
+        return McpConfig.from_dict(self.mcp_config.to_dict())
+
+    def set_mcp_config(self, config: McpConfig) -> McpConfig:
+        config.validate()
+        self.mcp_config = McpConfig.from_dict(config.to_dict())
+        return self.mcp_config
 ```
 
 

@@ -12,6 +12,7 @@ def sanitize_mermaid_blocks(text: str) -> str:
         body = match.group(1)
         lines: list[str] = []
         for line in body.splitlines():
+            line = _quote_array_labels(line)
             stripped = line.strip()
             if re.match(r"^(sequenceDiagram|flowchart|stateDiagram|graph|classDiagram)", stripped):
                 lines.append(line)
@@ -33,6 +34,17 @@ def sanitize_mermaid_blocks(text: str) -> str:
         return "```mermaid\n" + "\n".join(lines) + "\n```"
 
     return re.sub(r"```mermaid\n(.*?)```", _fix_block, text, flags=re.S)
+
+
+_ARRAY_LABEL_RE = re.compile(r'(\w+)\[([^\[\]"]*\[\][^\[\]"]*)\]')
+
+
+def _quote_array_labels(line: str) -> str:
+    """Quote flowchart node labels that embed a literal ``[]`` (e.g. a Python
+    list type hint like ``citations[]``). Left unquoted, the extra bracket
+    pair desyncs Mermaid's node-bracket matching and breaks the parser.
+    """
+    return _ARRAY_LABEL_RE.sub(lambda m: f'{m.group(1)}["{m.group(2)}"]', line)
 
 
 def _quote_inline_nodes(line: str) -> str:
@@ -57,17 +69,29 @@ def _quote_inline_nodes(line: str) -> str:
     return line
 
 
+_SEQ_ARROW_RE = re.compile(r"^(\s*\S+)\s*(-->>|->>|-->|->)\s*(\S+?):\s*(.*)$")
+
+
 def _quote_sequence_arrow(line: str) -> str:
-    """Wrap sequence diagram message text in double quotes when needed."""
-    for sep in ("->>", "-->>"):
-        if sep not in line:
-            continue
-        left, msg = line.split(sep, 1)
-        msg = msg.strip()
-        if msg.startswith('"') and msg.endswith('"'):
-            return line
-        if any(ch in msg for ch in "?=()[]{}/\\"):
-            return f'{left}{sep} "{msg}"'
+    """Wrap only the *message* text (never the target actor) in quotes.
+
+    Sequence diagram syntax is ``Left->>Right: message``. The target actor
+    (``Right``) must stay a bare identifier — quoting it along with the
+    message (e.g. ``Left->> "Right: message"``) produces invalid Mermaid
+    that most renderers fail to parse.
+    """
+    m = _SEQ_ARROW_RE.match(line)
+    if not m:
+        return line
+    left, arrow, target, msg = m.groups()
+    msg = msg.strip()
+    if not msg:
+        return line
+    if msg.startswith('"') and msg.endswith('"'):
+        return line
+    if any(ch in msg for ch in "?=()[]{}/\\"):
+        msg = msg.replace('"', "'")
+        return f"{left}{arrow}{target}: \"{msg}\""
     return line
 
 

@@ -105,10 +105,10 @@ sequenceDiagram
     participant EC as EmbeddingClient
 
     Note over ER: index(chunks)
-    ER->> "EC: fit_corpus(texts)"
-    ER->> "EC: embed_batch(texts)"
+    ER->>EC: "fit_corpus(texts)"
+    ER->>EC: "embed_batch(texts)"
     Note over ER: search(query)
-    ER->> "EC: embed(query)"
+    ER->>EC: "embed(query)"
     ER->>ER: 遍历 similarity_to
 ```
 

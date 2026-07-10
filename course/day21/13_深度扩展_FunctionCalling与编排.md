@@ -18,7 +18,7 @@ sequenceDiagram
 
     User->>App: 自然语言
     App->>LLM: messages + tools schema
-    LLM-->> "App: tool_calls [{name, arguments}]"
+    LLM-->>App: "tool_calls [{name, arguments}]"
     App->>Tools: execute
     Tools-->>App: results
     App->>LLM: tool results

@@ -137,58 +137,57 @@ ingest_text ValueError → API 422；StorageError → 500；UnicodeDecodeError �
 ## 附录：_append_chunks 与 _rebuild_index（详解专节）
 
 ```python
-incremental: bool = False,
-    ) -> KnowledgeDocument:
-        """将 ParsedDocument 写入知识库"""
-        cfg = self.get_chunk_config()
-        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
-        cs = chunk_size if chunk_size is not None else cfg.chunk_size
-        ov = overlap if overlap is not None else cfg.overlap
-        text = (parsed.plain_text or "").strip()
-        if not text:
-            raise ValueError("解析结果为空")
-
+content, encoding = read_text_file(path)
+        cleaned = content
         if clean:
-            text, _ = clean_text(text)
-            parsed.plain_text = text
-            for section in parsed.sections:
-                section.body, _ = clean_text(section.body)
-
-        new_chunks = chunk_from_parsed(
-            parsed,
-            strategy=strategy,
-            chunk_size=cs,
-            overlap=ov,
+            cleaned, _ = clean_text(content)
+        doc = DocumentRecord(
+            path=path,
+            content=content,
+            encoding=encoding,
+            size_bytes=path.stat().st_size,
+            cleaned=cleaned,
         )
-        size_bytes = len(parsed.plain_text.encode("utf-8"))
+        new_chunks = chunk_documents(
+            [doc],
+            chunk_size=chunk_size,
+            overlap=overlap,
+            use_cleaned=clean,
+        )
+        self._append_chunks(path.name, new_chunks, size_bytes=doc.size_bytes)
+        self._rebuild_index()
+        return self.documents[-1]
 
-        if incremental:
-            removed = self._remove_document_by_source(parsed.filename)
-            self._append_chunks(
-                parsed.filename,
-                new_chunks,
+    def ingest_bytes(
+        self,
+        data: bytes,
+        *,
+        filename: str,
+        clean: bool = True,
+        chunk_strategy: str = "auto",
+        incremental: bool = True,
+    ) -> KnowledgeDocument:
 ```
 
 
 **`_append_chunks`**：新块 `index` 从 `len(self.chunks)` 递增，避免与旧块冲突。每 append 同步追加 `KnowledgeDocument` 元数据行。
 
 ```python
-store = cls(store_path=path)
-        store.documents = [
-            KnowledgeDocument.from_dict(d) for d in raw.get("documents", [])
-        ]
-        store.chunks = [_chunk_from_dict(c) for c in raw.get("chunks", [])]
-        store.embedding_state = dict(raw.get("embedding") or {})
-        store.vector_backend = str(raw.get("vector_backend") or VECTOR_BACKEND)
-        if raw.get("chunk_config"):
-            store.chunk_config = ChunkConfig.from_dict(raw["chunk_config"])
-        store.last_rebuilt_at = raw.get("last_rebuilt_at")
-        store.last_incremental_at = raw.get("last_incremental_at")
-        store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
-        if raw.get("retrieval_config"):
-            store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
-        if raw.get("rerank_config"):
-            store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
+parsed.filename,
+                new_chunks,
+                size_bytes=size_bytes,
+                doc_format=parsed.format,
+            )
+            self._incremental_index(new_chunks, replaced_count=len(removed))
+        else:
+            self._append_chunks(
+                parsed.filename,
+                new_chunks,
+                size_bytes=size_bytes,
+                doc_format=parsed.format,
+            )
+            self._rebuild_index()
+        return self.documents[-1]
 ```
 
 

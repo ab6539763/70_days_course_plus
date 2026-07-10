@@ -415,6 +415,11 @@ from pathlib import Path
 from typing import Any
 
 from core.paths import get_path
+from agent.approval_config import ApprovalConfig
+from agent.mcp_config import McpConfig
+from agent.supervisor_config import SupervisorConfig
+from agent.executor_config import ExecutorConfig
+from agent.graph_config import GraphConfig
 from agent.react_config import ReactConfig
 from rag.chunker import TextChunk, chunk_documents, chunk_text
 from rag.chunk_config import DEFAULT_CHUNK_CONFIG, ChunkConfig
@@ -428,11 +433,6 @@ from rag.expansion_config import ExpansionConfig
 from rag.answer_validator import RuleBasedAnswerValidator, ValidationResult
 from rag.route_config import RouteConfig
 from rag.routing_retriever import RoutingRetriever
-from rag.validation_config import ValidationConfig
-from rag.hybrid_retriever import HybridRetriever
-from rag.rerank_config import RerankConfig
-from rag.reranker import MockCrossEncoderReranker
-from rag.reranking_retriever import RerankingRetriever
 ```
 
 
@@ -530,6 +530,16 @@ def load(cls, path: Path) -> KnowledgeStore:
             store.validation_config = ValidationConfig.from_dict(raw["validation_config"])
         if raw.get("react_config"):
             store.react_config = ReactConfig.from_dict(raw["react_config"])
+        if raw.get("executor_config"):
+            store.executor_config = ExecutorConfig.from_dict(raw["executor_config"])
+        if raw.get("graph_config"):
+            store.graph_config = GraphConfig.from_dict(raw["graph_config"])
+        if raw.get("approval_config"):
+            store.approval_config = ApprovalConfig.from_dict(raw["approval_config"])
+        if raw.get("supervisor_config"):
+            store.supervisor_config = SupervisorConfig.from_dict(raw["supervisor_config"])
+        if raw.get("mcp_config"):
+            store.mcp_config = McpConfig.from_dict(raw["mcp_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store

@@ -141,7 +141,7 @@ stateDiagram-v2
     [*] --> Idle
     Idle --> SkipEmpty: 空行
     Idle --> SkipComment: 注释
-    Idle --> ParseData: data:
+    Idle --> ParseData: 收到 data 行
     ParseData --> JsonChunk: 非 DONE
     ParseData --> Done: [DONE]
     JsonChunk --> Idle

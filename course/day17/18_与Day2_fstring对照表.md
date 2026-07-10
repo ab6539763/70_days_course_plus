@@ -57,7 +57,7 @@ sequenceDiagram
 
     Note over D2: 定义时绑定变量值
     Note over D17: 定义时仅存 template 字符串
-    D17->> "D17: render(**kwargs) 运行时 format"
+    D17->>D17: "render(**kwargs) 运行时 format"
 ```
 
 **意义**：同一 `DEFAULT_ASSISTANT` 实例可服务多租户 `company` 不同值。

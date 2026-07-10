@@ -605,6 +605,11 @@ from pathlib import Path
 from typing import Any
 
 from core.paths import get_path
+from agent.approval_config import ApprovalConfig
+from agent.mcp_config import McpConfig
+from agent.supervisor_config import SupervisorConfig
+from agent.executor_config import ExecutorConfig
+from agent.graph_config import GraphConfig
 from agent.react_config import ReactConfig
 from rag.chunker import TextChunk, chunk_documents, chunk_text
 from rag.chunk_config import DEFAULT_CHUNK_CONFIG, ChunkConfig
@@ -632,7 +637,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.39.0"
+PLATFORM_VERSION = "0.44.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -694,6 +699,11 @@ class KnowledgeStore:
     route_config: RouteConfig = field(default_factory=RouteConfig)
     validation_config: ValidationConfig = field(default_factory=ValidationConfig)
     react_config: ReactConfig = field(default_factory=ReactConfig)
+    executor_config: ExecutorConfig = field(default_factory=ExecutorConfig)
+    graph_config: GraphConfig = field(default_factory=GraphConfig)
+    approval_config: ApprovalConfig = field(default_factory=ApprovalConfig)
+    supervisor_config: SupervisorConfig = field(default_factory=SupervisorConfig)
+    mcp_config: McpConfig = field(default_factory=McpConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -791,6 +801,46 @@ class KnowledgeStore:
         config.validate()
         self.react_config = ReactConfig.from_dict(config.to_dict())
         return self.react_config
+
+    def get_executor_config(self) -> ExecutorConfig:
+        return ExecutorConfig.from_dict(self.executor_config.to_dict())
+
+    def set_executor_config(self, config: ExecutorConfig) -> ExecutorConfig:
+        config.validate()
+        self.executor_config = ExecutorConfig.from_dict(config.to_dict())
+        return self.executor_config
+
+    def get_graph_config(self) -> GraphConfig:
+        return GraphConfig.from_dict(self.graph_config.to_dict())
+
+    def set_graph_config(self, config: GraphConfig) -> GraphConfig:
+        config.validate()
+        self.graph_config = GraphConfig.from_dict(config.to_dict())
+        return self.graph_config
+
+    def get_approval_config(self) -> ApprovalConfig:
+        return ApprovalConfig.from_dict(self.approval_config.to_dict())
+
+    def set_approval_config(self, config: ApprovalConfig) -> ApprovalConfig:
+        config.validate()
+        self.approval_config = ApprovalConfig.from_dict(config.to_dict())
+        return self.approval_config
+
+    def get_supervisor_config(self) -> SupervisorConfig:
+        return SupervisorConfig.from_dict(self.supervisor_config.to_dict())
+
+    def set_supervisor_config(self, config: SupervisorConfig) -> SupervisorConfig:
+        config.validate()
+        self.supervisor_config = SupervisorConfig.from_dict(config.to_dict())
+        return self.supervisor_config
+
+    def get_mcp_config(self) -> McpConfig:
+        return McpConfig.from_dict(self.mcp_config.to_dict())
+
+    def set_mcp_config(self, config: McpConfig) -> McpConfig:
+        config.validate()
+        self.mcp_config = McpConfig.from_dict(config.to_dict())
+        return self.mcp_config
 
     def validate_answer(
         self,
@@ -955,63 +1005,7 @@ class KnowledgeStore:
             raise ValueError("解析结果为空")
 
         if clean:
-            text, _ = clean_text(text)
-            parsed.plain_text = text
-            for section in parsed.sections:
-                section.body, _ = clean_text(section.body)
-
-        new_chunks = chunk_from_parsed(
-            parsed,
-            strategy=strategy,
-            chunk_size=cs,
-            overlap=ov,
-        )
-        size_bytes = len(parsed.plain_text.encode("utf-8"))
-
-        if incremental:
-            removed = self._remove_document_by_source(parsed.filename)
-            self._append_chunks(
-                parsed.filename,
-                new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
-            )
-            self._incremental_index(new_chunks, replaced_count=len(removed))
-        else:
-            self._append_chunks(
-                parsed.filename,
-                new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
-            )
-            self._rebuild_index()
-        return self.documents[-1]
-
-    def save(self, path: Path | None = None) -> Path:
-        """持久化到 JSON"""
-        target = path or self.store_path or _default_store_path()
-        self.store_path = target
-        payload = {
-            "version": STORE_VERSION,
-            "platform_version": PLATFORM_VERSION,
-            "documents": [d.to_dict() for d in self.documents],
-            "chunks": [_chunk_to_dict(c) for c in self.chunks],
-            "embedding": self.embedding_state,
-            "vector_backend": self.vector_backend,
-            "chunk_config": self.chunk_config.to_dict(),
-            "last_rebuilt_at": self.last_rebuilt_at,
-            "last_incremental_at": self.last_incremental_at,
-            "index_mode": self.index_mode,
-            "retrieval_config": self.retrieval_config.to_dict(),
-            "rerank_config": self.rerank_config.to_dict(),
-            "rewrite_config": self.rewrite_config.to_dict(),
-            "citation_config": self.citation_config.to_dict(),
-            "expansion_config": self.expansion_config.to_dict(),
-            "route_config": self.route_config.to_dict(),
-            "validation_config": self.validation_config.to_dict(),
-            "react_config": self.react_config.to_dict(),
-        }
-        save_json
+            text, _ = clean_text(text
 ```
 
 
@@ -1113,7 +1107,68 @@ self.index_mode = INDEX_MODE_INCREMENTAL
 ## 二十三、延伸阅读：knowledge_store 余下部分
 
 ```python
-(target, payload)
+)
+            parsed.plain_text = text
+            for section in parsed.sections:
+                section.body, _ = clean_text(section.body)
+
+        new_chunks = chunk_from_parsed(
+            parsed,
+            strategy=strategy,
+            chunk_size=cs,
+            overlap=ov,
+        )
+        size_bytes = len(parsed.plain_text.encode("utf-8"))
+
+        if incremental:
+            removed = self._remove_document_by_source(parsed.filename)
+            self._append_chunks(
+                parsed.filename,
+                new_chunks,
+                size_bytes=size_bytes,
+                doc_format=parsed.format,
+            )
+            self._incremental_index(new_chunks, replaced_count=len(removed))
+        else:
+            self._append_chunks(
+                parsed.filename,
+                new_chunks,
+                size_bytes=size_bytes,
+                doc_format=parsed.format,
+            )
+            self._rebuild_index()
+        return self.documents[-1]
+
+    def save(self, path: Path | None = None) -> Path:
+        """持久化到 JSON"""
+        target = path or self.store_path or _default_store_path()
+        self.store_path = target
+        payload = {
+            "version": STORE_VERSION,
+            "platform_version": PLATFORM_VERSION,
+            "documents": [d.to_dict() for d in self.documents],
+            "chunks": [_chunk_to_dict(c) for c in self.chunks],
+            "embedding": self.embedding_state,
+            "vector_backend": self.vector_backend,
+            "chunk_config": self.chunk_config.to_dict(),
+            "last_rebuilt_at": self.last_rebuilt_at,
+            "last_incremental_at": self.last_incremental_at,
+            "index_mode": self.index_mode,
+            "retrieval_config": self.retrieval_config.to_dict(),
+            "rerank_config": self.rerank_config.to_dict(),
+            "rewrite_config": self.rewrite_config.to_dict(),
+            "citation_config": self.citation_config.to_dict(),
+            "expansion_config": self.expansion_config.to_dict(),
+            "route_config": self.route_config.to_dict(),
+            "validation_config": self.validation_config.to_dict(),
+            "react_config": self.react_config.to_dict(),
+            "executor_config": self.executor_config.to_dict(),
+            "graph_config": self.graph_config.to_dict(),
+            "approval_config": self.approval_config.to_dict(),
+            "supervisor_config": self.supervisor_config.to_dict(),
+            "mcp_config": self.mcp_config.to_dict(),
+        }
+        save_json(target, payload)
         return target
 
     @classmethod
@@ -1151,6 +1206,16 @@ self.index_mode = INDEX_MODE_INCREMENTAL
             store.validation_config = ValidationConfig.from_dict(raw["validation_config"])
         if raw.get("react_config"):
             store.react_config = ReactConfig.from_dict(raw["react_config"])
+        if raw.get("executor_config"):
+            store.executor_config = ExecutorConfig.from_dict(raw["executor_config"])
+        if raw.get("graph_config"):
+            store.graph_config = GraphConfig.from_dict(raw["graph_config"])
+        if raw.get("approval_config"):
+            store.approval_config = ApprovalConfig.from_dict(raw["approval_config"])
+        if raw.get("supervisor_config"):
+            store.supervisor_config = SupervisorConfig.from_dict(raw["supervisor_config"])
+        if raw.get("mcp_config"):
+            store.mcp_config = McpConfig.from_dict(raw["mcp_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -1216,6 +1281,11 @@ self.index_mode = INDEX_MODE_INCREMENTAL
             "route_config": self.route_config.to_dict(),
             "validation_config": self.validation_config.to_dict(),
             "react_config": self.react_config.to_dict(),
+            "executor_config": self.executor_config.to_dict(),
+            "graph_config": self.graph_config.to_dict(),
+            "approval_config": self.approval_config.to_dict(),
+            "supervisor_config": self.supervisor_config.to_dict(),
+            "mcp_config": self.mcp_config.to_dict(),
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,
@@ -1416,29 +1486,7 @@ def _default_store_path() -> Path:
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _chunk_to_dict(chunk: TextChunk) -> dict[str, Any]:
-    return {
-        "chunk_id": chunk.chunk_id,
-        "text": chunk.text,
-        "source": chunk.source,
-        "index": chunk.index,
-        "start_char": chunk.start_char,
-        "end_char": chunk.end_char,
-    }
-
-
-def _chunk_from_dict(data: dict[str, Any]) -> TextChunk:
-    return TextChunk(
-        chunk_id=str(data.get("chunk_id", "")),
-        text=str(data.get("text", "")),
-        source=str(data.get("source", "")),
-        index=int(data.get("index", 0)),
-        start_char=int(data.get("start_char", 0)),
-        end_char=int(data.get("end_char", 0)),
-    )
+    return datetime.n
 ```
 
 
@@ -2072,7 +2120,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.39.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_upload_returns_incremental_mode(client):
@@ -2106,7 +2154,7 @@ def test_status_shows_incremental_fields(client):
             files={"file": ("notice.md", fh, "text/markdown")},
         )
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.39.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["index_mode"] == INDEX_MODE_INCREMENTAL
     assert status["last_incremental_at"]
     assert status["chroma_count"] == status["chunk_count"]

@@ -155,10 +155,10 @@ sequenceDiagram
     participant O as ChatOrchestrator
 
     U->>F: 输入消息
-    F->> "A: POST {message}"
+    F->>A: "POST {message}"
     A->>O: handle_message
     O-->>A: reply string
-    A-->> "F: JSON {reply, meta, kind}"
+    A-->>F: "JSON {reply, meta, kind}"
     F-->>U: 渲染气泡
 ```
 
