@@ -1,7 +1,31 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.43.0（Day 43 Supervisor 多 Agent）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-043
+**版本**：v0.44.0（Day 44 MCP 协议与工具生态）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-044
+
+## Day 44 新增
+
+```
+src/agent/mcp_config.py
+  server_name / mock_routing / max_tool_calls
+src/agent/mcp_protocol.py
+  tools/list + tools/call JSON-RPC 消息
+src/agent/mcp_server.py
+  NexusMcpServer — 暴露 ToolRegistry
+src/agent/mcp_client.py + mcp_bridge.py
+  MCP → StructuredTool 桥接
+src/agent/mcp_runner.py
+  discover → route → call → answer
+src/api/agent.py
+  GET/PUT mcp-config
+  POST mcp-list-tools / mcp-preview
+src/api/chat.py
+  mcp_mode=true → mcp_trace + mcp_tools
+src/day44/
+  mcp_demo.py / mcp_api_demo.py
+tests/day44/
+  17 项
+```
 
 ## Day 43 新增
 

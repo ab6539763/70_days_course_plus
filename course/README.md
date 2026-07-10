@@ -112,4 +112,5 @@ bash scripts/delivery_check.sh
 - [x] Day 41：StateGraph 状态图编排（planner → tool_runner → answer + node_path）
 - [x] Day 42：人工审批工作流（human_approval + checkpoint + approval-resume）
 - [x] Day 43：Supervisor 多 Agent（faq_worker / rag_worker / intent_worker 委派）
-- [ ] Day 44-70：持续更新中
+- [x] Day 44：MCP 协议与工具生态（NexusMcpServer + tools/list + tools/call）
+- [ ] Day 45-70：持续更新中

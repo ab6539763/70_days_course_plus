@@ -38,7 +38,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.43.0"
+    assert client.get("/api/health").json()["version"] == "0.44.0"
 
 
 def test_get_approval_config_default(client):
@@ -105,7 +105,7 @@ def test_approval_interrupt_resume(client):
 
 def test_status_includes_approval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.43.0"
+    assert status["platform_version"] == "0.44.0"
     assert status["approval_config"]["enabled"] is True
 
 

@@ -12,6 +12,7 @@ from agent.agent_executor import AgentExecutor
 from agent.approval_workflow_graph import ApprovalWorkflowGraph
 from agent.rag_agent_graph import RAGAgentGraph
 from agent.react_agent import ReActAgent
+from agent.mcp_runner import McpRunner
 from agent.supervisor_graph import SupervisorGraph
 from api.response_parser import classify_reply
 from api.schemas import ChatRequest, ChatResponse, HealthResponse, SessionResetRequest, SessionResetResponse
@@ -20,7 +21,7 @@ from rag.knowledge_store import get_knowledge_store
 from rag.validation_retry import apply_validation_retry
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.43.0"
+API_VERSION = "0.44.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -64,10 +65,26 @@ def chat(
     approval_payload = None
     supervisor_trace = None
     delegated_agents = None
+    mcp_trace = None
+    mcp_tools = None
     tools_used = None
 
     try:
-        if body.supervisor_mode and store.get_supervisor_config().enabled:
+        if body.mcp_mode and store.get_mcp_config().enabled:
+            mcfg = store.get_mcp_config()
+            runner = McpRunner.from_executor(
+                orchestrator.tool_executor,
+                config=mcfg,
+            )
+            history = _session_history(orchestrator, enabled=mcfg.use_session_history)
+            mcp_outcome = runner.invoke(message, history=history)
+            reply = mcp_outcome.reply
+            mcp_trace = [s.to_dict() for s in mcp_outcome.steps]
+            mcp_tools = list(mcp_outcome.mcp_tools)
+            tools_used = list(mcp_outcome.tools_used)
+            orchestrator.assistant.history.add_user(message)
+            orchestrator.assistant.history.add_assistant(reply)
+        elif body.supervisor_mode and store.get_supervisor_config().enabled:
             scfg = store.get_supervisor_config()
             supervisor = SupervisorGraph.from_executor(
                 orchestrator.tool_executor,
@@ -138,7 +155,10 @@ def chat(
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
-    if supervisor_trace is not None:
+    if mcp_trace is not None:
+        kind = "mcp"
+        meta = "MCP Tool Bridge"
+    elif supervisor_trace is not None:
         kind = "supervisor"
         meta = "Supervisor Multi-Agent"
     elif approval_payload is not None:
@@ -172,7 +192,10 @@ def chat(
     if outcome is not None:
         reply = outcome.reply
         kind, meta = classify_reply(reply)
-        if supervisor_trace is not None:
+        if mcp_trace is not None:
+            kind = "mcp"
+            meta = "MCP Tool Bridge"
+        elif supervisor_trace is not None:
             kind = "supervisor"
             meta = "Supervisor Multi-Agent"
         elif approval_payload is not None:
@@ -217,6 +240,8 @@ def chat(
         approval=approval_payload,
         supervisor_trace=supervisor_trace,
         delegated_agents=delegated_agents,
+        mcp_trace=mcp_trace,
+        mcp_tools=mcp_tools,
         tools_used=tools_used,
     )
 

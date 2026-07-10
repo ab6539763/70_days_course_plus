@@ -11,6 +11,8 @@ from fastapi import APIRouter, HTTPException
 from agent.agent_executor import AgentExecutor
 from agent.approval_config import ApprovalConfig
 from agent.approval_workflow_graph import ApprovalWorkflowGraph
+from agent.mcp_config import McpConfig
+from agent.mcp_runner import McpRunner
 from agent.supervisor_config import SupervisorConfig
 from agent.supervisor_graph import SupervisorGraph
 from agent.executor_config import ExecutorConfig
@@ -38,6 +40,12 @@ from api.schemas import (
     SupervisorConfigResponse,
     SupervisorPreviewRequest,
     SupervisorPreviewResponse,
+    McpConfigRequest,
+    McpConfigResponse,
+    McpListToolsRequest,
+    McpListToolsResponse,
+    McpPreviewRequest,
+    McpPreviewResponse,
     ReactConfigRequest,
     ReactConfigResponse,
     ReactPreviewRequest,
@@ -242,3 +250,54 @@ def supervisor_preview(body: SupervisorPreviewRequest) -> SupervisorPreviewRespo
     history = [{"role": "user", "content": h} for h in (body.history or [])]
     outcome = graph.invoke(body.query, history=history or None)
     return SupervisorPreviewResponse(**outcome.to_dict())
+
+
+@router.get("/mcp-config", response_model=McpConfigResponse)
+def get_mcp_config() -> McpConfigResponse:
+    cfg = get_knowledge_store().get_mcp_config()
+    return McpConfigResponse(**cfg.to_dict())
+
+
+@router.put("/mcp-config", response_model=McpConfigResponse)
+def update_mcp_config(body: McpConfigRequest) -> McpConfigResponse:
+    store = get_knowledge_store()
+    try:
+        cfg = McpConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_mcp_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return McpConfigResponse(**cfg.to_dict())
+
+
+@router.post("/mcp-list-tools", response_model=McpListToolsResponse)
+def mcp_list_tools(body: McpListToolsRequest) -> McpListToolsResponse:
+    """MCP tools/list — 返回 Server 暴露的工具 schema"""
+    _ = body
+    store = get_knowledge_store()
+    cfg = store.get_mcp_config()
+    if not cfg.enabled:
+        raise HTTPException(status_code=400, detail="MCP 工具桥接已关闭")
+
+    orchestrator = create_orchestrator()
+    runner = McpRunner.from_executor(orchestrator.tool_executor, config=cfg)
+    return McpListToolsResponse(
+        server_name=cfg.server_name,
+        tools=runner.list_tool_descriptors(),
+    )
+
+
+@router.post("/mcp-preview", response_model=McpPreviewResponse)
+def mcp_preview(body: McpPreviewRequest) -> McpPreviewResponse:
+    """MCP 工具发现 + 路由 + 调用预览 — 返回 mcp_trace"""
+    store = get_knowledge_store()
+    cfg = store.get_mcp_config()
+    if not cfg.enabled:
+        raise HTTPException(status_code=400, detail="MCP 工具桥接已关闭")
+
+    orchestrator = create_orchestrator()
+    runner = McpRunner.from_executor(orchestrator.tool_executor, config=cfg)
+    history = [{"role": "user", "content": h} for h in (body.history or [])]
+    outcome = runner.invoke(body.query, history=history or None)
+    return McpPreviewResponse(**outcome.to_dict())

@@ -38,6 +38,10 @@ class ChatRequest(BaseModel):
         default=False,
         description="为 true 时走 Supervisor 多 Agent 委派（Day 43）",
     )
+    mcp_mode: bool = Field(
+        default=False,
+        description="为 true 时走 MCP 协议工具桥接（Day 44）",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -58,6 +62,8 @@ class ChatResponse(BaseModel):
     approval: dict | None = None
     supervisor_trace: list[dict] | None = None
     delegated_agents: list[str] | None = None
+    mcp_trace: list[dict] | None = None
+    mcp_tools: list[str] | None = None
     tools_used: list[str] | None = None
 
 
@@ -117,6 +123,7 @@ class KnowledgeStatusResponse(BaseModel):
     graph_config: dict = Field(default_factory=dict)
     approval_config: dict = Field(default_factory=dict)
     supervisor_config: dict = Field(default_factory=dict)
+    mcp_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -528,6 +535,55 @@ class SupervisorPreviewResponse(BaseModel):
     tools_used: list[str]
     delegated_agents: list[str] = Field(default_factory=list)
     node_path: list[str] = Field(default_factory=list)
+
+
+class McpConfigRequest(BaseModel):
+    """PUT /api/agent/mcp-config"""
+
+    enabled: bool = True
+    server_name: str = Field("nexus-tools", min_length=1, max_length=64)
+    expose_external_tools: bool = True
+    mock_routing: bool = True
+    use_session_history: bool = True
+    return_mcp_trace: bool = True
+    max_tool_calls: int = Field(2, ge=1, le=4)
+
+
+class McpConfigResponse(BaseModel):
+    enabled: bool
+    server_name: str
+    expose_external_tools: bool
+    mock_routing: bool
+    use_session_history: bool
+    return_mcp_trace: bool
+    max_tool_calls: int
+
+
+class McpListToolsRequest(BaseModel):
+    """POST /api/agent/mcp-list-tools"""
+
+    pass
+
+
+class McpListToolsResponse(BaseModel):
+    server_name: str
+    tools: list[dict]
+
+
+class McpPreviewRequest(BaseModel):
+    """POST /api/agent/mcp-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+    history: list[str] = Field(default_factory=list)
+
+
+class McpPreviewResponse(BaseModel):
+    query: str
+    reply: str
+    steps: list[dict]
+    tools_used: list[str]
+    mcp_tools: list[str] = Field(default_factory=list)
+    server_name: str = "nexus-tools"
 
 
 class RebuildRequest(BaseModel):

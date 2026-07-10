@@ -19,6 +19,7 @@ def file04(day: int) -> str:
         41: _file04_day41,
         42: _file04_day42,
         43: _file04_day43,
+        44: _file04_day44,
     }
     return builders[day]()
 
@@ -571,5 +572,41 @@ sequenceDiagram
 GET/PUT /api/agent/supervisor-config
 POST    /api/agent/supervisor-preview
 POST    /api/chat  supervisor_mode=true
+```
+"""
+
+
+def _file04_day44() -> str:
+    return """# Day 44 流程图与示意图
+
+## MCP 工具调用时序
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant R as McpRunner
+    participant C as McpClient
+    participant S as NexusMcpServer
+    participant T as ToolExecutor
+    U->>R: query
+    R->>C: tools/list
+    C->>S: JSON-RPC
+    S-->>C: tool schemas
+    R->>R: route tool
+    R->>C: tools/call
+    C->>S: name + arguments
+    S->>T: execute
+    T-->>S: observation
+    S-->>R: text content
+    R-->>U: reply + mcp_trace
+```
+
+## API
+
+```
+GET/PUT /api/agent/mcp-config
+POST    /api/agent/mcp-list-tools
+POST    /api/agent/mcp-preview
+POST    /api/chat  mcp_mode=true
 ```
 """

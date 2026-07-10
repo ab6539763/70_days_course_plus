@@ -9,7 +9,7 @@ from course_diagrams import file04
 
 def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     files = dict(files)
-    if 31 <= day <= 43:
+    if 31 <= day <= 44:
         files["04_流程图与示意图.md"] = file04(day)
     if day == 35:
         files.update(_day35_minimal_overrides())
@@ -40,6 +40,9 @@ def apply_fixes(day: int, files: dict[str, str]) -> dict[str, str]:
     elif day == 43:
         files.update(_day43_minimal_overrides())
         files["03_架构设计.md"] = _architecture_day43()
+    elif day == 44:
+        files.update(_day44_minimal_overrides())
+        files["03_架构设计.md"] = _architecture_day44()
     return files
 
 
@@ -82,6 +85,10 @@ def post_fix_content(day: int, name: str, content: str) -> str:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[37, 38, 39, 40, 41, 42])
         content = _fix_day43_terms(content, name)
+    elif day == 44:
+        if not skip_header_fix:
+            content = _fix_headers(content, day, wrong_days=[37, 38, 39, 40, 41, 42, 43])
+        content = _fix_day44_terms(content, name)
     elif 31 <= day <= 34:
         if not skip_header_fix:
             content = _fix_headers(content, day, wrong_days=[d for d in range(31, 38) if d != day])
@@ -1728,4 +1735,186 @@ def _acceptance_day43() -> str:
 - [ ] chat supervisor_mode 含 supervisor_trace
 - [ ] delegated_agents 正确路由
 - [ ] tests/day43/ 17 项全绿
+"""
+
+
+def _fix_day44_terms(content: str, name: str) -> str:
+    if name == "27_Day45预习.md":
+        return content
+    subs = [
+        ("# Day 43 ", "# Day 44 "),
+        ("（Day 43）", "（Day 44）"),
+        ("22_supervisor_graph精读.md", "22_mcp_runner精读.md"),
+        ("17_Supervisor_API速查手册", "17_MCP_API速查手册"),
+        ("精读：supervisor_graph 与多 Agent 委派管线", "精读：mcp_runner 与 MCP 工具桥接管线"),
+        ("## 一、citation_builder.py 全文", "## 一、mcp_runner.py 全文"),
+        ("## 一、supervisor_graph.py 全文", "## 一、mcp_runner.py 全文"),
+        ("## 二十一、citation_builder 完整源码", "## 二十一、mcp_runner 完整源码"),
+        ("## 二十一、supervisor_graph 完整源码", "## 二十一、mcp_runner 完整源码"),
+        ("## 四十、citation_builder 全文嵌入", "## 四十、mcp_runner 全文嵌入"),
+        ("## 四十、supervisor_graph 全文嵌入", "## 四十、mcp_runner 全文嵌入"),
+        ("Supervisor详解", "MCP详解"),
+        ("Supervisor 验收清单", "MCP 验收清单"),
+        ("与 Day 42 能力对照表", "与 Day 43 能力对照表"),
+        ("| Day 42 Approval | Day 43 Supervisor |", "| Day 43 Supervisor | Day 44 MCP |"),
+        ("Phase 4 · Day 43 · Supervisor", "Phase 4 · Day 44 · MCP"),
+        ("Phase 4 第五日总结（Day 43）", "Phase 4 第六日总结（Day 44）"),
+        ("ZL-NA-REQ-043", "ZL-NA-REQ-044"),
+        ("v0.43.0", "v0.44.0"),
+        ("supervisor_demo.py", "mcp_demo.py"),
+        ("supervisor_api_demo.py", "mcp_api_demo.py"),
+        ("supervisor-preview", "mcp-preview"),
+        ("SupervisorGraph.invoke", "McpRunner.invoke"),
+        ("faq_worker / rag_worker", "tools/list + tools/call"),
+        ("Supervisor 多 Agent 委派", "MCP 协议与工具生态"),
+        ("多 Agent 委派方法论", "MCP 工具桥接方法论"),
+        ("Supervisor 路由与委派实践", "MCP 发现与调用实践"),
+        ("tests/day43/", "tests/day44/"),
+        ("day43/", "day44/"),
+        ("17 项全绿", "17 项全绿"),
+        ("supervisor_graph", "mcp_runner"),
+        ("SupervisorGraph", "McpRunner"),
+        ("supervisor_mode", "mcp_mode"),
+        ("SupervisorConfig", "McpConfig"),
+        ("delegated_agents", "mcp_tools"),
+        ("supervisor-config", "mcp-config"),
+        ("supervisor_trace", "mcp_trace"),
+        ("sub_agent", "mcp_server"),
+    ]
+    return _apply_subs(content, subs)
+
+
+def _day44_minimal_overrides() -> dict[str, str]:
+    return {
+        "01_企业背景与今日任务.md": _day44_file01(),
+        "10_ReAct验收清单.md": _acceptance_day44(),
+        "11_ReAct详解.md": _day44_file11(),
+        "17_ReAct_API速查手册.md": _day44_api_cheatsheet(),
+        "18_与Day38能力对照表.md": _day44_file18(),
+        "24_Phase4第一日总结.md": _day44_file24(),
+    }
+
+
+def _day44_file01() -> str:
+    return """# Day 44 企业背景与今日任务
+
+**需求**：ZL-NA-REQ-044 | **版本**：v0.44.0
+
+## 背景
+
+Day 43 Supervisor 已能协调多子 Agent；今日交付 **自研 MCP Server** — 以 tools/list + tools/call 暴露 Nexus 工具链。
+
+## 任务
+
+| 时段 | 内容 |
+|------|------|
+| 上午 | McpConfig + NexusMcpServer + McpClient |
+| 下午 | Lab：mcp-list-tools + mcp-preview + mcp_trace 截图 |
+| 晚自习 | 读 Day 45 Dify 预习 |
+
+## 代码阅读顺序
+
+1. `agent/mcp_config.py`
+2. `agent/mcp_protocol.py`
+3. `agent/mcp_server.py`
+4. `agent/mcp_runner.py`
+5. `api/agent.py` mcp-config / mcp-preview
+6. `api/chat.py` mcp_mode
+7. `tests/day44/`
+"""
+
+
+def _day44_file11() -> str:
+    return """# MCP 详解（Day 44 专题）
+
+## 1. 协议
+
+MCP 用 JSON-RPC 暴露 `tools/list` 与 `tools/call`，与 SubAgent 内嵌工具不同，可对接外部生态。
+
+## 2. 管线
+
+discover → route → call → answer — `mcp_trace[]` 记录每阶段。
+
+## 3. 桥接
+
+`mcp_bridge.structured_tools_from_mcp` 将 MCP 工具转为 StructuredTool，供 Executor/Supervisor 复用。
+"""
+
+
+def _day44_file18() -> str:
+    return """# Day 44 与 Day 43 能力对照表
+
+| 维度 | Day 43 Supervisor | Day 44 MCP |
+|------|-------------------|------------|
+| 模式 | 多子 Agent 委派 | MCP 工具发现与调用 |
+| 扩展 | 进程内 SubAgent | 外部 MCP Server 语义 |
+| API | supervisor-preview | mcp-preview + mcp-list-tools |
+| chat | supervisor_mode | mcp_mode |
+| trace | supervisor_trace | mcp_trace |
+"""
+
+
+def _day44_file24() -> str:
+    return """# Phase 4 第六日总结（Day 44）
+
+## 交付
+
+- NexusMcpServer + McpRunner 四阶段管线
+- mcp-config / mcp-list-tools / mcp-preview API
+- chat mcp_mode → mcp_trace + mcp_tools
+
+## 验收
+
+- tests/day44/ 17 项全绿
+- delivery_check day01-day44 全绿
+"""
+
+
+def _day44_api_cheatsheet() -> str:
+    return """# MCP API 速查（Day 44）
+
+```
+GET  /api/agent/mcp-config
+PUT  /api/agent/mcp-config
+POST /api/agent/mcp-list-tools
+POST /api/agent/mcp-preview
+POST /api/chat  { "mcp_mode": true }
+```
+"""
+
+
+def _architecture_day44() -> str:
+    return """# Day 44 架构设计 — MCP 工具桥接
+
+## 分层
+
+```mermaid
+flowchart TD
+    CHAT["/api/chat mcp_mode"] --> RUN[McpRunner.invoke]
+    RUN --> LIST[McpClient tools/list]
+    LIST --> ROUTE[mock_routing]
+    ROUTE --> CALL[McpClient tools/call]
+    CALL --> SRV[NexusMcpServer]
+    SRV --> TE[ToolExecutor]
+    RUN --> TRACE[mcp_trace]
+```
+
+## API
+
+```
+GET/PUT /api/agent/mcp-config
+POST    /api/agent/mcp-list-tools
+POST    /api/agent/mcp-preview
+POST    /api/chat  mcp_mode=true
+```
+"""
+
+
+def _acceptance_day44() -> str:
+    return """# Day 44 MCP 验收清单
+
+- [ ] mcp_demo / mcp-preview 绿
+- [ ] mcp-list-tools 返回 faq/rag/intent 工具
+- [ ] chat mcp_mode 含 mcp_trace + mcp_tools
+- [ ] tests/day44/ 17 项全绿
 """
