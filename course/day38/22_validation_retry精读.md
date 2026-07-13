@@ -1689,7 +1689,7 @@ def test_validation_preview_still_works(client):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 context，找 search。先看 enabled：关了就 hybrid。开则 pool=max(20,top_k)。inner 召回，validation_retry 逐对 rewrite，截断 top_k。这就是 ZL-NA-REQ-032 的读取路径。」
+「打开 validation_retry，找 apply_validation_retry。先看首次校验：通过直接返回。失败且 retry_on_fail 才用 rag_wide 重检索再校验一次。这就是 ZL-NA-REQ-038 的读取路径。」
 
 ---
 
@@ -2621,10 +2621,10 @@ def test_validation_preview_still_works(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 validation_retry，Citation 有 rank chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 validation_retry，apply_validation_retry 返回是否重试过。chat 里 validation.retries 挂在 reply 后面。前端可展示重试次数。这就是 ZL-NA-REQ-038。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 37 · Citation · ZL-NA-REQ-038 · validation_retry 精读完**
+**NexusAgent 课程 · Phase 3 · Day 38 · Retry · ZL-NA-REQ-038 · validation_retry 精读完**

@@ -1617,7 +1617,7 @@ Reimers & Gurevych 指出 bi-encoder 适合召回，cross-encoder 适合 rewrite
 def _file20() -> str:
     return f"""# Day 37 完整代码走查
 
-按**调用顺序**阅读，预计 90 分钟。精读全文见 `22_citation_builder精读.md`。
+按**调用顺序**阅读，预计 90 分钟。精读全文见 `22_answer_validator精读.md`。
 
 ---
 
@@ -1625,43 +1625,38 @@ def _file20() -> str:
 
 | 顺序 | 文件 | 关注 |
 |------|------|------|
-| 1 | `citation_config.py` | validate / defaults |
-| 2 | `citation_builder.py` | rewrite + MockCrossEncoder |
-| 3 | `context.py` | 三阶段 search |
-| 4 | `knowledge_store.py` | _build_rag_service 外包 |
-| 5 | `api/knowledge.py` | route-config |
-| 6 | `day37/route_demo.py` | 开关对比 |
-| 7 | `day37/route_api_demo.py` | TestClient |
-| 8 | `tests/day37/` | 20 项 |
+| 1 | `rag/answer_validator.py` | RuleBasedAnswerValidator — 引用-回复一致性打分 |
+| 2 | `rag/validation_config.py` | ValidationConfig — enabled / min_score / refuse_on_fail |
+| 3 | `day37/validation_demo.py` | CLI 演示 |
+| 4 | `day37/validation_api_demo.py` | TestClient 演示 |
+| 5 | `tests/day37/` | 21 项 |
 
 ---
 
 ## 1. 配置层
 
-`RouteConfig` 是改写单一真相源。store 启动 `from_dict` 加载；API PUT 更新。
+`answer_validator.py` 是本日配置的单一真相源。store 启动时 `from_dict` 加载；API `PUT` 更新并持久化。
 
-**检查点**：默认 enabled=True, pool=20。
+**检查点**：默认 `enabled=True`。
 
 ---
 
-## 2. search 调用栈
+## 2. 调用栈
 
 ```
 POST /api/chat
-  → RAGContextService.retrieve
-    → DocumentIndex.search
-      → RAGContextService.search
-        → HybridRetriever.search(pool)
-        → RuleBasedQueryRouter.route.rewrite
+  → RuleBasedAnswerValidator
+    → 处理逻辑
+      → 下游衔接 Day 36 管线
 ```
 
 ---
 
-## 3. _build_rag_service
+## 3. 核心模块全文
 
-{fenced("python", _BUILD_RAG)}
+{fenced("python", QUERY_ROUTER)}
 
-**练习**：确认 `RAGContextService` 包裹 `HybridRetriever`，而非替换。
+**练习**：找出核心处理逻辑与 Day 36 管线的衔接点。
 
 ---
 
@@ -1669,15 +1664,15 @@ POST /api/chat
 
 {fenced("python", _ROUTE_API)}
 
-**检查点**：422 来自 `ValueError` → HTTPException。
+**检查点**：非法配置 → `ValueError` → HTTP 422。
 
 ---
 
-## 5. route_demo
+## 5. CLI 演示
 
 {fenced("python", ROUTE_DEMO)}
 
-对每条 `ROUTE_QUERIES` 对比 enabled 开关。
+对每条内置 case study 打印处理结果。
 
 ---
 
@@ -1685,30 +1680,29 @@ POST /api/chat
 
 | 文件 | 覆盖 |
 |------|------|
-| test_query_router.py | rewrite、翻牌、持久化、inner |
-| test_route_api.py | HTTP、chat、version |
+| tests/day37/*.py | 单元 + API + chat 集成 |
 
-**必读**：`test_RuleBasedQueryRouter.route_from_results_candidates`、`test_citation_preview_with_rewrite`。
+**必读**：`tests/day37/` 中覆盖「空 query」与「配置关闭」两个边界的测试。
 
 ---
 
 ## 7. 走查后自测
 
-1. 闭卷写出三阶段 search 5 步。  
-2. 说明 rewrite 四项组成。  
-3. 指出 PUT 后 chat 如何读到新 pool。
+1. 闭卷写出 `RuleBasedAnswerValidator` 的处理步骤。
+2. 说明 `ValidationConfig` 每个字段含义。
+3. 指出 `PUT /api/knowledge/validation-config` 后 chat 如何读到新配置。
 
 ---
 
-## 8. knowledge_store rewrite 节选
+## 8. knowledge_store 配置方法节选
 
 {fenced("python", _ROUTE_CFG_METHODS)}
 
 ---
 
-## 9. 完整 citation_builder（走查用）
+## 9. API demo 全文（走查用）
 
-{fenced("python", QUERY_ROUTER)}
+{fenced("python", ROUTE_API_DEMO)}
 
 ---
 
@@ -1716,24 +1710,24 @@ POST /api/chat
 
 | 分钟 | 内容 |
 |------|------|
-| 0–15 | citation_config |
-| 15–40 | citation_builder + rewrite |
-| 40–55 | context |
-| 55–70 | _build_rag_service + API |
-| 70–90 | demos + tests |
+| 0-15 | 配置层 |
+| 15-40 | 核心处理逻辑 |
+| 40-55 | API 层 |
+| 55-70 | demo 走读 |
+| 70-90 | 测试 + chat 回归 |
 
 ---
 
 ## 11. 常见问题走查
 
-**Q save 后 RAG 何时刷新？** `set_citation_config` → `invalidate_cache`。  
-**Q enabled=False 还构造 citation_builder 吗？** 构造但不调用 rewrite。  
+**Q save 后配置何时生效？** `set_validation_config` 立即写回内存，`store.save()` 落盘。
+**Q 关闭后还会构造核心对象吗？** 构造但不会触发本日新增的处理分支。
 
 ---
 
 ## 12. 走查验收 oral exam
 
-学员随机抽：讲解 `test_RuleBasedQueryRouter.route_from_results_candidates` 如何构造噪声候选。
+学员随机抽：讲解 `RuleBasedAnswerValidator` 如何处理一次典型输入。
 """
 
 
@@ -2084,7 +2078,7 @@ function FETCH_CITATIONS(q, top_k):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 context，找 search。先看 enabled：关了就 hybrid。开则 pool=max(20,top_k)。inner 召回，citation_builder 逐对 rewrite，截断 top_k。这就是 ZL-NA-REQ-032 的读取路径。」
+「打开 answer_validator，找 validate。先看 enabled：关了直接放行。开则算 reply 与 citations 的 token 覆盖率，低于 min_score 且 refuse_on_fail 才拒答。这就是 {REQ} 的读取路径。」
 
 ---
 
@@ -2210,13 +2204,13 @@ ColBERT late interaction 介于 bi 与 cross；本课不展开。
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 citation_builder，Citation 有 rank chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 answer_validator，ValidationResult 有 passed score reason。chat 里 validation 字段挂在 reply 后面。前端可展示校验是否通过。这就是 {REQ}。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 37 · Citation · {REQ} · citation_builder 精读完**
+**NexusAgent 课程 · Phase 3 · Day 37 · Validation · {REQ} · answer_validator 精读完**
 """
 
 
@@ -2391,9 +2385,9 @@ Day 37：HyDE / 自适应路由 — 一条问句变多条检索 query。
 
 
 def _file25() -> str:
-    return f"""# route_api 脚本精读
+    return f"""# Day 37 API 脚本精读
 
-## route_api_demo.py 全文
+## API demo 全文
 
 {fenced("python", ROUTE_API_DEMO)}
 
@@ -2403,31 +2397,29 @@ def _file25() -> str:
 
 | 行段 | 说明 |
 |------|------|
-| L13–L17 | 注入 `src` 与 `NEXUS_LLM_MOCK` |
-| L21–L22 | TestClient 与 app |
-| L26 | bootstrap 保证语料 |
-| L30–L31 | GET 默认 rewrite 配置 |
-| L33–L37 | PUT pool=20 — **API 核心演示** |
-| L39–L40 | status 对账 citation_config |
-| L42–L44 | chat + health version `{VER}` |
+| 开头 | 注入 `src` 与 `NEXUS_LLM_MOCK` |
+| TestClient | 创建 app 与测试客户端 |
+| bootstrap | 保证语料/知识库已初始化 |
+| GET 配置 | 读默认配置 |
+| PUT 配置 | 更新配置 — **API 核心演示** |
+| status | 对账 config 是否写回 store |
+| chat + health | 端到端 + 版本号 `v0.37.0` |
 
 ---
 
-## route_demo.py 全文
+## CLI demo 全文
 
 {fenced("python", ROUTE_DEMO)}
 
-`_top_hit` 切换 enabled 后 `as_rag_service()` — 注意缓存失效。
-
 ---
 
-## constants.py
+## constants.py（case studies，query）
 
 ```python
-ROUTE_QUERIES = (
-    {{"query": "年化收益率可达", "expect_any": ("8%", "年化")}},
-    {{"query": "13900001111", "expect_any": ("13900001111", "联系")}},
-    {{"query": "投资有风险", "expect_any": ("风险", "谨慎")}},
+VALIDATION_CASES = (
+    ("客服电话多少 → 客服热线是 400-888-1234",),
+    ("年化收益怎么样 → 今天北京天气晴朗",),
+    ("min_score 附近的部分匹配回答",),
 )
 ```
 
@@ -2436,9 +2428,9 @@ ROUTE_QUERIES = (
 ## 运行矩阵
 
 ```bash
-PYTHONPATH=src python3 src/day37/route_demo.py
-PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day37/route_api_demo.py
-pytest tests/day37/test_route_api.py -v
+PYTHONPATH=src python3 src/day37/validation_demo.py
+PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day37/validation_api_demo.py
+pytest tests/day37/ -v
 ```
 """
 

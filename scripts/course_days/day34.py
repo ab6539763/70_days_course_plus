@@ -83,7 +83,7 @@ def build() -> dict[str, str]:
         "15_授课实录.md": _file15(),
         "16_复习卡片.md": _file16(),
         "17_Citation_API速查手册.md": _file17(),
-        "18_与Day35能力对照表.md": _file18(),
+        "18_与Day33能力对照表.md": _file18(),
         "19_讲师补充阅读.md": _file19(),
         "20_完整代码走查.md": _file20(),
         "21_课堂知识竞赛.md": _file21(),

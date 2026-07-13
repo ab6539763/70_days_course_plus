@@ -1,6 +1,6 @@
-# route_api 脚本精读
+# Day 37 API 脚本精读
 
-## validation_api_demo.py 全文
+## API demo 全文
 
 ```python
 """
@@ -67,17 +67,17 @@ if __name__ == "__main__":
 
 | 行段 | 说明 |
 |------|------|
-| L13–L17 | 注入 `src` 与 `NEXUS_LLM_MOCK` |
-| L21–L22 | TestClient 与 app |
-| L26 | bootstrap 保证语料 |
-| L30–L31 | GET 默认 rewrite 配置 |
-| L33–L37 | PUT pool=20 — **API 核心演示** |
-| L39–L40 | status 对账 citation_config |
-| L42–L44 | chat + health version `v0.37.0` |
+| 开头 | 注入 `src` 与 `NEXUS_LLM_MOCK` |
+| TestClient | 创建 app 与测试客户端 |
+| bootstrap | 保证语料/知识库已初始化 |
+| GET 配置 | 读默认配置 |
+| PUT 配置 | 更新配置 — **API 核心演示** |
+| status | 对账 config 是否写回 store |
+| chat + health | 端到端 + 版本号 `v0.37.0` |
 
 ---
 
-## validation_demo.py 全文
+## CLI demo 全文
 
 ```python
 """
@@ -134,17 +134,15 @@ if __name__ == "__main__":
 ```
 
 
-`_top_hit` 切换 enabled 后 `as_rag_service()` — 注意缓存失效。
-
 ---
 
-## constants.py
+## constants.py（case studies，query）
 
 ```python
-ROUTE_QUERIES = (
-    {"query": "年化收益率可达", "expect_any": ("8%", "年化")},
-    {"query": "13900001111", "expect_any": ("13900001111", "联系")},
-    {"query": "投资有风险", "expect_any": ("风险", "谨慎")},
+VALIDATION_CASES = (
+    ("客服电话多少 → 客服热线是 400-888-1234",),
+    ("年化收益怎么样 → 今天北京天气晴朗",),
+    ("min_score 附近的部分匹配回答",),
 )
 ```
 
@@ -155,5 +153,5 @@ ROUTE_QUERIES = (
 ```bash
 PYTHONPATH=src python3 src/day37/validation_demo.py
 PYTHONPATH=src NEXUS_LLM_MOCK=1 python3 src/day37/validation_api_demo.py
-pytest tests/day37/test_route_api.py -v
+pytest tests/day37/ -v
 ```

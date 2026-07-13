@@ -1,55 +1,49 @@
-# Rewrite API 速查手册
+# 自适应路由（Query Router） API 速查手册
 
-## GET route-config
+## GET /api/knowledge/route-config
 
 ```bash
 curl -s http://127.0.0.1:8000/api/knowledge/route-config | jq .
 ```
 
-响应：
-
-```json
-{
-  "enabled": true,
-  "max_citations": 20,
-  "model": "mock"
-}
-```
-
-## PUT route-config
+## PUT /api/knowledge/route-config
 
 ```bash
 curl -s -X PUT http://127.0.0.1:8000/api/knowledge/route-config \
   -H 'Content-Type: application/json' \
-  -d '{
-    "enabled": true,
-    "max_citations": 20,
-    "model": "mock"
-  }'
+  -d '{"enabled": true}'
 ```
 
-关闭改写：
+关闭本日新增能力：
 
 ```bash
 curl -s -X PUT http://127.0.0.1:8000/api/knowledge/route-config \
   -H 'Content-Type: application/json' \
-  -d '{"enabled": false, "max_citations": 20, "model": "mock"}'
+  -d '{"enabled": false}'
 ```
 
-## status 中的 citation_config
+## POST /api/knowledge/route-preview
 
 ```bash
-curl -s http://127.0.0.1:8000/api/knowledge/status | jq '.citation_config, .platform_version'
+curl -s -X POST http://127.0.0.1:8000/api/knowledge/route-preview \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "测试问题"}' | jq .
+```
+
+## status 中的 route_config
+
+```bash
+curl -s http://127.0.0.1:8000/api/knowledge/status | jq '.route_config, .platform_version'
 ```
 
 ## Python 编程式
 
 ```python
 from rag.knowledge_store import get_knowledge_store
-from rag.citation_config import RouteConfig
 
 store = get_knowledge_store()
-store.set_citation_config(RouteConfig(enabled=True, max_citations=15))
+cfg = store.get_route_config()
+cfg.enabled = True
 store.save()
 ```
 
@@ -57,9 +51,9 @@ store.save()
 
 | 状态 | 原因 |
 |------|------|
-| 422 | pool 越界或 model 非法 |
+| 422 | 配置字段越界或非法 |
 | 200 | 成功并持久化 |
 
-## 常量
+## 核心类
 
-- `MODEL_MOCK` = `"mock"`
+- `RoutingRetriever` — 见 `rag/query_router.py`

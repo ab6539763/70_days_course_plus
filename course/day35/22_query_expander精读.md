@@ -1762,7 +1762,7 @@ def test_expansion_preview_hyde_mode(client):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 ExpandingRetriever，找 search。先看 enabled：关了就 inner。开则 QueryExpander 生成多 query，逐路 search 后 merge 去重。这就是 ZL-NA-REQ-035 的读取路径。」
+「打开 ExpandingRetriever，找 search。先看 enabled：关了就走 inner 单路检索。开则 QueryExpander 生成多条候选 query，逐路 search 后按 chunk_id merge 去重。这就是 ZL-NA-REQ-035 的读取路径。」
 
 ---
 
@@ -2699,10 +2699,10 @@ def test_expansion_preview_hyde_mode(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 query_expander，ExpansionResult 有 queries chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-035。」
+「打开 query_expander，QueryExpander.expand 返回候选 query 列表。chat 里 expansion.queries 挂在 reply 后面。前端可展示扩展出的候选问句。这就是 ZL-NA-REQ-035。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 36 · Citation · ZL-NA-REQ-035 · query_expander 精读完**
+**NexusAgent 课程 · Phase 3 · Day 35 · Expansion · ZL-NA-REQ-035 · query_expander 精读完**

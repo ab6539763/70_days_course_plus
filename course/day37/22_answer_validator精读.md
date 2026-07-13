@@ -1982,7 +1982,7 @@ def test_validation_preview_with_explicit_citations(client):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 context，找 search。先看 enabled：关了就 hybrid。开则 pool=max(20,top_k)。inner 召回，citation_builder 逐对 rewrite，截断 top_k。这就是 ZL-NA-REQ-032 的读取路径。」
+「打开 answer_validator，找 validate。先看 enabled：关了直接放行。开则算 reply 与 citations 的 token 覆盖率，低于 min_score 且 refuse_on_fail 才拒答。这就是 ZL-NA-REQ-037 的读取路径。」
 
 ---
 
@@ -2990,7 +2990,7 @@ def test_validation_preview_with_explicit_citations(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 answer_validator，ValidationResult 有 passed chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-037。」
+「打开 answer_validator，ValidationResult 有 passed score reason。chat 里 validation 字段挂在 reply 后面。前端可展示校验是否通过。这就是 ZL-NA-REQ-037。」
 
 ---
 

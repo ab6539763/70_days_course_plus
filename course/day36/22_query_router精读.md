@@ -1565,7 +1565,7 @@ def test_route_preview_wide(client):
 
 ## 三十一、课堂录音稿（8 min）
 
-「打开 context，找 search。先看 enabled：关了就 hybrid。开则 pool=max(20,top_k)。inner 召回，citation_builder 逐对 rewrite，截断 top_k。这就是 ZL-NA-REQ-032 的读取路径。」
+「打开 RoutingRetriever，找 search。先看 intent：faq_fast 直接查，rag_standard 走默认管线，rag_wide 才开 expand+rewrite。这就是 ZL-NA-REQ-036 的读取路径。」
 
 ---
 
@@ -2406,10 +2406,10 @@ def test_route_preview_wide(client):
 
 ## 四十九、课堂 8 分钟录音稿
 
-「打开 query_router，RouteDecision 有 intent chunk_id source score preview。chat 里 fetch_citations 挂在 reply 后面。前端 citations 数组渲染来源。这就是 ZL-NA-REQ-036。」
+「打开 query_router，RuleBasedQueryRouter.route 返回 intent。chat 里 route 字段挂在 reply 后面。前端可展示当前走的是快路径还是宽路径。这就是 ZL-NA-REQ-036。」
 
 ---
 
 ## 五十、End of 22 精读
 
-**NexusAgent 课程 · Phase 3 · Day 37 · Citation · ZL-NA-REQ-036 · query_router 精读完**
+**NexusAgent 课程 · Phase 3 · Day 36 · Route · ZL-NA-REQ-036 · query_router 精读完**
