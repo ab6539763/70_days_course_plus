@@ -25,6 +25,7 @@ from typing import Any
 
 from core.paths import get_path
 from agent.approval_config import ApprovalConfig
+from agent.dify_config import DifyConfig
 from agent.mcp_config import McpConfig
 from agent.supervisor_config import SupervisorConfig
 from agent.executor_config import ExecutorConfig
@@ -33,7 +34,6 @@ from agent.react_config import ReactConfig
 from rag.chunker import TextChunk, chunk_documents, chunk_text
 from rag.chunk_config import DEFAULT_CHUNK_CONFIG, ChunkConfig
 from rag.chunk_strategies import chunk_from_parsed
-from rag.context import DocumentIndex, RAGContextService
 ```
 
 
@@ -44,6 +44,7 @@ from rag.context import DocumentIndex, RAGContextService
 ## KnowledgeDocument 元数据类
 
 ```python
+from rag.routing_retriever import RoutingRetriever
 from rag.validation_config import ValidationConfig
 from rag.hybrid_retriever import HybridRetriever
 from rag.rerank_config import RerankConfig
@@ -58,7 +59,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.44.0"
+PLATFORM_VERSION = "0.45.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -70,7 +71,6 @@ class KnowledgeDocument:
     name: str
     ingested_at: str
     size_bytes: int = 0
-    chunk_count: int = 0
 ```
 
 
@@ -85,7 +85,8 @@ class KnowledgeDocument:
 ## KnowledgeStore 字段
 
 ```python
-return {
+def to_dict(self) -> dict[str, Any]:
+        return {
             "name": self.name,
             "ingested_at": self.ingested_at,
             "size_bytes": self.size_bytes,
@@ -105,7 +106,6 @@ return {
 
 
 @dataclass
-class KnowledgeStore:
 ```
 
 
@@ -119,10 +119,12 @@ class KnowledgeStore:
 ## ingest_text 核心写入
 
 ```python
-graph_config: GraphConfig = field(default_factory=GraphConfig)
+executor_config: ExecutorConfig = field(default_factory=ExecutorConfig)
+    graph_config: GraphConfig = field(default_factory=GraphConfig)
     approval_config: ApprovalConfig = field(default_factory=ApprovalConfig)
     supervisor_config: SupervisorConfig = field(default_factory=SupervisorConfig)
     mcp_config: McpConfig = field(default_factory=McpConfig)
+    dify_config: DifyConfig = field(default_factory=DifyConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -154,9 +156,6 @@ graph_config: GraphConfig = field(default_factory=GraphConfig)
 
     def get_retrieval_config(self) -> RetrievalConfig:
         return RetrievalConfig.from_dict(self.retrieval_config.to_dict())
-
-    def set_retrieval_config(self, config: RetrievalConfig) -> RetrievalConfig:
-        config.validate()
 ```
 
 
@@ -172,23 +171,22 @@ graph_config: GraphConfig = field(default_factory=GraphConfig)
 ## save 持久化 envelope
 
 ```python
-self,
+def get_dify_config(self) -> DifyConfig:
+        return DifyConfig.from_dict(self.dify_config.to_dict())
+
+    def set_dify_config(self, config: DifyConfig) -> DifyConfig:
+        config.validate()
+        self.dify_config = DifyConfig.from_dict(config.to_dict())
+        return self.dify_config
+
+    def validate_answer(
+        self,
         query: str,
         reply: str,
         citations: list[dict[str, Any]],
     ) -> ValidationResult | None:
         """按当前 validation_config 校验 reply 与 citations 一致性"""
         cfg = self.get_validation_config()
-        if not cfg.enabled:
-            return None
-        validator = RuleBasedAnswerValidator(config=cfg)
-        return validator.validate(query, reply, citations)
-
-    def fetch_citations(self, query: str) -> dict[str, Any]:
-        """按当前 citation_config 检索并返回引用包 dict"""
-        cfg = self.get_citation_config()
-        if not cfg.enabled:
-            return {
 ```
 
 
@@ -199,7 +197,17 @@ self,
 ## load / load_or_bootstrap
 
 ```python
-"rewrite": None,
+validator = RuleBasedAnswerValidator(config=cfg)
+        return validator.validate(query, reply, citations)
+
+    def fetch_citations(self, query: str) -> dict[str, Any]:
+        """按当前 citation_config 检索并返回引用包 dict"""
+        cfg = self.get_citation_config()
+        if not cfg.enabled:
+            return {
+                "query": query.strip(),
+                "citations": [],
+                "rewrite": None,
                 "expansion": None,
                 "route": None,
             }
@@ -220,16 +228,6 @@ self,
             {
                 **cfg.to_dict(),
                 "max_citations": min(100, max(cfg.max_citations, 20) + attempt * 10),
-            }
-        )
-        rag = self.as_rag_service()
-        bundle = rag.retrieve_citation_bundle(
-            query,
-            config=boosted,
-            intent_override=INTENT_RAG_WIDE,
-        )
-        data = bundle.to_dict()
-        data["retry_attempt"] = attempt
 ```
 
 
@@ -240,7 +238,17 @@ self,
 ## bootstrap_from_sample_docs
 
 ```python
-def ingest_text(
+rag = self.as_rag_service()
+        bundle = rag.retrieve_citation_bundle(
+            query,
+            config=boosted,
+            intent_override=INTENT_RAG_WIDE,
+        )
+        data = bundle.to_dict()
+        data["retry_attempt"] = attempt
+        return data
+
+    def ingest_text(
         self,
         content: str,
         *,
@@ -257,16 +265,6 @@ def ingest_text(
         if not text:
             raise ValueError("文档内容不能为空")
         if not filename.strip():
-            raise ValueError("filename 不能为空")
-
-        cleaned = text
-        if clean:
-            cleaned, _ = clean_text(text)
-        doc = DocumentRecord(
-            path=Path(filename),
-            content=text,
-            encoding="utf-8",
-            size_bytes=len(text.encode("utf-8")),
 ```
 
 
@@ -277,17 +275,17 @@ def ingest_text(
 ## 单例 get_knowledge_store
 
 ```python
-if raw.get("expansion_config"):
-            store.expansion_config = ExpansionConfig.from_dict(raw["expansion_config"])
-        if raw.get("route_config"):
-            store.route_config = RouteConfig.from_dict(raw["route_config"])
-        if raw.get("validation_config"):
-            store.validation_config = ValidationConfig.from_dict(raw["validation_config"])
-        if raw.get("react_config"):
-            store.react_config = ReactConfig.from_dict(raw["react_config"])
-        if raw.get("executor_config"):
-            store.executor_config = ExecutorConfig.from_dict(raw["executor_config"])
-        if raw.get("graph_config"):
+store.last_rebuilt_at = raw.get("last_rebuilt_at")
+        store.last_incremental_at = raw.get("last_incremental_at")
+        store.index_mode = str(raw.get("index_mode") or INDEX_MODE_FULL)
+        if raw.get("retrieval_config"):
+            store.retrieval_config = RetrievalConfig.from_dict(raw["retrieval_config"])
+        if raw.get("rerank_config"):
+            store.rerank_config = RerankConfig.from_dict(raw["rerank_config"])
+        if raw.get("rewrite_config"):
+            store.rewrite_config = RewriteConfig.from_dict(raw["rewrite_config"])
+        if raw.get("citation_config"):
+            store.citation_config = CitationConfig.from_dict(raw["citation_config"])
 ```
 
 
@@ -310,7 +308,9 @@ if raw.get("expansion_config"):
 ## 扩展精读：ingest_file 与 ingest_bytes
 
 ```python
-self.invalidate_cache()
+config.validate()
+        self.retrieval_config = RetrievalConfig.from_dict(config.to_dict())
+        self.invalidate_cache()
         return self.retrieval_config
 
     def get_rerank_config(self) -> RerankConfig:
@@ -358,7 +358,6 @@ self.invalidate_cache()
         return self.route_config
 
     def get_validation_config(self) -> ValidationConfig:
-        return ValidationConfig.from_dict(self.validation_config.to_dict())
 ```
 
 
@@ -370,7 +369,8 @@ self.invalidate_cache()
 ## 扩展精读：as_rag_service 与 _build_rag_service
 
 ```python
-chunks: list[TextChunk] = field(default_factory=list)
+documents: list[KnowledgeDocument] = field(default_factory=list)
+    chunks: list[TextChunk] = field(default_factory=list)
     embedding_state: dict[str, Any] = field(default_factory=dict)
     vector_backend: str = VECTOR_BACKEND
     chunk_config: ChunkConfig = field(default_factory=ChunkConfig)
@@ -379,7 +379,6 @@ chunks: list[TextChunk] = field(default_factory=list)
     index_mode: str = INDEX_MODE_FULL
     retrieval_config: RetrievalConfig = field(default_factory=RetrievalConfig)
     rerank_config: RerankConfig = field(default_factory=RerankConfig)
-    rewrite_config: RewriteConfig = field(default_factory=RewriteConfig)
 ```
 
 
@@ -463,7 +462,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.44.0"
+    assert data["platform_version"] == "0.45.0"
     assert isinstance(data["documents"], list)
 
 
@@ -495,7 +494,7 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.44.0"
+    assert raw["platform_version"] == "0.45.0"
 ```
 
 
@@ -512,7 +511,9 @@ def test_store_json_has_version(tmp_store, tmp_path):
 ## 扩展精读：ingest_parsed（Day 26 衔接）
 
 ```python
-self.validation_config = ValidationConfig.from_dict(config.to_dict())
+def set_validation_config(self, config: ValidationConfig) -> ValidationConfig:
+        config.validate()
+        self.validation_config = ValidationConfig.from_dict(config.to_dict())
         return self.validation_config
 
     def get_react_config(self) -> ReactConfig:
@@ -560,8 +561,6 @@ self.validation_config = ValidationConfig.from_dict(config.to_dict())
 
     def set_mcp_config(self, config: McpConfig) -> McpConfig:
         config.validate()
-        self.mcp_config = McpConfig.from_dict(config.to_dict())
-        return self.mcp_config
 ```
 
 
@@ -777,23 +776,23 @@ self.validation_config = ValidationConfig.from_dict(config.to_dict())
 ## 附录：status_dict 与测试对照（精读专节）
 
 ```python
-new_chunks = chunk_documents(
+cleaned = text
+        if clean:
+            cleaned, _ = clean_text(text)
+        doc = DocumentRecord(
+            path=Path(filename),
+            content=text,
+            encoding="utf-8",
+            size_bytes=len(text.encode("utf-8")),
+            cleaned=cleaned,
+        )
+        new_chunks = chunk_documents(
             [doc],
             chunk_size=cs,
             overlap=ov,
             use_cleaned=clean,
         )
         self._append_chunks(filename, new_chunks, size_bytes=doc.size_bytes)
-        self._rebuild_index()
-        return self.documents[-1]
-
-    def ingest_file(
-        self,
-        path: Path,
-        *,
-        clean: bool = True,
-        chunk_size: int = 200,
-        overlap: int = 40,
 ```
 
 
@@ -863,7 +862,7 @@ def test_embedding_export_load_state():
 def test_status_dict(tmp_store):
     data = tmp_store.status_dict()
     assert data["chunk_count"] == tmp_store.chunk_count
-    assert data["platform_version"] == "0.44.0"
+    assert data["platform_version"] == "0.45.0"
     assert isinstance(data["documents"], list)
 
 
@@ -895,7 +894,7 @@ def test_store_json_has_version(tmp_store, tmp_path):
     tmp_store.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["version"] == "1.1"
-    assert raw["platform_version"] == "0.44.0"
+    assert raw["platform_version"] == "0.45.0"
 ```
 
 
@@ -918,16 +917,16 @@ def test_store_json_has_version(tmp_store, tmp_path):
 ## 节选：_chunk_to_dict
 
 ```python
-store = cls.bootstrap_from_sample_docs(store_path=target)
-        store.save(target)
+store.mcp_config = McpConfig.from_dict(raw["mcp_config"])
+        if raw.get("dify_config"):
+            store.dify_config = DifyConfig.from_dict(raw["dify_config"])
+        store._sync_chroma_from_json()
+        store._rag_service = store._build_rag_service()
         return store
 
     @classmethod
-    def bootstrap_from_sample_docs(cls, *, store_path: Path | None = None) -> KnowledgeStore:
-        """用内置 sample_docs 初始化知识库"""
-        rag = RAGContextService.from_sample_docs(use_embedding=True)
-        store = cls(store_path=store_path)
-        now = _utc_now()
+    def load_or_bootstrap(cls, path: Path | None = None) -> KnowledgeStore:
+        """加载已有库，不存在则从 sample_docs 引导"""
 ```
 
 
@@ -954,7 +953,10 @@ JSON 序列化丢弃 runtime 对象，只留可恢复字段。
 Day 25 `ingest_bytes` 在 Day 26 仓库中首行调用 `parse_bytes`：
 
 ```python
-def set_expansion_config(self, config: ExpansionConfig) -> ExpansionConfig:
+def get_expansion_config(self) -> ExpansionConfig:
+        return ExpansionConfig.from_dict(self.expansion_config.to_dict())
+
+    def set_expansion_config(self, config: ExpansionConfig) -> ExpansionConfig:
         config.validate()
         self.expansion_config = ExpansionConfig.from_dict(config.to_dict())
         self.invalidate_cache()
@@ -970,7 +972,6 @@ def set_expansion_config(self, config: ExpansionConfig) -> ExpansionConfig:
         return self.route_config
 
     def get_validation_config(self) -> ValidationConfig:
-        return ValidationConfig.from_dict(self.validation_config.to_dict())
 ```
 
 

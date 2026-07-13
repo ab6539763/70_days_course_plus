@@ -866,6 +866,14 @@ def get_react_config(self) -> ReactConfig:
         config.validate()
         self.mcp_config = McpConfig.from_dict(config.to_dict())
         return self.mcp_config
+
+    def get_dify_config(self) -> DifyConfig:
+        return DifyConfig.from_dict(self.dify_config.to_dict())
+
+    def set_dify_config(self, config: DifyConfig) -> DifyConfig:
+        config.validate()
+        self.dify_config = DifyConfig.from_dict(config.to_dict())
+        return self.dify_config
 ```
 
 
@@ -1008,7 +1016,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.44.0"
+    assert client.get("/api/health").json()["version"] == "0.45.0"
 
 
 def test_get_react_config_default(client):
@@ -1056,7 +1064,7 @@ def test_react_preview_with_history(client):
 
 def test_status_includes_react_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.44.0"
+    assert status["platform_version"] == "0.45.0"
     assert status["react_config"]["enabled"] is True
 
 
@@ -1181,6 +1189,14 @@ def get_react_config(self) -> ReactConfig:
         config.validate()
         self.mcp_config = McpConfig.from_dict(config.to_dict())
         return self.mcp_config
+
+    def get_dify_config(self) -> DifyConfig:
+        return DifyConfig.from_dict(self.dify_config.to_dict())
+
+    def set_dify_config(self, config: DifyConfig) -> DifyConfig:
+        config.validate()
+        self.dify_config = DifyConfig.from_dict(config.to_dict())
+        return self.dify_config
 ```
 
 
@@ -1770,7 +1786,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.44.0"
+    assert client.get("/api/health").json()["version"] == "0.45.0"
 
 
 def test_get_react_config_default(client):
@@ -1818,7 +1834,7 @@ def test_react_preview_with_history(client):
 
 def test_status_includes_react_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.44.0"
+    assert status["platform_version"] == "0.45.0"
     assert status["react_config"]["enabled"] is True
 
 
@@ -2493,7 +2509,10 @@ if body.agent_mode and store.get_react_config().enabled:
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
-    if mcp_trace is not None:
+    if dify_trace is not None:
+        kind = "dify"
+        meta = "Dify Workflow Bridge"
+    elif mcp_trace is not None:
         kind = "mcp"
         meta = "MCP Tool Bridge"
     elif supervisor_trace is not None:
@@ -2857,7 +2876,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.44.0"
+    assert client.get("/api/health").json()["version"] == "0.45.0"
 
 
 def test_get_react_config_default(client):
@@ -2905,7 +2924,7 @@ def test_react_preview_with_history(client):
 
 def test_status_includes_react_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.44.0"
+    assert status["platform_version"] == "0.45.0"
     assert status["react_config"]["enabled"] is True
 
 

@@ -1270,6 +1270,14 @@ def get_approval_config(self) -> ApprovalConfig:
         config.validate()
         self.mcp_config = McpConfig.from_dict(config.to_dict())
         return self.mcp_config
+
+    def get_dify_config(self) -> DifyConfig:
+        return DifyConfig.from_dict(self.dify_config.to_dict())
+
+    def set_dify_config(self, config: DifyConfig) -> DifyConfig:
+        config.validate()
+        self.dify_config = DifyConfig.from_dict(config.to_dict())
+        return self.dify_config
 ```
 
 
@@ -1444,7 +1452,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.44.0"
+    assert client.get("/api/health").json()["version"] == "0.45.0"
 
 
 def test_get_approval_config_default(client):
@@ -1511,7 +1519,7 @@ def test_approval_interrupt_resume(client):
 
 def test_status_includes_approval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.44.0"
+    assert status["platform_version"] == "0.45.0"
     assert status["approval_config"]["enabled"] is True
 
 
@@ -1616,6 +1624,14 @@ def get_approval_config(self) -> ApprovalConfig:
         config.validate()
         self.mcp_config = McpConfig.from_dict(config.to_dict())
         return self.mcp_config
+
+    def get_dify_config(self) -> DifyConfig:
+        return DifyConfig.from_dict(self.dify_config.to_dict())
+
+    def set_dify_config(self, config: DifyConfig) -> DifyConfig:
+        config.validate()
+        self.dify_config = DifyConfig.from_dict(config.to_dict())
+        return self.dify_config
 ```
 
 
@@ -2383,7 +2399,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.44.0"
+    assert client.get("/api/health").json()["version"] == "0.45.0"
 
 
 def test_get_approval_config_default(client):
@@ -2450,7 +2466,7 @@ def test_approval_interrupt_resume(client):
 
 def test_status_includes_approval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.44.0"
+    assert status["platform_version"] == "0.45.0"
     assert status["approval_config"]["enabled"] is True
 
 
@@ -3350,7 +3366,10 @@ if body.approval_mode and store.get_approval_config().enabled:
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
-    if mcp_trace is not None:
+    if dify_trace is not None:
+        kind = "dify"
+        meta = "Dify Workflow Bridge"
+    elif mcp_trace is not None:
         kind = "mcp"
         meta = "MCP Tool Bridge"
     elif supervisor_trace is not None:
@@ -3618,7 +3637,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.44.0"
+    assert client.get("/api/health").json()["version"] == "0.45.0"
 
 
 def test_get_approval_config_default(client):
@@ -3685,7 +3704,7 @@ def test_approval_interrupt_resume(client):
 
 def test_status_includes_approval_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.44.0"
+    assert status["platform_version"] == "0.45.0"
     assert status["approval_config"]["enabled"] is True
 
 

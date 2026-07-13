@@ -42,6 +42,10 @@ class ChatRequest(BaseModel):
         default=False,
         description="为 true 时走 MCP 协议工具桥接（Day 44）",
     )
+    dify_mode: bool = Field(
+        default=False,
+        description="为 true 时走 Dify 工作流风格追踪映射（Day 45）",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -64,6 +68,7 @@ class ChatResponse(BaseModel):
     delegated_agents: list[str] | None = None
     mcp_trace: list[dict] | None = None
     mcp_tools: list[str] | None = None
+    dify_trace: list[dict] | None = None
     tools_used: list[str] | None = None
 
 
@@ -124,6 +129,7 @@ class KnowledgeStatusResponse(BaseModel):
     approval_config: dict = Field(default_factory=dict)
     supervisor_config: dict = Field(default_factory=dict)
     mcp_config: dict = Field(default_factory=dict)
+    dify_config: dict = Field(default_factory=dict)
 
 
 class RetrievalConfigRequest(BaseModel):
@@ -584,6 +590,54 @@ class McpPreviewResponse(BaseModel):
     tools_used: list[str]
     mcp_tools: list[str] = Field(default_factory=list)
     server_name: str = "nexus-tools"
+
+
+class DifyConfigRequest(BaseModel):
+    """PUT /api/agent/dify-config"""
+
+    enabled: bool = True
+    workflow_name: str = Field("nexus-agent-workflow", min_length=1, max_length=64)
+    include_start_end: bool = True
+    mock_routing: bool = True
+    use_session_history: bool = True
+    return_dify_trace: bool = True
+    max_nodes: int = Field(10, ge=1, le=50)
+
+
+class DifyConfigResponse(BaseModel):
+    enabled: bool
+    workflow_name: str
+    include_start_end: bool
+    mock_routing: bool
+    use_session_history: bool
+    return_dify_trace: bool
+    max_nodes: int
+
+
+class DifyExportRequest(BaseModel):
+    """POST /api/agent/dify-export"""
+
+    pass
+
+
+class DifyExportResponse(BaseModel):
+    app: dict
+    workflow: dict
+
+
+class DifyPreviewRequest(BaseModel):
+    """POST /api/agent/dify-preview"""
+
+    query: str = Field(..., min_length=1, max_length=500)
+    history: list[str] = Field(default_factory=list)
+
+
+class DifyPreviewResponse(BaseModel):
+    query: str
+    reply: str
+    dify_trace: list[dict] = Field(default_factory=list)
+    tools_used: list[str] = Field(default_factory=list)
+    workflow_name: str = "nexus-agent-workflow"
 
 
 class RebuildRequest(BaseModel):

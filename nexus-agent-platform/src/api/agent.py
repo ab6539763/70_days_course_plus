@@ -11,6 +11,8 @@ from fastapi import APIRouter, HTTPException
 from agent.agent_executor import AgentExecutor
 from agent.approval_config import ApprovalConfig
 from agent.approval_workflow_graph import ApprovalWorkflowGraph
+from agent.dify_config import DifyConfig
+from agent.dify_runner import DifyRunner
 from agent.mcp_config import McpConfig
 from agent.mcp_runner import McpRunner
 from agent.supervisor_config import SupervisorConfig
@@ -46,6 +48,12 @@ from api.schemas import (
     McpListToolsResponse,
     McpPreviewRequest,
     McpPreviewResponse,
+    DifyConfigRequest,
+    DifyConfigResponse,
+    DifyExportRequest,
+    DifyExportResponse,
+    DifyPreviewRequest,
+    DifyPreviewResponse,
     ReactConfigRequest,
     ReactConfigResponse,
     ReactPreviewRequest,
@@ -301,3 +309,52 @@ def mcp_preview(body: McpPreviewRequest) -> McpPreviewResponse:
     history = [{"role": "user", "content": h} for h in (body.history or [])]
     outcome = runner.invoke(body.query, history=history or None)
     return McpPreviewResponse(**outcome.to_dict())
+
+
+@router.get("/dify-config", response_model=DifyConfigResponse)
+def get_dify_config() -> DifyConfigResponse:
+    cfg = get_knowledge_store().get_dify_config()
+    return DifyConfigResponse(**cfg.to_dict())
+
+
+@router.put("/dify-config", response_model=DifyConfigResponse)
+def update_dify_config(body: DifyConfigRequest) -> DifyConfigResponse:
+    store = get_knowledge_store()
+    try:
+        cfg = DifyConfig.from_dict(body.model_dump())
+        cfg.validate()
+        store.set_dify_config(cfg)
+        store.save()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return DifyConfigResponse(**cfg.to_dict())
+
+
+@router.post("/dify-export", response_model=DifyExportResponse)
+def dify_export(body: DifyExportRequest) -> DifyExportResponse:
+    """将当前 ToolRegistry 导出为 Dify 工作流 DSL（start → tool* → end）"""
+    _ = body
+    store = get_knowledge_store()
+    cfg = store.get_dify_config()
+    if not cfg.enabled:
+        raise HTTPException(status_code=400, detail="Dify 工作流对接已关闭")
+
+    orchestrator = create_orchestrator()
+    runner = DifyRunner.from_executor(orchestrator.tool_executor, config=cfg)
+    payload = runner.export_workflow().to_dict()
+    return DifyExportResponse(**payload)
+
+
+@router.post("/dify-preview", response_model=DifyPreviewResponse)
+def dify_preview(body: DifyPreviewRequest) -> DifyPreviewResponse:
+    """按 Dify 工作流语义预览一次调用 — 返回 dify_trace"""
+    store = get_knowledge_store()
+    cfg = store.get_dify_config()
+    if not cfg.enabled:
+        raise HTTPException(status_code=400, detail="Dify 工作流对接已关闭")
+
+    orchestrator = create_orchestrator()
+    runner = DifyRunner.from_executor(orchestrator.tool_executor, config=cfg)
+    history = [{"role": "user", "content": h} for h in (body.history or [])]
+    outcome = runner.invoke(body.query, history=history or None)
+    return DifyPreviewResponse(**outcome.to_dict())

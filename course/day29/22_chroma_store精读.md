@@ -416,6 +416,7 @@ from typing import Any
 
 from core.paths import get_path
 from agent.approval_config import ApprovalConfig
+from agent.dify_config import DifyConfig
 from agent.mcp_config import McpConfig
 from agent.supervisor_config import SupervisorConfig
 from agent.executor_config import ExecutorConfig
@@ -432,7 +433,6 @@ from rag.expanding_retriever import ExpandingRetriever
 from rag.expansion_config import ExpansionConfig
 from rag.answer_validator import RuleBasedAnswerValidator, ValidationResult
 from rag.route_config import RouteConfig
-from rag.routing_retriever import RoutingRetriever
 ```
 
 
@@ -540,6 +540,8 @@ def load(cls, path: Path) -> KnowledgeStore:
             store.supervisor_config = SupervisorConfig.from_dict(raw["supervisor_config"])
         if raw.get("mcp_config"):
             store.mcp_config = McpConfig.from_dict(raw["mcp_config"])
+        if raw.get("dify_config"):
+            store.dify_config = DifyConfig.from_dict(raw["dify_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store

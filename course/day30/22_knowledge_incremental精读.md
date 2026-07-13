@@ -606,6 +606,7 @@ from typing import Any
 
 from core.paths import get_path
 from agent.approval_config import ApprovalConfig
+from agent.dify_config import DifyConfig
 from agent.mcp_config import McpConfig
 from agent.supervisor_config import SupervisorConfig
 from agent.executor_config import ExecutorConfig
@@ -637,7 +638,7 @@ from utils.json_utils import load_json, save_json
 from utils.text_utils import clean_text
 
 STORE_VERSION = "1.1"
-PLATFORM_VERSION = "0.44.0"
+PLATFORM_VERSION = "0.45.0"
 INDEX_MODE_INCREMENTAL = "incremental"
 INDEX_MODE_FULL = "full"
 
@@ -704,6 +705,7 @@ class KnowledgeStore:
     approval_config: ApprovalConfig = field(default_factory=ApprovalConfig)
     supervisor_config: SupervisorConfig = field(default_factory=SupervisorConfig)
     mcp_config: McpConfig = field(default_factory=McpConfig)
+    dify_config: DifyConfig = field(default_factory=DifyConfig)
     store_path: Path | None = None
     chroma_path: Path | None = None
     _rag_service: RAGContextService | None = field(default=None, repr=False)
@@ -841,6 +843,14 @@ class KnowledgeStore:
         config.validate()
         self.mcp_config = McpConfig.from_dict(config.to_dict())
         return self.mcp_config
+
+    def get_dify_config(self) -> DifyConfig:
+        return DifyConfig.from_dict(self.dify_config.to_dict())
+
+    def set_dify_config(self, config: DifyConfig) -> DifyConfig:
+        config.validate()
+        self.dify_config = DifyConfig.from_dict(config.to_dict())
+        return self.dify_config
 
     def validate_answer(
         self,
@@ -996,16 +1006,7 @@ class KnowledgeStore:
         incremental: bool = False,
     ) -> KnowledgeDocument:
         """将 ParsedDocument 写入知识库"""
-        cfg = self.get_chunk_config()
-        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
-        cs = chunk_size if chunk_size is not None else cfg.chunk_size
-        ov = overlap if overlap is not None else cfg.overlap
-        text = (parsed.plain_text or "").strip()
-        if not text:
-            raise ValueError("解析结果为空")
-
-        if clean:
-            text, _ = clean_text(text
+        cfg
 ```
 
 
@@ -1107,7 +1108,16 @@ self.index_mode = INDEX_MODE_INCREMENTAL
 ## 二十三、延伸阅读：knowledge_store 余下部分
 
 ```python
-)
+= self.get_chunk_config()
+        strategy = chunk_strategy if chunk_strategy is not None else cfg.strategy
+        cs = chunk_size if chunk_size is not None else cfg.chunk_size
+        ov = overlap if overlap is not None else cfg.overlap
+        text = (parsed.plain_text or "").strip()
+        if not text:
+            raise ValueError("解析结果为空")
+
+        if clean:
+            text, _ = clean_text(text)
             parsed.plain_text = text
             for section in parsed.sections:
                 section.body, _ = clean_text(section.body)
@@ -1167,6 +1177,7 @@ self.index_mode = INDEX_MODE_INCREMENTAL
             "approval_config": self.approval_config.to_dict(),
             "supervisor_config": self.supervisor_config.to_dict(),
             "mcp_config": self.mcp_config.to_dict(),
+            "dify_config": self.dify_config.to_dict(),
         }
         save_json(target, payload)
         return target
@@ -1216,6 +1227,8 @@ self.index_mode = INDEX_MODE_INCREMENTAL
             store.supervisor_config = SupervisorConfig.from_dict(raw["supervisor_config"])
         if raw.get("mcp_config"):
             store.mcp_config = McpConfig.from_dict(raw["mcp_config"])
+        if raw.get("dify_config"):
+            store.dify_config = DifyConfig.from_dict(raw["dify_config"])
         store._sync_chroma_from_json()
         store._rag_service = store._build_rag_service()
         return store
@@ -1286,6 +1299,7 @@ self.index_mode = INDEX_MODE_INCREMENTAL
             "approval_config": self.approval_config.to_dict(),
             "supervisor_config": self.supervisor_config.to_dict(),
             "mcp_config": self.mcp_config.to_dict(),
+            "dify_config": self.dify_config.to_dict(),
             "vector_backend": self.vector_backend,
             "chroma_path": str(self._resolve_chroma_path()),
             "chroma_count": self._chroma_index().count() if self.chunks else 0,
@@ -1458,35 +1472,6 @@ self.index_mode = INDEX_MODE_INCREMENTAL
         route_cfg = self.get_route_config()
         retriever = RoutingRetriever(expanding, config=route_cfg)
         index = DocumentIndex(chunks=self.chunks, retriever=retriever)
-        return RAGContextService(index)
-
-
-_store: KnowledgeStore | None = None
-_store_lock = threading.Lock()
-
-
-def get_knowledge_store(*, reload: bool = False) -> KnowledgeStore:
-    """全局知识库单例（API 与 factory 共享）"""
-    global _store
-    with _store_lock:
-        if _store is None or reload:
-            _store = KnowledgeStore.load_or_bootstrap()
-        return _store
-
-
-def set_knowledge_store(store: KnowledgeStore) -> None:
-    """测试注入用"""
-    global _store
-    with _store_lock:
-        _store = store
-
-
-def _default_store_path() -> Path:
-    return get_path("knowledge_store")
-
-
-def _utc_now() -> str:
-    return datetime.n
 ```
 
 
@@ -2120,7 +2105,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.44.0"
+    assert client.get("/api/health").json()["version"] == "0.45.0"
 
 
 def test_upload_returns_incremental_mode(client):
@@ -2154,7 +2139,7 @@ def test_status_shows_incremental_fields(client):
             files={"file": ("notice.md", fh, "text/markdown")},
         )
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.44.0"
+    assert status["platform_version"] == "0.45.0"
     assert status["index_mode"] == INDEX_MODE_INCREMENTAL
     assert status["last_incremental_at"]
     assert status["chroma_count"] == status["chunk_count"]

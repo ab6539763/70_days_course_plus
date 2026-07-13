@@ -12,6 +12,7 @@ from agent.agent_executor import AgentExecutor
 from agent.approval_workflow_graph import ApprovalWorkflowGraph
 from agent.rag_agent_graph import RAGAgentGraph
 from agent.react_agent import ReActAgent
+from agent.dify_runner import DifyRunner
 from agent.mcp_runner import McpRunner
 from agent.supervisor_graph import SupervisorGraph
 from api.response_parser import classify_reply
@@ -21,7 +22,7 @@ from rag.knowledge_store import get_knowledge_store
 from rag.validation_retry import apply_validation_retry
 from core.exceptions import APIError, ConfigError, NexusError
 
-API_VERSION = "0.44.0"
+API_VERSION = "0.45.0"
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -67,10 +68,24 @@ def chat(
     delegated_agents = None
     mcp_trace = None
     mcp_tools = None
+    dify_trace = None
     tools_used = None
 
     try:
-        if body.mcp_mode and store.get_mcp_config().enabled:
+        if body.dify_mode and store.get_dify_config().enabled:
+            dcfg = store.get_dify_config()
+            dify_runner = DifyRunner.from_executor(
+                orchestrator.tool_executor,
+                config=dcfg,
+            )
+            history = _session_history(orchestrator, enabled=dcfg.use_session_history)
+            dify_outcome = dify_runner.invoke(message, history=history)
+            reply = dify_outcome.reply
+            dify_trace = [dict(e) for e in dify_outcome.dify_trace]
+            tools_used = list(dify_outcome.tools_used)
+            orchestrator.assistant.history.add_user(message)
+            orchestrator.assistant.history.add_assistant(reply)
+        elif body.mcp_mode and store.get_mcp_config().enabled:
             mcfg = store.get_mcp_config()
             runner = McpRunner.from_executor(
                 orchestrator.tool_executor,
@@ -155,7 +170,10 @@ def chat(
         raise _http_from_nexus(exc, status_code=500) from exc
 
     kind, meta = classify_reply(reply)
-    if mcp_trace is not None:
+    if dify_trace is not None:
+        kind = "dify"
+        meta = "Dify Workflow Bridge"
+    elif mcp_trace is not None:
         kind = "mcp"
         meta = "MCP Tool Bridge"
     elif supervisor_trace is not None:
@@ -192,7 +210,10 @@ def chat(
     if outcome is not None:
         reply = outcome.reply
         kind, meta = classify_reply(reply)
-        if mcp_trace is not None:
+        if dify_trace is not None:
+            kind = "dify"
+            meta = "Dify Workflow Bridge"
+        elif mcp_trace is not None:
             kind = "mcp"
             meta = "MCP Tool Bridge"
         elif supervisor_trace is not None:
@@ -242,6 +263,7 @@ def chat(
         delegated_agents=delegated_agents,
         mcp_trace=mcp_trace,
         mcp_tools=mcp_tools,
+        dify_trace=dify_trace,
         tools_used=tools_used,
     )
 

@@ -30,7 +30,7 @@ def client(tmp_path):
 
 
 def test_health_version(client):
-    assert client.get("/api/health").json()["version"] == "0.44.0"
+    assert client.get("/api/health").json()["version"] == "0.45.0"
 
 
 def test_validation_retry_preview(client):
@@ -80,7 +80,7 @@ def test_put_validation_config_retry_fields(client):
 
 def test_status_includes_validation_config(client):
     status = client.get("/api/knowledge/status").json()
-    assert status["platform_version"] == "0.44.0"
+    assert status["platform_version"] == "0.45.0"
     assert status["validation_config"]["retry_on_fail"] is False
 
 

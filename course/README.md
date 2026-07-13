@@ -113,4 +113,5 @@ bash scripts/delivery_check.sh
 - [x] Day 42：人工审批工作流（human_approval + checkpoint + approval-resume）
 - [x] Day 43：Supervisor 多 Agent（faq_worker / rag_worker / intent_worker 委派）
 - [x] Day 44：MCP 协议与工具生态（NexusMcpServer + tools/list + tools/call）
-- [ ] Day 45-70：持续更新中
+- [x] Day 45：Dify 工作流对接 + Phase 4 周测（DifyRunner + build_dify_workflow + phase4_quiz）
+- [ ] Day 46-70：持续更新中

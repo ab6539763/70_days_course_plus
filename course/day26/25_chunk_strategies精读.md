@@ -162,7 +162,9 @@ if strategy == "auto":
 ## ingest_parsed 衔接
 
 ```python
-self.validation_config = ValidationConfig.from_dict(config.to_dict())
+def set_validation_config(self, config: ValidationConfig) -> ValidationConfig:
+        config.validate()
+        self.validation_config = ValidationConfig.from_dict(config.to_dict())
         return self.validation_config
 
     def get_react_config(self) -> ReactConfig:
@@ -190,7 +192,6 @@ self.validation_config = ValidationConfig.from_dict(config.to_dict())
         return self.graph_config
 
     def get_approval_config(self) -> ApprovalConfig:
-        return ApprovalConfig.from_dict(self.approval_config.to_dict())
 ```
 
 
@@ -201,7 +202,9 @@ self.validation_config = ValidationConfig.from_dict(config.to_dict())
 ## 附录：KnowledgeStore.ingest_parsed 全文节选
 
 ```python
-self.validation_config = ValidationConfig.from_dict(config.to_dict())
+def set_validation_config(self, config: ValidationConfig) -> ValidationConfig:
+        config.validate()
+        self.validation_config = ValidationConfig.from_dict(config.to_dict())
         return self.validation_config
 
     def get_react_config(self) -> ReactConfig:
@@ -250,7 +253,6 @@ self.validation_config = ValidationConfig.from_dict(config.to_dict())
     def set_mcp_config(self, config: McpConfig) -> McpConfig:
         config.validate()
         self.mcp_config = McpConfig.from_dict(config.to_dict())
-        return self.mcp_config
 ```
 
 

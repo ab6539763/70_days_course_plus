@@ -1,7 +1,29 @@
 # NexusAgent 包结构说明
 
-**版本**：v0.44.0（Day 44 MCP 协议与工具生态）  
-**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-044
+**版本**：v0.45.0（Day 45 Dify 工作流对接 + Phase 4 周测）  
+**需求**：ZL-NA-REQ-010 ~ ZL-NA-REQ-045
+
+## Day 45 新增
+
+```
+src/agent/dify_config.py
+  workflow_name / mock_routing / max_nodes
+src/agent/dify_protocol.py
+  DifyNode / DifyEdge / DifyWorkflow / DifyTraceEvent DSL 子集
+src/agent/dify_bridge.py
+  ToolExecutor → DifyWorkflow 导出；McpStep → DifyTraceEvent 映射
+src/agent/dify_runner.py
+  复用 McpRunner 决策/执行，输出 Dify 工作流风格追踪
+src/api/agent.py
+  GET/PUT dify-config
+  POST dify-export / dify-preview
+src/api/chat.py
+  dify_mode=true → dify_trace
+src/day45/
+  dify_demo.py / dify_api_demo.py / phase4_quiz.py / phase4_review.py
+tests/day45/
+  27 项
+```
 
 ## Day 44 新增
 

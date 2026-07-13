@@ -417,6 +417,17 @@ jobs:
           python src/day44/phase4_mcp_review.py
           PYTHONPATH=src pytest tests/day44/ -q
 
+      - name: Day 45 Dify workflow bridge + Phase 4 quiz
+        working-directory: nexus-agent-platform
+        env:
+          NEXUS_LLM_MOCK: "1"
+        run: |
+          python src/day45/dify_demo.py
+          python src/day45/dify_api_demo.py
+          python src/day45/phase4_review.py
+          python src/day45/phase4_quiz.py --scripted
+          PYTHONPATH=src pytest tests/day45/ -q
+
       - name: Run tests
         working-directory: nexus-agent-platform
         run: pytest tests/ -v

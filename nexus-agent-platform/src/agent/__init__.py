@@ -13,6 +13,8 @@ from agent.react_config import ReactConfig
 from agent.state_graph import GraphRunOutcome, GraphStep, StateGraph
 from agent.structured_tool import StructuredTool, tool
 from agent.sub_agent import SUB_AGENTS, SubAgentRunner, SubAgentSpec
+from agent.dify_config import DifyConfig
+from agent.dify_runner import DifyRunner, DifyRunOutcome
 from agent.mcp_config import McpConfig
 from agent.mcp_runner import McpRunner, McpRunOutcome, McpStep
 from agent.supervisor_config import SupervisorConfig
@@ -37,6 +39,9 @@ __all__ = [
     "ReactConfig",
     "ReactRunOutcome",
     "ReactStep",
+    "DifyConfig",
+    "DifyRunOutcome",
+    "DifyRunner",
     "McpConfig",
     "McpRunOutcome",
     "McpRunner",

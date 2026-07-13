@@ -137,7 +137,16 @@ ingest_text ValueError → API 422；StorageError → 500；UnicodeDecodeError �
 ## 附录：_append_chunks 与 _rebuild_index（详解专节）
 
 ```python
-content, encoding = read_text_file(path)
+def ingest_file(
+        self,
+        path: Path,
+        *,
+        clean: bool = True,
+        chunk_size: int = 200,
+        overlap: int = 40,
+    ) -> KnowledgeDocument:
+        """从磁盘文件 ingestion"""
+        content, encoding = read_text_file(path)
         cleaned = content
         if clean:
             cleaned, _ = clean_text(content)
@@ -157,37 +166,28 @@ content, encoding = read_text_file(path)
         self._append_chunks(path.name, new_chunks, size_bytes=doc.size_bytes)
         self._rebuild_index()
         return self.documents[-1]
-
-    def ingest_bytes(
-        self,
-        data: bytes,
-        *,
-        filename: str,
-        clean: bool = True,
-        chunk_strategy: str = "auto",
-        incremental: bool = True,
-    ) -> KnowledgeDocument:
 ```
 
 
 **`_append_chunks`**：新块 `index` 从 `len(self.chunks)` 递增，避免与旧块冲突。每 append 同步追加 `KnowledgeDocument` 元数据行。
 
 ```python
-parsed.filename,
-                new_chunks,
-                size_bytes=size_bytes,
-                doc_format=parsed.format,
-            )
-            self._incremental_index(new_chunks, replaced_count=len(removed))
-        else:
+parsed,
+            strategy=strategy,
+            chunk_size=cs,
+            overlap=ov,
+        )
+        size_bytes = len(parsed.plain_text.encode("utf-8"))
+
+        if incremental:
+            removed = self._remove_document_by_source(parsed.filename)
             self._append_chunks(
                 parsed.filename,
                 new_chunks,
                 size_bytes=size_bytes,
                 doc_format=parsed.format,
             )
-            self._rebuild_index()
-        return self.documents[-1]
+            self._incremental_index(new_chunks, replaced_count=len(removed))
 ```
 
 
